@@ -364,10 +364,72 @@ PS_OUTPUT main(PS_INPUT input)
 	float3 reflection = texCUBE(reflection_map, reflect(-view, bumped)).rgb;
 	float facing = saturate(dot(view, normal));
 	float4 tint = lerp(parallel_tint, perpendicular_tint, facing);
-	float3 tint2 = tint.rgb * tint.rgb;
-	float3 color = (1.0f - reflection * reflection) * tint2 * tint2 + reflection * reflection * reflection;
+	// final combiner: (1 - tint) * reflection^8 + tint * reflection
+	float3 reflection2 = reflection * reflection;
+	float3 reflection4 = reflection2 * reflection2;
+	float3 color = lerp(reflection4 * reflection4, reflection, tint.rgb);
 	float opacity = settings.y > 0.5f ? tint.a * base.a : 1.0f;
 	output.color = float4(color * opacity, 1.0f);
+	return output;
+}
+)";
+
+
+// shader_transparent_glass (rasterizer_xbox_transparent_geometry.c): the background is multiplied by the
+// tint, a cube map reflection is added and the diffuse map is alpha blended over it with the lightmap
+static const char k_h1_glass_pixel_shader[] = H1_PIXEL_SHADER_COMMON R"(
+sampler2D map0 : register(s0);			// tint map, bump map or diffuse map
+sampler2D map1 : register(s1);			// diffuse detail map
+sampler2D lightmap : register(s2);
+samplerCUBE reflection_map : register(s4);
+
+float4 tint_color : register(c0);
+float4 perpendicular_color : register(c1);	// rgb color, a brightness
+float4 parallel_color : register(c2);
+float4 map_scales : register(c3);			// map 0 scale, map 1 scale
+float4 settings : register(c4);				// x: pass (0 tint, 1 reflection, 2 diffuse), y: bumped reflection, z: has lightmap
+
+PS_OUTPUT main(PS_INPUT input)
+{
+	PS_OUTPUT output;
+	output.depth = pack_depth(input.depth);
+	float4 m0 = tex2D(map0, input.texcoord * map_scales.x);
+
+	if (settings.x < 0.5f)
+	{
+		output.color = float4(tint_color.rgb * m0.rgb, 1.0f);
+		return output;
+	}
+	if (settings.x > 1.5f)
+	{
+		float4 detail = tex2D(map1, input.texcoord * map_scales.y);
+		float3 light = settings.z > 0.5f ? tex2D(lightmap, input.lightmap_texcoord).rgb : float3(1.0f, 1.0f, 1.0f);
+		output.color = float4(saturate(2.0f * m0.rgb * detail.rgb) * light, m0.a * detail.a);
+		return output;
+	}
+
+	float3 normal = normalize(input.normal);
+	if (settings.y > 0.5f)
+	{
+		// tangent frame from the texture coordinate derivatives
+		float3 position = -input.view;
+		float3 dp1 = ddx(position), dp2 = ddy(position);
+		float2 duv1 = ddx(input.texcoord), duv2 = ddy(input.texcoord);
+		float3 dp2perp = cross(dp2, normal), dp1perp = cross(normal, dp1);
+		float3 tangent = dp2perp * duv1.x + dp1perp * duv2.x;
+		float3 binormal = dp2perp * duv1.y + dp1perp * duv2.y;
+		float frame_scale = rsqrt(max(dot(tangent, tangent), dot(binormal, binormal)) + 1e-12f);
+		float3 bump = m0.rgb * 2.0f - 1.0f;
+		normal = normalize(tangent * frame_scale * bump.x + binormal * frame_scale * bump.y + normal * max(bump.z, 0.05f));
+	}
+
+	float3 view = normalize(input.view);
+	float3 reflection = texCUBE(reflection_map, reflect(-view, normal)).rgb;
+	float facing = saturate(dot(view, normal));
+	float4 color = lerp(parallel_color, perpendicular_color, facing * facing);
+	float3 reflection2 = reflection * reflection;
+	float3 reflection4 = reflection2 * reflection2;
+	output.color = float4(lerp(reflection4 * reflection4, reflection, color.rgb) * color.a, 1.0f);
 	return output;
 }
 )";
@@ -387,6 +449,7 @@ static IDirect3DPixelShader9* g_h1_model_shader = NULL;
 static std::unordered_map<datum, IDirect3DPixelShader9*> g_h1_generic_shaders;
 static IDirect3DPixelShader9* g_h1_chicago_shader = NULL;
 static IDirect3DPixelShader9* g_h1_water_shader = NULL;
+static IDirect3DPixelShader9* g_h1_glass_shader = NULL;
 static IDirect3DTexture9* g_h1_default_textures[4] = {};
 
 /* prototypes */
@@ -430,20 +493,21 @@ bool h1_render_shaders_initialize(void)
 	g_h1_model_shader = h1_compile_pixel_shader(k_h1_model_pixel_shader, "model");
 	g_h1_chicago_shader = h1_compile_pixel_shader(k_h1_chicago_pixel_shader, "transparent chicago");
 	g_h1_water_shader = h1_compile_pixel_shader(k_h1_water_pixel_shader, "transparent water");
+	g_h1_glass_shader = h1_compile_pixel_shader(k_h1_glass_pixel_shader, "transparent glass");
 
 	g_h1_default_textures[0] = h1_solid_texture(0xFFFFFFFF);
 	g_h1_default_textures[1] = h1_solid_texture(0xFF808080);
 	g_h1_default_textures[2] = h1_solid_texture(0xFF000000);
 	g_h1_default_textures[3] = h1_solid_texture(0xFF8080FF);
 
-	return g_h1_vertex_declaration && g_h1_vertex_shader && g_h1_environment_shader && g_h1_model_shader && g_h1_chicago_shader && g_h1_water_shader;
+	return g_h1_vertex_declaration && g_h1_vertex_shader && g_h1_environment_shader && g_h1_model_shader && g_h1_chicago_shader && g_h1_water_shader && g_h1_glass_shader;
 }
 
 void h1_render_shaders_dispose(void)
 {
 	IUnknown* resources[] =
 	{
-		g_h1_vertex_declaration, g_h1_vertex_shader, g_h1_environment_shader, g_h1_model_shader, g_h1_chicago_shader, g_h1_water_shader,
+		g_h1_vertex_declaration, g_h1_vertex_shader, g_h1_environment_shader, g_h1_model_shader, g_h1_chicago_shader, g_h1_water_shader, g_h1_glass_shader,
 		g_h1_default_textures[0], g_h1_default_textures[1], g_h1_default_textures[2], g_h1_default_textures[3],
 	};
 	for (int32 i = 0; i < NUMBEROF(resources); i++)
@@ -467,6 +531,7 @@ void h1_render_shaders_dispose(void)
 	g_h1_generic_shaders.clear();
 	g_h1_chicago_shader = NULL;
 	g_h1_water_shader = NULL;
+	g_h1_glass_shader = NULL;
 	csmemset(g_h1_default_textures, 0, sizeof(g_h1_default_textures));
 	return;
 }
@@ -674,7 +739,12 @@ static void h1_map_transform(real32* out, real32 u_scale, real32 v_scale, real32
 
 int32 h1_render_shader_subpass_count(uint32 shader_group)
 {
-	return shader_group == 'swat' ? 2 : 1;
+	switch (shader_group)
+	{
+	case 'swat': return 2;
+	case 'sgla': return 3;
+	default: return 1;
+	}
 }
 
 bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_render_lighting* lighting, IDirect3DBaseTexture9* lightmap, real32 game_time, int32 subpass)
@@ -853,6 +923,81 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 		// flags: alpha tested, decal, two sided, first map is in screenspace, draw before water, ignore effect, scale first map with distance, numeric
 		device->SetRenderState(D3DRS_CULLMODE, TEST_BIT(shader->flags_3, 2) ? D3DCULL_NONE : D3DCULL_CCW);
 		h1_bind_framebuffer_blend(shader->framebuffer_blend_function);
+		return true;
+	}
+	case 'sgla':
+	{
+		const h1_sgla* glass = (const h1_sgla*)definition;
+		const real_rgb_color* tint = &glass->background_tint_color;
+		real32 constants[5][4] = {};
+		switch (subpass)
+		{
+		case 0:
+			// tint: the background is multiplied by the tint color and map
+			if (glass->background_tint_map.index == NONE && tint->red == 0.f && tint->green == 0.f && tint->blue == 0.f)
+			{
+				return false;
+			}
+			device->SetTexture(0, h1_texture_or_default(glass->background_tint_map, 0));
+			constants[3][0] = glass->background_tint_map_scale != 0.f ? glass->background_tint_map_scale : 1.f;
+			device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ZERO);
+			device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_SRCCOLOR);
+			break;
+		case 1:
+		{
+			// reflection, dynamic mirrors fall back to the cube map
+			IDirect3DBaseTexture9* reflection = h1_bitmap_texture_get(glass->reflection_map);
+			if (!reflection || (glass->perpendicular_brightness <= 0.f && glass->parallel_brightness <= 0.f))
+			{
+				return false;
+			}
+			const bool bumped = glass->reflection_type == 0 && glass->bump_map.index != NONE && !TEST_BIT(glass->flags, 3);
+			device->SetTexture(0, h1_texture_or_default(glass->bump_map, 3));
+			device->SetTexture(4, reflection);
+			h1_set_sampler_addressing(4, true, true, false);
+			constants[3][0] = glass->bump_map_scale != 0.f ? glass->bump_map_scale : 1.f;
+			constants[4][1] = bumped ? 1.f : 0.f;
+			device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+			device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
+			break;
+		}
+		default:
+			// diffuse
+			if (glass->diffuse_map.index == NONE && glass->diffuse_detail_map.index == NONE)
+			{
+				return false;
+			}
+			device->SetTexture(0, h1_texture_or_default(glass->diffuse_map, 1));
+			device->SetTexture(1, h1_texture_or_default(glass->diffuse_detail_map, 1));
+			device->SetTexture(2, lightmap ? lightmap : g_h1_default_textures[0]);
+			constants[3][0] = glass->diffuse_map_scale != 0.f ? glass->diffuse_map_scale : 1.f;
+			constants[3][1] = glass->diffuse_detail_map_scale != 0.f ? glass->diffuse_detail_map_scale : 1.f;
+			constants[4][2] = lightmap ? 1.f : 0.f;
+			device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+			device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+			break;
+		}
+		device->SetPixelShader(g_h1_glass_shader);
+		for (DWORD stage = 0; stage < 3; stage++)
+		{
+			h1_set_sampler_addressing(stage, false, false, false);
+		}
+		h1_set_sampler_addressing(2, true, true, false);
+
+		constants[0][0] = tint->red; constants[0][1] = tint->green; constants[0][2] = tint->blue; constants[0][3] = 1.f;
+		constants[1][0] = glass->perpendicular_tint_color.red; constants[1][1] = glass->perpendicular_tint_color.green;
+		constants[1][2] = glass->perpendicular_tint_color.blue; constants[1][3] = glass->perpendicular_brightness;
+		constants[2][0] = glass->parallel_tint_color.red; constants[2][1] = glass->parallel_tint_color.green;
+		constants[2][2] = glass->parallel_tint_color.blue; constants[2][3] = glass->parallel_brightness;
+		constants[4][0] = (real32)subpass;
+		device->SetPixelShaderConstantF(0, &constants[0][0], 5);
+
+		// flags: alpha tested, decal, two sided, bump map is specular mask
+		device->SetRenderState(D3DRS_CULLMODE, TEST_BIT(glass->flags, 2) ? D3DCULL_NONE : D3DCULL_CCW);
+		device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+		device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+		device->SetRenderState(D3DRS_COLORWRITEENABLE1, 0);
+		device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
 		return true;
 	}
 	case 'swat':
