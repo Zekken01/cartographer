@@ -40,7 +40,8 @@ static const s_h1_object_substitute k_h1_object_substitutes[] =
 	{ "assault rifle",		'weap', "objects\\weapons\\rifle\\smg\\smg",									_h2_classification_weapon },
 	{ "plasma pistol",		'weap', "objects\\weapons\\pistol\\plasma_pistol\\plasma_pistol",				_h2_classification_weapon },
 	{ "plasma rifle",		'weap', "objects\\weapons\\rifle\\plasma_rifle\\plasma_rifle",					_h2_classification_weapon },
-	{ "plasma_cannon",		'weap', "objects\\weapons\\support_high\\flak_cannon\\flak_cannon",			_h2_classification_weapon },
+	// the fuel rod (flak cannon) isn't in the host's simulation definition table, so it wouldn't replicate
+	{ "plasma_cannon",		'weap', "objects\\weapons\\support_high\\rocket_launcher\\rocket_launcher",	_h2_classification_weapon },
 	{ "plasma grenade",		'eqip', "objects\\weapons\\grenade\\plasma_grenade\\plasma_grenade",			_h2_classification_grenade },
 	{ "frag grenade",		'eqip', "objects\\weapons\\grenade\\frag_grenade\\frag_grenade",				_h2_classification_grenade },
 	{ "pistol",				'weap', "objects\\weapons\\pistol\\magnum\\magnum",								_h2_classification_weapon },
