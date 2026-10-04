@@ -10,6 +10,7 @@
 #include "shell/shell.h"
 #include "tag_files/files.h"
 #include "text/unicode.h"
+#include "halo1/h1_map_loader.h"
 
 /* prototypes */
 
@@ -360,6 +361,9 @@ CLASS_HOOK_DECLARE_LABEL(c_custom_map_manager__start_custom_map_sync, c_map_mana
 void __thiscall c_map_manager::start_map_synchronize(void)
 {
 	INVOKE_TYPE(0x4D021, 0x419B5, void(__thiscall*)(c_map_manager*), this);
+
+	// Halo 1 maps live in the game's maps\ce folder rather than the custom map folder
+	h1_maps_register_folder(this);
 	return;
 }
 
@@ -923,6 +927,13 @@ static bool __cdecl validate_and_read_custom_map_data(s_custom_map_entry* custom
 	cache_file_header header;
 	HANDLE map_cache_handle;
 	wchar_t* file_name = custom_map_entry->file_path;
+
+	// Halo 1 Xbox cache files get their entry built from the Halo 1 header
+	if (h1_maps_file_is_halo1(file_name))
+	{
+		return h1_maps_custom_map_entry_fill(custom_map_entry);
+	}
+
 	if (!open_cache_header(file_name, &header, &map_cache_handle))
 		return false;
 	if (header.header_signature != 'head' || header.footer_signature != 'foot' || header.file_size <= 0 || header.version != 8)

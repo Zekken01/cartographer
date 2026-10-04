@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "main.h"
 
+#include "halo1/h1_map_loader.h"
+
 #include "console.h"
 #include "game_preferences.h"
 #include "interpolator.h"
@@ -253,6 +255,7 @@ void main_loop_body(void)
 	EventHandler::GameLoopEventExecute(EventExecutionType::execute_before);
 	if (!shell_is_dedicated_server())
 	{
+		h1_maps_update();
 		mapManager->MapDownloadUpdateTick();
 		gXnIpMgr.GetLocalUserXn()->m_pckStats.PckDataSampleUpdate();	// update local user network stats
 	}

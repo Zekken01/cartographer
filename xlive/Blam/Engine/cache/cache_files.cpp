@@ -12,6 +12,7 @@
 #include "tag_files/tag_loader/tag_injection.h"
 #include "tag_files/tag_loader/tag_injection_manager.h"
 #include "tag_files/tag_group_access.h"
+#include "halo1/h1_map_loader.h"
 
 /* typedefs */
 
@@ -239,7 +240,7 @@ bool __cdecl scenario_tags_load_internal(const char* scenario_path)
 	cache_header->tag_size = cache_file_align_read_size_to_cache_page(cache_header->tag_size);
 
 	const uint32 aligned_tag_size_read = cache_header->tag_size + cache_header->tag_offset_mask;
-	cache_file_memory_globals->tag_cache_base_address = datum_header_allocate(aligned_tag_size_read + k_injectable_allocation_size, 12);
+	cache_file_memory_globals->tag_cache_base_address = datum_header_allocate(aligned_tag_size_read + k_injectable_allocation_size + h1_maps_tag_memory_required(), 12);
 
 	if(!cache_file_memory_globals->tag_cache_base_address)
 	{
@@ -371,7 +372,7 @@ scenario_tags_load_internal_end:
 		initialize_runtime_sound_gestalt_definition();
 
 		tag_injection_scenario_load_setup(cache_header->tag_size + cache_header->tag_offset_mask);
-		is_compatible = true;
+		is_compatible = h1_maps_scenario_tags_loaded(custom_map);
 	}
 
 	return is_compatible;

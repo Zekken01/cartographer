@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "render.h"
 
+#include "halo1/h1_render.h"
+
 #include "render_contrails.h"
 #include "render_debug.h"
 #include "render_first_person.h"
@@ -400,6 +402,7 @@ void __cdecl render_scene(
 			*/
 
 			rasterizer_dx9_perf_event_begin("lightmap_indirect", NULL);
+			h1_render_structure_opaque();
 			render_scene_geometry(_collection_type_0, _render_layer_lightmap_indirect);
 			rasterizer_dx9_perf_event_end("lightmap_indirect");
 
@@ -490,6 +493,7 @@ void __cdecl render_scene(
 			*/
 
 			rasterizer_dx9_perf_event_begin("lightmap_indirect", NULL);
+			h1_render_structure_opaque();
 			render_scene_geometry(_collection_type_0, _render_layer_lightmap_indirect);
 			rasterizer_dx9_perf_event_end("lightmap_indirect");
 
@@ -507,6 +511,7 @@ void __cdecl render_scene(
 		{
 render_layer_2:
 			render_scene_geometry(_collection_type_0, _render_layer_transparent);
+			h1_render_structure_transparent();
 			
 			if (render_layer_debug_view != 2)
 			{
@@ -595,7 +600,11 @@ render_postprocess:
 
 		if (effect_flag != 2)
 		{
-			if (global_window_parameters->fog_result.draw_sky)
+			if (h1_render_sky())
+			{
+				// halo 1 maps draw their own sky
+			}
+			else if (global_window_parameters->fog_result.draw_sky)
 			{
 				rasterizer_dx9_perf_event_begin("render_sky", NULL);
 				rasterizer_dx9_set_stencil_mode(2);

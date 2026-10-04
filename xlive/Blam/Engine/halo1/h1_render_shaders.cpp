@@ -1,0 +1,1069 @@
+#include "stdafx.h"
+#include "h1_render_shaders.h"
+
+#include "h1_bitmaps.h"
+#include "h1_cache_file.h"
+#include "h1_log.h"
+
+#include "rasterizer/rasterizer_globals.h"
+#include "rasterizer/dx9/rasterizer_dx9_main.h"
+#include "render/render.h"
+
+#include <string>
+#include <unordered_map>
+
+/* constants */
+
+enum
+{
+	k_h1_maximum_generic_stages = 7,
+	k_h1_maximum_shader_maps = 4,
+};
+
+enum e_h1_framebuffer_blend_function
+{
+	_h1_framebuffer_blend_alpha_blend = 0,
+	_h1_framebuffer_blend_multiply,
+	_h1_framebuffer_blend_double_multiply,
+	_h1_framebuffer_blend_add,
+	_h1_framebuffer_blend_subtract,
+	_h1_framebuffer_blend_component_min,
+	_h1_framebuffer_blend_component_max,
+	_h1_framebuffer_blend_alpha_multiply_add,
+};
+
+/* shader sources */
+
+static const char k_h1_vertex_shader[] = R"(
+float4x4 world_view_projection : register(c0);
+float4 view_forward : register(c4);		// object space to view depth (x row of world to view)
+float4 depth_scale : register(c5);		// x: 1 / (far - near), y: sky (push to the far plane)
+float4 object_to_world[3] : register(c6);	// rotation rows (for normals) and translation in w
+float4 camera_position : register(c9);	// object space camera position
+
+struct VS_INPUT
+{
+	float3 position : POSITION;
+	float3 normal : NORMAL;
+	float2 texcoord : TEXCOORD0;
+	float2 lightmap_texcoord : TEXCOORD1;
+};
+
+struct VS_OUTPUT
+{
+	float4 position : POSITION;
+	float2 texcoord : TEXCOORD0;
+	float2 lightmap_texcoord : TEXCOORD1;
+	float3 normal : TEXCOORD2;
+	float depth : TEXCOORD3;
+	float3 view : TEXCOORD4;
+	float3 world_normal : TEXCOORD5;
+};
+
+VS_OUTPUT main(VS_INPUT input)
+{
+	VS_OUTPUT output;
+	float4 position = float4(input.position, 1.0f);
+	output.position = mul(position, world_view_projection);
+	if (depth_scale.y > 0.5f)
+		output.position.z = output.position.w * 0.99999f;
+	output.texcoord = input.texcoord;
+	output.lightmap_texcoord = input.lightmap_texcoord;
+	output.normal = input.normal;
+	output.world_normal = float3(dot(input.normal, object_to_world[0].xyz), dot(input.normal, object_to_world[1].xyz), dot(input.normal, object_to_world[2].xyz));
+	output.view = camera_position.xyz - input.position;
+	output.depth = depth_scale.y > 0.5f ? 1.0f : dot(position, view_forward) * depth_scale.x;
+	return output;
+}
+)";
+
+#define H1_PIXEL_SHADER_COMMON R"(
+struct PS_INPUT
+{
+	float2 texcoord : TEXCOORD0;
+	float2 lightmap_texcoord : TEXCOORD1;
+	float3 normal : TEXCOORD2;
+	float depth : TEXCOORD3;
+	float3 view : TEXCOORD4;
+	float3 world_normal : TEXCOORD5;
+};
+
+struct PS_OUTPUT
+{
+	float4 color : COLOR0;
+	float4 depth : COLOR1;
+};
+
+// halo 2 reads view depth packed as r + g / 256 + b / 65536
+float4 pack_depth(float depth)
+{
+	float d = saturate(depth) * 255.0f;
+	return float4(floor(d) / 255.0f, floor(frac(d) * 256.0f) / 255.0f, frac(frac(d) * 256.0f), 1.0f);
+}
+
+float3 apply_detail(float3 color, float3 detail, float function)
+{
+	if (function < 0.5f)
+		return saturate(2.0f * color * detail);
+	if (function < 1.5f)
+		return saturate(color * detail);
+	return saturate(color + 2.0f * detail - 1.0f);
+}
+)"
+
+// shader_environment diffuse pass (Xbox combiners 0-2) multiplied by the lightmap
+static const char k_h1_environment_pixel_shader[] = H1_PIXEL_SHADER_COMMON R"(
+sampler2D base_map : register(s0);
+sampler2D primary_detail_map : register(s1);
+sampler2D secondary_detail_map : register(s2);
+sampler2D micro_detail_map : register(s3);
+sampler2D lightmap : register(s4);
+
+float4 detail_scales : register(c0);	// primary, secondary, micro
+float4 modes : register(c1);			// type, detail function, micro detail function, alpha tested
+float4 ambient : register(c2);			// lightmap missing ambient color, w: has lightmap
+
+PS_OUTPUT main(PS_INPUT input)
+{
+	float4 base = tex2D(base_map, input.texcoord);
+	float4 primary = tex2D(primary_detail_map, input.texcoord * detail_scales.x);
+	float4 secondary = tex2D(secondary_detail_map, input.texcoord * detail_scales.y);
+	float4 micro = tex2D(micro_detail_map, input.texcoord * detail_scales.z);
+
+	// normal: secondary alpha blends the detail maps, blended types use the base map alpha
+	float blend = modes.x < 0.5f ? secondary.a : base.a;
+	float3 detail = lerp(secondary.rgb, primary.rgb, blend);
+
+	float3 color = apply_detail(base.rgb, detail, modes.y);
+	color = apply_detail(color, micro.rgb, modes.z);
+
+	if (modes.w > 0.5f)
+		clip(base.a - 0.5f);
+
+	float3 light = ambient.w > 0.5f ? tex2D(lightmap, input.lightmap_texcoord).rgb : ambient.rgb;
+
+	PS_OUTPUT output;
+	output.color = float4(color * light, 1.0f);
+	output.depth = pack_depth(input.depth);
+	return output;
+}
+)";
+
+// shader_model: base map, detail map, multipurpose map (self illumination in green), object lighting
+static const char k_h1_model_pixel_shader[] = H1_PIXEL_SHADER_COMMON R"(
+sampler2D base_map : register(s0);
+sampler2D multipurpose_map : register(s1);
+sampler2D detail_map : register(s2);
+
+float4 map_scale : register(c0);		// base u, base v, detail u, detail v
+float4 modes : register(c1);			// detail function, alpha tested, has multipurpose, self illumination
+float4 ambient : register(c2);
+float4 light0_direction : register(c3);
+float4 light0_color : register(c4);
+float4 light1_direction : register(c5);
+float4 light1_color : register(c6);
+
+PS_OUTPUT main(PS_INPUT input)
+{
+	float2 texcoord = input.texcoord * map_scale.xy;
+	float4 base = tex2D(base_map, texcoord);
+	float4 multipurpose = tex2D(multipurpose_map, texcoord);
+	float4 detail = tex2D(detail_map, texcoord * map_scale.zw);
+
+	if (modes.y > 0.5f)
+		clip(base.a - 0.5f);
+
+	float3 color = apply_detail(base.rgb, detail.rgb, modes.x);
+
+	float3 normal = normalize(input.world_normal);
+	float3 light = ambient.rgb +
+		saturate(dot(normal, -light0_direction.xyz)) * light0_color.rgb +
+		saturate(dot(normal, -light1_direction.xyz)) * light1_color.rgb;
+
+	float self_illumination = modes.z > 0.5f ? multipurpose.g * modes.w : 0.0f;
+
+	PS_OUTPUT output;
+	output.color = float4(color * saturate(light + self_illumination), base.a);
+	output.depth = pack_depth(input.depth);
+	return output;
+}
+)";
+
+// shader_transparent_generic: the stages of each shader become straight line code (h1_generic_shader_get)
+static const char k_h1_generic_pixel_shader_header[] = H1_PIXEL_SHADER_COMMON R"(
+sampler2D map0 : register(s0);
+sampler2D map1 : register(s1);
+sampler2D map2 : register(s2);
+sampler2D map3 : register(s3);
+samplerCUBE cube0 : register(s4);
+
+float4 map_transform[8] : register(c0);
+float4 stage_constants[14] : register(c8);	// constant color 0 and 1 per stage
+float4 settings : register(c71);			// stage count, first map is a cube map, fade mode
+float4 vertex_light : register(c72);		// vertex color 0 (diffuse light)
+
+float2 map_texcoord(float2 texcoord, int index)
+{
+	float4 scale_offset = map_transform[index * 2];
+	float4 rotation = map_transform[index * 2 + 1];
+	float2 uv = texcoord * scale_offset.xy + scale_offset.zw - rotation.zw;
+	return float2(uv.x * rotation.x - uv.y * rotation.y, uv.x * rotation.y + uv.y * rotation.x) + rotation.zw;
+}
+
+PS_OUTPUT main(PS_INPUT input)
+{
+	float4 m0 = settings.y > 0.5f ? texCUBE(cube0, reflect(-normalize(input.view), normalize(input.normal))) : tex2D(map0, map_texcoord(input.texcoord, 0));
+	float4 m1 = tex2D(map1, map_texcoord(input.texcoord, 1));
+	float4 m2 = tex2D(map2, map_texcoord(input.texcoord, 2));
+	float4 m3 = tex2D(map3, map_texcoord(input.texcoord, 3));
+	float fade = saturate(abs(dot(normalize(input.view), normalize(input.normal))));
+	if (settings.z > 1.5f)
+		fade = 1.0f - fade;
+	float4 v0 = float4(vertex_light.rgb, 1.0f);
+	float4 v1 = float4(fade, fade, fade, fade);
+	float4 r0 = 0.0f;
+	float4 r1 = 0.0f;
+	float4 k0, k1;
+	float3 cab, ccd, csum;
+	float aab, acd, asum;
+)";
+
+static const char k_h1_generic_pixel_shader_footer[] = R"(
+	PS_OUTPUT output;
+	output.color = saturate(r0);
+	output.depth = pack_depth(input.depth);
+	return output;
+}
+)";
+
+// shader_transparent_chicago(_extended): map chain with color and alpha functions
+static const char k_h1_chicago_pixel_shader[] = H1_PIXEL_SHADER_COMMON R"(
+sampler2D map0 : register(s0);
+sampler2D map1 : register(s1);
+sampler2D map2 : register(s2);
+sampler2D map3 : register(s3);
+samplerCUBE cube0 : register(s4);
+
+float4 map_transform[8] : register(c0);
+float4 functions[4] : register(c8);		// per map: color function, alpha function, alpha replicate
+float4 settings : register(c12);		// map count, first map is a cube map
+
+float2 map_texcoord(float2 texcoord, int index)
+{
+	float4 scale_offset = map_transform[index * 2];
+	float4 rotation = map_transform[index * 2 + 1];
+	float2 uv = texcoord * scale_offset.xy + scale_offset.zw - rotation.zw;
+	return float2(uv.x * rotation.x - uv.y * rotation.y, uv.x * rotation.y + uv.y * rotation.x) + rotation.zw;
+}
+
+float4 combine(float4 current, float4 next, float function)
+{
+	// current, next map, multiply, double multiply, add, add signed current, add signed next, subtract current,
+	// subtract next, blend current alpha, blend current alpha inverse, blend next alpha, blend next alpha inverse
+	int f = (int)function;
+	if (f == 0) return current;
+	if (f == 1) return next;
+	if (f == 2) return current * next;
+	if (f == 3) return 2.0f * current * next;
+	if (f == 4) return current + next;
+	if (f == 5) return current + next - 0.5f;
+	if (f == 6) return current + next - 0.5f;
+	if (f == 7) return current - next;
+	if (f == 8) return next - current;
+	if (f == 9) return lerp(next, current, current.a);
+	if (f == 10) return lerp(current, next, current.a);
+	if (f == 11) return lerp(current, next, next.a);
+	return lerp(next, current, next.a);
+}
+
+PS_OUTPUT main(PS_INPUT input)
+{
+	float4 maps[4];
+	if (settings.y > 0.5f)
+		maps[0] = texCUBE(cube0, reflect(-normalize(input.view), normalize(input.normal)));
+	else
+		maps[0] = tex2D(map0, map_texcoord(input.texcoord, 0));
+	maps[1] = tex2D(map1, map_texcoord(input.texcoord, 1));
+	maps[2] = tex2D(map2, map_texcoord(input.texcoord, 2));
+	maps[3] = tex2D(map3, map_texcoord(input.texcoord, 3));
+
+	[unroll]
+	for (int i = 0; i < 4; i++)
+	{
+		if (functions[i].z > 0.5f)
+			maps[i].a = dot(maps[i].rgb, float3(0.333f, 0.333f, 0.334f));
+	}
+
+	float4 result = maps[0];
+	int map_count = (int)settings.x;
+	[unroll]
+	for (int j = 1; j < 4; j++)
+	{
+		if (j < map_count)
+		{
+			float3 color = saturate(combine(result, maps[j], functions[j - 1].x).rgb);
+			float alpha = saturate(combine(result.aaaa, maps[j].aaaa, functions[j - 1].y).a);
+			result = float4(color, alpha);
+		}
+	}
+
+	PS_OUTPUT output;
+	output.color = saturate(result);
+	output.depth = pack_depth(input.depth);
+	return output;
+}
+)";
+
+/* globals */
+
+static IDirect3DVertexDeclaration9* g_h1_vertex_declaration = NULL;
+static IDirect3DVertexShader9* g_h1_vertex_shader = NULL;
+static IDirect3DPixelShader9* g_h1_environment_shader = NULL;
+static IDirect3DPixelShader9* g_h1_model_shader = NULL;
+static std::unordered_map<datum, IDirect3DPixelShader9*> g_h1_generic_shaders;
+static IDirect3DPixelShader9* g_h1_chicago_shader = NULL;
+static IDirect3DTexture9* g_h1_default_textures[4] = {};
+
+/* prototypes */
+
+static IDirect3DPixelShader9* h1_compile_pixel_shader(const char* source, const char* name);
+static IDirect3DTexture9* h1_solid_texture(uint32 color);
+static real32 h1_periodic_function(int16 function, real32 x);
+static void h1_bind_framebuffer_blend(int16 function);
+static IDirect3DPixelShader9* h1_generic_shader_get(datum shader_index, const h1_sotr* shader);
+
+/* public code */
+
+bool h1_render_shaders_initialize(void)
+{
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+
+	const D3DVERTEXELEMENT9 elements[] =
+	{
+		{ 0, 0, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0 },
+		{ 0, 12, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_NORMAL, 0 },
+		{ 0, 24, D3DDECLTYPE_FLOAT2, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_TEXCOORD, 0 },
+		{ 0, 32, D3DDECLTYPE_FLOAT2, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_TEXCOORD, 1 },
+		D3DDECL_END()
+	};
+	device->CreateVertexDeclaration(elements, &g_h1_vertex_declaration);
+
+	LPD3DXBUFFER code = NULL;
+	LPD3DXBUFFER errors = NULL;
+	if (SUCCEEDED(D3DXCompileShader(k_h1_vertex_shader, (UINT)strlen(k_h1_vertex_shader), NULL, NULL, "main", "vs_3_0", 0, &code, &errors, NULL)))
+	{
+		device->CreateVertexShader((const DWORD*)code->GetBufferPointer(), &g_h1_vertex_shader);
+		code->Release();
+	}
+	else if (errors)
+	{
+		h1_log("shaders: vertex shader: %s", (const char*)errors->GetBufferPointer());
+	}
+	if (errors) errors->Release();
+
+	g_h1_environment_shader = h1_compile_pixel_shader(k_h1_environment_pixel_shader, "environment");
+	g_h1_model_shader = h1_compile_pixel_shader(k_h1_model_pixel_shader, "model");
+	g_h1_chicago_shader = h1_compile_pixel_shader(k_h1_chicago_pixel_shader, "transparent chicago");
+
+	g_h1_default_textures[0] = h1_solid_texture(0xFFFFFFFF);
+	g_h1_default_textures[1] = h1_solid_texture(0xFF808080);
+	g_h1_default_textures[2] = h1_solid_texture(0xFF000000);
+	g_h1_default_textures[3] = h1_solid_texture(0xFF8080FF);
+
+	return g_h1_vertex_declaration && g_h1_vertex_shader && g_h1_environment_shader && g_h1_model_shader && g_h1_chicago_shader;
+}
+
+void h1_render_shaders_dispose(void)
+{
+	IUnknown* resources[] =
+	{
+		g_h1_vertex_declaration, g_h1_vertex_shader, g_h1_environment_shader, g_h1_model_shader, g_h1_chicago_shader,
+		g_h1_default_textures[0], g_h1_default_textures[1], g_h1_default_textures[2], g_h1_default_textures[3],
+	};
+	for (int32 i = 0; i < NUMBEROF(resources); i++)
+	{
+		if (resources[i])
+		{
+			resources[i]->Release();
+		}
+	}
+	g_h1_vertex_declaration = NULL;
+	g_h1_vertex_shader = NULL;
+	g_h1_environment_shader = NULL;
+	g_h1_model_shader = NULL;
+	for (auto& entry : g_h1_generic_shaders)
+	{
+		if (entry.second)
+		{
+			entry.second->Release();
+		}
+	}
+	g_h1_generic_shaders.clear();
+	g_h1_chicago_shader = NULL;
+	csmemset(g_h1_default_textures, 0, sizeof(g_h1_default_textures));
+	return;
+}
+
+IDirect3DTexture9* h1_render_default_texture(int32 index)
+{
+	return g_h1_default_textures[index];
+}
+
+IDirect3DVertexDeclaration9* h1_render_vertex_declaration(void)
+{
+	return g_h1_vertex_declaration;
+}
+
+IDirect3DVertexShader9* h1_render_vertex_shader(void)
+{
+	return g_h1_vertex_shader;
+}
+
+void h1_render_set_camera_constants(const real_matrix4x3* object_to_world, bool sky)
+{
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	const s_frame* frame = global_window_parameters_get();
+	const real_matrix4x3* view = &frame->projection.world_to_view;
+	const real32(*projection)[4] = frame->projection.projection_matrix.matrix;
+
+	// halo 4x3 matrices transform row vectors: rows are forward, left, up (scaled) and position
+	real32 world_to_view[4][4] =
+	{
+		{ view->n[0][0] * view->scale, view->n[0][1] * view->scale, view->n[0][2] * view->scale, 0.f },
+		{ view->n[1][0] * view->scale, view->n[1][1] * view->scale, view->n[1][2] * view->scale, 0.f },
+		{ view->n[2][0] * view->scale, view->n[2][1] * view->scale, view->n[2][2] * view->scale, 0.f },
+		{ view->n[3][0], view->n[3][1], view->n[3][2], 1.f },
+	};
+	if (sky)
+	{
+		// the sky is centered on the camera
+		world_to_view[3][0] = 0.f;
+		world_to_view[3][1] = 0.f;
+		world_to_view[3][2] = 0.f;
+	}
+
+	real32 object_to_world_4x4[4][4] =
+	{
+		{ 1.f, 0.f, 0.f, 0.f },
+		{ 0.f, 1.f, 0.f, 0.f },
+		{ 0.f, 0.f, 1.f, 0.f },
+		{ 0.f, 0.f, 0.f, 1.f },
+	};
+	if (object_to_world)
+	{
+		for (int32 r = 0; r < 3; r++)
+		{
+			for (int32 c = 0; c < 3; c++)
+			{
+				object_to_world_4x4[r][c] = object_to_world->n[r][c] * object_to_world->scale;
+			}
+			object_to_world_4x4[3][r] = object_to_world->n[3][r];
+		}
+	}
+
+	real32 object_to_view[4][4];
+	for (int32 r = 0; r < 4; r++)
+	{
+		for (int32 c = 0; c < 4; c++)
+		{
+			object_to_view[r][c] =
+				object_to_world_4x4[r][0] * world_to_view[0][c] +
+				object_to_world_4x4[r][1] * world_to_view[1][c] +
+				object_to_world_4x4[r][2] * world_to_view[2][c] +
+				object_to_world_4x4[r][3] * world_to_view[3][c];
+		}
+	}
+
+	real32 transposed[4][4];
+	for (int32 r = 0; r < 4; r++)
+	{
+		for (int32 c = 0; c < 4; c++)
+		{
+			transposed[c][r] =
+				object_to_view[r][0] * projection[0][c] +
+				object_to_view[r][1] * projection[1][c] +
+				object_to_view[r][2] * projection[2][c] +
+				object_to_view[r][3] * projection[3][c];
+		}
+	}
+	device->SetVertexShaderConstantF(0, &transposed[0][0], 4);
+
+	const real32 view_forward[4] = { object_to_view[0][0], object_to_view[1][0], object_to_view[2][0], object_to_view[3][0] };
+	device->SetVertexShaderConstantF(4, view_forward, 1);
+
+	const real32 depth_range = frame->camera.z_far - frame->camera.z_near;
+	const real32 depth_scale[4] = { depth_range > 0.f ? 1.f / depth_range : 0.f, sky ? 1.f : 0.f, 0.f, 0.f };
+	device->SetVertexShaderConstantF(5, depth_scale, 1);
+
+	// object rotation (columns of the 3x3 as rows for transforming normals) and camera in object space
+	real32 rotation[3][4];
+	for (int32 r = 0; r < 3; r++)
+	{
+		for (int32 c = 0; c < 3; c++)
+		{
+			rotation[r][c] = object_to_world_4x4[c][r];
+		}
+		rotation[r][3] = object_to_world_4x4[3][r];
+	}
+	device->SetVertexShaderConstantF(6, &rotation[0][0], 3);
+
+	real_point3d camera = frame->camera.point;
+	real32 camera_object[4] = { camera.x, camera.y, camera.z, 1.f };
+	if (sky)
+	{
+		camera_object[0] = camera_object[1] = camera_object[2] = 0.f;
+	}
+	else if (object_to_world)
+	{
+		const real32 dx = camera.x - object_to_world->n[3][0];
+		const real32 dy = camera.y - object_to_world->n[3][1];
+		const real32 dz = camera.z - object_to_world->n[3][2];
+		const real32 inverse_scale = object_to_world->scale != 0.f ? 1.f / object_to_world->scale : 1.f;
+		camera_object[0] = (dx * object_to_world->n[0][0] + dy * object_to_world->n[0][1] + dz * object_to_world->n[0][2]) * inverse_scale;
+		camera_object[1] = (dx * object_to_world->n[1][0] + dy * object_to_world->n[1][1] + dz * object_to_world->n[1][2]) * inverse_scale;
+		camera_object[2] = (dx * object_to_world->n[2][0] + dy * object_to_world->n[2][1] + dz * object_to_world->n[2][2]) * inverse_scale;
+	}
+	device->SetVertexShaderConstantF(9, camera_object, 1);
+	return;
+}
+
+e_h1_render_pass h1_render_shader_pass(uint32 shader_group)
+{
+	switch (shader_group)
+	{
+	case 'senv':
+	case 'soso':
+		return _h1_render_pass_opaque;
+	default:
+		return _h1_render_pass_transparent;
+	}
+}
+
+static IDirect3DBaseTexture9* h1_texture_or_default(const h1_tag_reference& reference, int32 default_index)
+{
+	IDirect3DBaseTexture9* texture = h1_bitmap_texture_get(reference);
+	return texture ? texture : g_h1_default_textures[default_index];
+}
+
+static void h1_set_sampler_addressing(DWORD stage, bool clamp_u, bool clamp_v, bool unfiltered)
+{
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	device->SetSamplerState(stage, D3DSAMP_ADDRESSU, clamp_u ? D3DTADDRESS_CLAMP : D3DTADDRESS_WRAP);
+	device->SetSamplerState(stage, D3DSAMP_ADDRESSV, clamp_v ? D3DTADDRESS_CLAMP : D3DTADDRESS_WRAP);
+	device->SetSamplerState(stage, D3DSAMP_MAGFILTER, unfiltered ? D3DTEXF_POINT : D3DTEXF_LINEAR);
+	device->SetSamplerState(stage, D3DSAMP_MINFILTER, unfiltered ? D3DTEXF_POINT : D3DTEXF_ANISOTROPIC);
+	return;
+}
+
+// map transform: (u scale, v scale, u offset, v offset), (cos, sin, rotation center u, v)
+static void h1_map_transform(real32* out, real32 u_scale, real32 v_scale, real32 u_offset, real32 v_offset, real32 rotation_degrees,
+	int16 u_function, real32 u_period, real32 u_phase, real32 u_animation_scale,
+	int16 v_function, real32 v_period, real32 v_phase, real32 v_animation_scale,
+	int16 rotation_function, real32 rotation_period, real32 rotation_phase, real32 rotation_scale, real_point2d rotation_center,
+	real32 game_time)
+{
+	real32 u = u_offset;
+	real32 v = v_offset;
+	real32 rotation = rotation_degrees;
+	if (u_period > 0.f) u += h1_periodic_function(u_function, game_time / u_period + u_phase) * u_animation_scale;
+	if (v_period > 0.f) v += h1_periodic_function(v_function, game_time / v_period + v_phase) * v_animation_scale;
+	if (rotation_period > 0.f) rotation += h1_periodic_function(rotation_function, game_time / rotation_period + rotation_phase) * rotation_scale;
+
+	out[0] = u_scale != 0.f ? u_scale : 1.f;
+	out[1] = v_scale != 0.f ? v_scale : 1.f;
+	out[2] = u;
+	out[3] = v;
+	const real32 radians = DEGREES_TO_RADIANS(rotation);
+	out[4] = cosf(radians);
+	out[5] = sinf(radians);
+	out[6] = rotation_center.x;
+	out[7] = rotation_center.y;
+	return;
+}
+
+bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_render_lighting* lighting, IDirect3DBaseTexture9* lightmap, real32 game_time)
+{
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	void* definition = g_h1_cache_file->tag_get(shader_group, shader_index);
+	if (!definition)
+	{
+		return false;
+	}
+
+	switch (shader_group)
+	{
+	case 'senv':
+	{
+		const h1_senv* shader = (const h1_senv*)definition;
+		// missing detail maps are neutral for their combine function
+		const int32 detail_default = shader->detail_map_function == 1 ? 0 : 1;
+		const int32 micro_default = shader->micro_detail_map_function == 1 ? 0 : 1;
+
+		device->SetPixelShader(g_h1_environment_shader);
+		device->SetTexture(0, h1_texture_or_default(shader->base_map, 0));
+		device->SetTexture(1, h1_texture_or_default(shader->primary_detail_map, detail_default));
+		device->SetTexture(2, h1_texture_or_default(shader->secondary_detail_map, detail_default));
+		device->SetTexture(3, h1_texture_or_default(shader->micro_detail_map, micro_default));
+		device->SetTexture(4, lightmap ? lightmap : g_h1_default_textures[0]);
+		for (DWORD stage = 0; stage < 4; stage++)
+		{
+			h1_set_sampler_addressing(stage, false, false, false);
+		}
+		h1_set_sampler_addressing(4, true, true, false);
+
+		const real32 detail_scales[4] =
+		{
+			shader->primary_detail_map_scale != 0.f ? shader->primary_detail_map_scale : 1.f,
+			shader->secondary_detail_map_scale != 0.f ? shader->secondary_detail_map_scale : 1.f,
+			shader->micro_detail_map_scale != 0.f ? shader->micro_detail_map_scale : 1.f,
+			0.f
+		};
+		const real32 modes[4] =
+		{
+			(real32)shader->type,
+			(real32)shader->detail_map_function,
+			(real32)shader->micro_detail_map_function,
+			TEST_BIT(shader->flags_3, 0) ? 1.f : 0.f	// alpha tested
+		};
+		real32 ambient[4] = { 1.f, 1.f, 1.f, lightmap ? 1.f : 0.f };
+		if (!lightmap && lighting)
+		{
+			ambient[0] = lighting->ambient.red + lighting->light0_color.red;
+			ambient[1] = lighting->ambient.green + lighting->light0_color.green;
+			ambient[2] = lighting->ambient.blue + lighting->light0_color.blue;
+		}
+		device->SetPixelShaderConstantF(0, detail_scales, 1);
+		device->SetPixelShaderConstantF(1, modes, 1);
+		device->SetPixelShaderConstantF(2, ambient, 1);
+		return true;
+	}
+	case 'soso':
+	{
+		const h1_soso* shader = (const h1_soso*)definition;
+		device->SetPixelShader(g_h1_model_shader);
+		device->SetTexture(0, h1_texture_or_default(shader->base_map, 0));
+		IDirect3DBaseTexture9* multipurpose = h1_bitmap_texture_get(shader->multipurpose_map);
+		device->SetTexture(1, multipurpose ? multipurpose : g_h1_default_textures[2]);
+		device->SetTexture(2, h1_texture_or_default(shader->detail_map, shader->detail_function == 1 ? 0 : 1));
+		for (DWORD stage = 0; stage < 3; stage++)
+		{
+			h1_set_sampler_addressing(stage, false, false, false);
+		}
+
+		const real32 detail_scale = shader->detail_map_scale != 0.f ? shader->detail_map_scale : 1.f;
+		const real32 map_scale[4] =
+		{
+			shader->map_u_scale != 0.f ? shader->map_u_scale : 1.f,
+			shader->map_v_scale != 0.f ? shader->map_v_scale : 1.f,
+			detail_scale,
+			detail_scale * (shader->detail_map_v_scale != 0.f ? shader->detail_map_v_scale : 1.f),
+		};
+		// flags: detail after reflection, two sided, not alpha tested, alpha blended decal, true atmospheric fog, disable two sided culling
+		const bool two_sided = TEST_BIT(shader->flags_3, 1);
+		const real32 modes[4] =
+		{
+			(real32)shader->detail_function,
+			TEST_BIT(shader->flags_3, 2) ? 0.f : 1.f,
+			multipurpose ? 1.f : 0.f,
+			shader->power > 0.f ? 1.f : 0.f,
+		};
+		s_h1_render_lighting default_lighting = { { 0.4f, 0.4f, 0.4f }, { -0.577f, -0.577f, -0.577f }, { 0.8f, 0.8f, 0.8f }, { 0.f, 0.f, 1.f }, { 0.2f, 0.2f, 0.25f } };
+		const s_h1_render_lighting* light = lighting ? lighting : &default_lighting;
+		const real32 constants[5][4] =
+		{
+			{ light->ambient.red, light->ambient.green, light->ambient.blue, 1.f },
+			{ light->light0_direction.i, light->light0_direction.j, light->light0_direction.k, 0.f },
+			{ light->light0_color.red, light->light0_color.green, light->light0_color.blue, 1.f },
+			{ light->light1_direction.i, light->light1_direction.j, light->light1_direction.k, 0.f },
+			{ light->light1_color.red, light->light1_color.green, light->light1_color.blue, 1.f },
+		};
+		device->SetPixelShaderConstantF(0, map_scale, 1);
+		device->SetPixelShaderConstantF(1, modes, 1);
+		device->SetPixelShaderConstantF(2, &constants[0][0], 5);
+		device->SetRenderState(D3DRS_CULLMODE, two_sided ? D3DCULL_NONE : D3DCULL_CCW);
+		return true;
+	}
+	case 'sotr':
+	{
+		const h1_sotr* shader = (const h1_sotr*)definition;
+		IDirect3DPixelShader9* pixel_shader = h1_generic_shader_get(shader_index, shader);
+		if (!pixel_shader)
+		{
+			return false;
+		}
+		device->SetPixelShader(pixel_shader);
+
+		real32 transforms[8][4] = {};
+		for (int32 i = 0; i < k_h1_maximum_shader_maps; i++)
+		{
+			const h1_sotr_maps* map = g_h1_cache_file->block_get(shader->maps, i);
+			if (!map)
+			{
+				device->SetTexture(i, g_h1_default_textures[0]);
+				transforms[i * 2][0] = transforms[i * 2][1] = 1.f;
+				transforms[i * 2 + 1][0] = 1.f;
+				continue;
+			}
+
+			const bool cube = i == 0 && shader->first_map_type != 0;
+			IDirect3DBaseTexture9* texture = h1_bitmap_texture_get(map->map);
+			device->SetTexture(cube ? 4 : i, texture ? texture : (cube ? NULL : g_h1_default_textures[0]));
+			if (cube)
+			{
+				device->SetTexture(0, g_h1_default_textures[0]);
+			}
+			// map flags: unfiltered, u clamped, v clamped
+			h1_set_sampler_addressing(cube ? 4 : i, TEST_BIT(map->flags, 1), TEST_BIT(map->flags, 2), TEST_BIT(map->flags, 0));
+			h1_map_transform(&transforms[i * 2][0], map->map_u_scale, map->map_v_scale, map->map_u_offset, map->map_v_offset, map->map_rotation,
+				map->u_animation_function, map->u_animation_period, map->u_animation_phase, map->u_animation_scale,
+				map->v_animation_function, map->v_animation_period, map->v_animation_phase, map->v_animation_scale,
+				map->rotation_animation_function, map->rotation_animation_period, map->rotation_animation_phase, map->rotation_animation_scale, map->rotation_animation_center,
+				game_time);
+		}
+		device->SetPixelShaderConstantF(0, &transforms[0][0], 8);
+
+		const int32 stage_count = MIN(shader->stages.count, (int32)k_h1_maximum_generic_stages);
+		real32 stage_constants[k_h1_maximum_generic_stages * 2][4] = {};
+		for (int32 i = 0; i < stage_count; i++)
+		{
+			const h1_sotr_stages* stage = g_h1_cache_file->block_get(shader->stages, i);
+
+			// constant color 0 animates between its bounds
+			real32 t = 0.f;
+			if (stage->color0_animation_period > 0.f)
+			{
+				t = h1_periodic_function(stage->color0_animation_function, game_time / stage->color0_animation_period);
+			}
+			const real_argb_color* lower = &stage->color0_animation_lower_bound;
+			const real_argb_color* upper = &stage->color0_animation_upper_bound;
+			stage_constants[i * 2][0] = lower->red + (upper->red - lower->red) * t;
+			stage_constants[i * 2][1] = lower->green + (upper->green - lower->green) * t;
+			stage_constants[i * 2][2] = lower->blue + (upper->blue - lower->blue) * t;
+			stage_constants[i * 2][3] = lower->alpha + (upper->alpha - lower->alpha) * t;
+			stage_constants[i * 2 + 1][0] = stage->color1.red;
+			stage_constants[i * 2 + 1][1] = stage->color1.green;
+			stage_constants[i * 2 + 1][2] = stage->color1.blue;
+			stage_constants[i * 2 + 1][3] = stage->color1.alpha;
+		}
+		device->SetPixelShaderConstantF(8, &stage_constants[0][0], k_h1_maximum_generic_stages * 2);
+
+		const real32 settings[4] = { (real32)stage_count, shader->first_map_type != 0 ? 1.f : 0.f, (real32)shader->framebuffer_fade_mode, 0.f };
+		device->SetPixelShaderConstantF(71, settings, 1);
+		const real32 vertex_light[4] = { 1.f, 1.f, 1.f, 1.f };
+		device->SetPixelShaderConstantF(72, vertex_light, 1);
+
+		// flags: alpha tested, decal, two sided, first map is in screenspace, draw before water, ignore effect, scale first map with distance, numeric
+		device->SetRenderState(D3DRS_CULLMODE, TEST_BIT(shader->flags_3, 2) ? D3DCULL_NONE : D3DCULL_CCW);
+		h1_bind_framebuffer_blend(shader->framebuffer_blend_function);
+		return true;
+	}
+	case 'schi':
+	case 'scex':
+	{
+		// shader_transparent_chicago_extended keeps its 4 stage maps at the same place as chicago keeps its maps
+		const h1_schi* shader = (const h1_schi*)definition;
+		device->SetPixelShader(g_h1_chicago_shader);
+
+		const int32 map_count = MIN(shader->maps.count, (int32)k_h1_maximum_shader_maps);
+		real32 transforms[8][4] = {};
+		real32 functions[4][4] = {};
+		for (int32 i = 0; i < k_h1_maximum_shader_maps; i++)
+		{
+			const h1_schi_maps* map = i < map_count ? g_h1_cache_file->block_get(shader->maps, i) : NULL;
+			if (!map)
+			{
+				device->SetTexture(i, g_h1_default_textures[0]);
+				transforms[i * 2][0] = transforms[i * 2][1] = 1.f;
+				transforms[i * 2 + 1][0] = 1.f;
+				continue;
+			}
+
+			const bool cube = i == 0 && shader->first_map_type != 0;
+			IDirect3DBaseTexture9* texture = h1_bitmap_texture_get(map->map);
+			device->SetTexture(cube ? 4 : i, texture ? texture : (cube ? NULL : g_h1_default_textures[0]));
+			if (cube)
+			{
+				device->SetTexture(0, g_h1_default_textures[0]);
+			}
+			// map flags: unfiltered, alpha replicate, u clamped, v clamped
+			h1_set_sampler_addressing(cube ? 4 : i, TEST_BIT(map->flags, 2), TEST_BIT(map->flags, 3), TEST_BIT(map->flags, 0));
+			h1_map_transform(&transforms[i * 2][0], map->map_u_scale, map->map_v_scale, map->map_u_offset, map->map_v_offset, map->map_rotation,
+				map->u_animation_function, map->u_animation_period, map->u_animation_phase, map->u_animation_scale,
+				map->v_animation_function, map->v_animation_period, map->v_animation_phase, map->v_animation_scale,
+				map->rotation_animation_function, map->rotation_animation_period, map->rotation_animation_phase, map->rotation_animation_scale, map->rotation_animation_center,
+				game_time);
+			functions[i][0] = map->color_function;
+			functions[i][1] = map->alpha_function;
+			functions[i][2] = TEST_BIT(map->flags, 1) ? 1.f : 0.f;
+		}
+		device->SetPixelShaderConstantF(0, &transforms[0][0], 8);
+		device->SetPixelShaderConstantF(8, &functions[0][0], 4);
+		const real32 settings[4] = { (real32)MAX(map_count, 1), shader->first_map_type != 0 ? 1.f : 0.f, 0.f, 0.f };
+		device->SetPixelShaderConstantF(12, settings, 1);
+
+		// flags: alpha tested, decal, two sided, first map is in screenspace, draw before water, ignore effect, scale first map with distance, numeric
+		device->SetRenderState(D3DRS_CULLMODE, TEST_BIT(shader->flags_3, 2) ? D3DCULL_NONE : D3DCULL_CCW);
+		h1_bind_framebuffer_blend(shader->framebuffer_blend_function);
+		return true;
+	}
+	default:
+		return false;
+	}
+}
+
+void h1_render_shader_unbind(void)
+{
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+	device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+	device->SetRenderState(D3DRS_ZWRITEENABLE, TRUE);
+	device->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+	device->SetRenderState(D3DRS_COLORWRITEENABLE1, 0xF);
+	return;
+}
+
+/* private code */
+
+static void h1_bind_framebuffer_blend(int16 function)
+{
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+	device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+	// transparent geometry never writes halo 2's depth target
+	device->SetRenderState(D3DRS_COLORWRITEENABLE1, 0);
+	device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+
+	switch (function)
+	{
+	case _h1_framebuffer_blend_alpha_blend:
+		device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+		device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+		break;
+	case _h1_framebuffer_blend_multiply:
+		device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_DESTCOLOR);
+		device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ZERO);
+		break;
+	case _h1_framebuffer_blend_double_multiply:
+		device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_DESTCOLOR);
+		device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_SRCCOLOR);
+		break;
+	case _h1_framebuffer_blend_add:
+		device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+		device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
+		break;
+	case _h1_framebuffer_blend_subtract:
+		device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+		device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
+		device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_REVSUBTRACT);
+		break;
+	case _h1_framebuffer_blend_component_min:
+		device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+		device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
+		device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_MIN);
+		break;
+	case _h1_framebuffer_blend_component_max:
+		device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+		device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
+		device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_MAX);
+		break;
+	case _h1_framebuffer_blend_alpha_multiply_add:
+	default:
+		device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+		device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+		break;
+	}
+	return;
+}
+
+// Halo 1 periodic functions over x (in periods)
+static real32 h1_periodic_function(int16 function, real32 x)
+{
+	const real32 t = x - floorf(x);
+	switch (function)
+	{
+	case 0: return 1.f;											// one
+	case 1: return 0.f;											// zero
+	case 2: case 3: return 0.5f - 0.5f * cosf(t * 2.f * _pi);	// cosine
+	case 4: case 5: return t < 0.5f ? 2.f * t : 2.f - 2.f * t;	// diagonal wave
+	case 6: case 7: return t;									// slide
+	case 8: case 9: case 10: case 11:							// noise, jitter, wander, spark
+	{
+		const real32 s = sinf(x * 12.9898f) * 43758.5453f;
+		return s - floorf(s);
+	}
+	default:
+		return 0.f;
+	}
+}
+
+static IDirect3DPixelShader9* h1_compile_pixel_shader(const char* source, const char* name)
+{
+	LPD3DXBUFFER code = NULL;
+	LPD3DXBUFFER errors = NULL;
+	IDirect3DPixelShader9* shader = NULL;
+	if (SUCCEEDED(D3DXCompileShader(source, (UINT)strlen(source), NULL, NULL, "main", "ps_3_0", 0, &code, &errors, NULL)))
+	{
+		rasterizer_dx9_device_get_interface()->CreatePixelShader((const DWORD*)code->GetBufferPointer(), &shader);
+		code->Release();
+	}
+	else if (errors)
+	{
+		h1_log("shaders: %s pixel shader: %s", name, (const char*)errors->GetBufferPointer());
+	}
+	if (errors) errors->Release();
+	return shader;
+}
+
+static IDirect3DTexture9* h1_solid_texture(uint32 color)
+{
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	const bool use_d3d9_ex = rasterizer_globals_get()->use_d3d9_ex;
+	IDirect3DTexture9* texture = NULL;
+	IDirect3DTexture9* staging = NULL;
+	if (FAILED(device->CreateTexture(1, 1, 1, 0, D3DFMT_A8R8G8B8, use_d3d9_ex ? D3DPOOL_DEFAULT : D3DPOOL_MANAGED, &texture, NULL)))
+	{
+		return NULL;
+	}
+	IDirect3DTexture9* target = texture;
+	if (use_d3d9_ex && SUCCEEDED(device->CreateTexture(1, 1, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, &staging, NULL)))
+	{
+		target = staging;
+	}
+	D3DLOCKED_RECT locked;
+	if (SUCCEEDED(target->LockRect(0, &locked, NULL, 0)))
+	{
+		*(uint32*)locked.pBits = color;
+		target->UnlockRect(0);
+	}
+	if (staging)
+	{
+		device->UpdateTexture(staging, texture);
+		staging->Release();
+	}
+	return texture;
+}
+
+// expression for a combiner input (before its mapping)
+static std::string h1_generic_input(int16 source, bool alpha)
+{
+	static const char* const k_registers[] = { "m0", "m1", "m2", "m3", "v0", "v1", "r0", "r1", "k0", "k1" };
+	if (source == 0) return alpha ? "0.0f" : "float3(0.0f, 0.0f, 0.0f)";
+	if (source == 1) return alpha ? "1.0f" : "float3(1.0f, 1.0f, 1.0f)";
+	if (source == 2) return alpha ? "0.5f" : "float3(0.5f, 0.5f, 0.5f)";
+	if (source == 3) return alpha ? "-1.0f" : "float3(-1.0f, -1.0f, -1.0f)";
+	if (source == 4) return alpha ? "-0.5f" : "float3(-0.5f, -0.5f, -0.5f)";
+
+	// 5-14 first half, 15-24 second half: color inputs use rgb then alpha, alpha inputs use alpha then blue
+	const bool second_half = source >= 15;
+	const int16 index = second_half ? source - 15 : source - 5;
+	if (!VALID_INDEX(index, NUMBEROF(k_registers)))
+	{
+		return alpha ? "0.0f" : "float3(0.0f, 0.0f, 0.0f)";
+	}
+
+	const std::string reg = k_registers[index];
+	if (alpha)
+	{
+		return reg + (second_half ? ".b" : ".a");
+	}
+	return reg + (second_half ? ".aaa" : ".rgb");
+}
+
+static std::string h1_generic_input_mapping(const std::string& x, int16 mapping)
+{
+	switch (mapping)
+	{
+	case 0: return "saturate(" + x + ")";
+	case 1: return "(1.0f - saturate(" + x + "))";
+	case 2: return "(2.0f * saturate(" + x + ") - 1.0f)";
+	case 3: return "(1.0f - 2.0f * saturate(" + x + "))";
+	case 4: return "(saturate(" + x + ") - 0.5f)";
+	case 5: return "(0.5f - saturate(" + x + "))";
+	case 6: return "(" + x + ")";
+	default: return "(-(" + x + "))";
+	}
+}
+
+static std::string h1_generic_output_mapping(const std::string& x, int16 mapping)
+{
+	std::string result;
+	switch (mapping)
+	{
+	case 1: result = "(" + x + ") * 0.5f"; break;
+	case 2: result = "(" + x + ") * 2.0f"; break;
+	case 3: result = "(" + x + ") * 4.0f"; break;
+	case 4: result = "((" + x + ") - 0.5f)"; break;
+	case 5: result = "(((" + x + ") - 0.5f) * 2.0f)"; break;
+	default: result = "(" + x + ")"; break;
+	}
+	return "clamp(" + result + ", -1.0f, 1.0f)";
+}
+
+static const char* h1_generic_output_register(int16 output)
+{
+	static const char* const k_outputs[] = { NULL, "r0", "r1", "v0", "v1", "m0", "m1", "m2", "m3" };
+	return VALID_INDEX(output, NUMBEROF(k_outputs)) ? k_outputs[output] : NULL;
+}
+
+static IDirect3DPixelShader9* h1_generic_shader_get(datum shader_index, const h1_sotr* shader)
+{
+	auto found = g_h1_generic_shaders.find(shader_index);
+	if (found != g_h1_generic_shaders.end())
+	{
+		return found->second;
+	}
+
+	std::string source = k_h1_generic_pixel_shader_header;
+	char line[256];
+	const int32 stage_count = MIN(shader->stages.count, (int32)k_h1_maximum_generic_stages);
+	for (int32 i = 0; i < stage_count; i++)
+	{
+		const h1_sotr_stages* stage = g_h1_cache_file->block_get(shader->stages, i);
+		sprintf_s(line, "\t// stage %d\n\tk0 = stage_constants[%d];\n\tk1 = stage_constants[%d];\n", i, i * 2, i * 2 + 1);
+		source += line;
+
+		const std::string ca = h1_generic_input_mapping(h1_generic_input(stage->input_a, false), stage->input_a_mapping);
+		const std::string cb = h1_generic_input_mapping(h1_generic_input(stage->input_b, false), stage->input_b_mapping);
+		const std::string cc = h1_generic_input_mapping(h1_generic_input(stage->input_c, false), stage->input_c_mapping);
+		const std::string cd = h1_generic_input_mapping(h1_generic_input(stage->input_d, false), stage->input_d_mapping);
+		const std::string aa = h1_generic_input_mapping(h1_generic_input(stage->input_a_2, true), stage->input_a_mapping_2);
+		const std::string ab = h1_generic_input_mapping(h1_generic_input(stage->input_b_2, true), stage->input_b_mapping_2);
+		const std::string ac = h1_generic_input_mapping(h1_generic_input(stage->input_c_2, true), stage->input_c_mapping_2);
+		const std::string ad = h1_generic_input_mapping(h1_generic_input(stage->input_d_2, true), stage->input_d_mapping_2);
+
+		// output functions: multiply or dot product
+		source += "\tcab = " + (stage->output_ab_function ? "dot(" + ca + ", " + cb + ").xxx" : ca + " * " + cb) + ";\n";
+		source += "\tccd = " + (stage->output_cd_function ? "dot(" + cc + ", " + cd + ").xxx" : cc + " * " + cd) + ";\n";
+		// flags: color mux, alpha mux (select by spare 0 alpha)
+		source += TEST_BIT(stage->flags, 0) ? "\tcsum = r0.a >= 0.5f ? ccd : cab;\n" : "\tcsum = cab + ccd;\n";
+		source += "\taab = " + aa + " * " + ab + ";\n";
+		source += "\tacd = " + ac + " * " + ad + ";\n";
+		source += TEST_BIT(stage->flags, 1) ? "\tasum = r0.a >= 0.5f ? acd : aab;\n" : "\tasum = aab + acd;\n";
+
+		source += "\tcab = " + h1_generic_output_mapping("cab", stage->output_mapping) + ";\n";
+		source += "\tccd = " + h1_generic_output_mapping("ccd", stage->output_mapping) + ";\n";
+		source += "\tcsum = " + h1_generic_output_mapping("csum", stage->output_mapping) + ";\n";
+		source += "\taab = " + h1_generic_output_mapping("aab", stage->output_mapping_2) + ";\n";
+		source += "\tacd = " + h1_generic_output_mapping("acd", stage->output_mapping_2) + ";\n";
+		source += "\tasum = " + h1_generic_output_mapping("asum", stage->output_mapping_2) + ";\n";
+
+		// every output is computed from the stage inputs before any register is written
+		const char* color_ab = h1_generic_output_register(stage->output_ab);
+		const char* color_cd = h1_generic_output_register(stage->output_cd);
+		const char* color_sum = h1_generic_output_register(stage->output_ab_cd_mux_sum);
+		const char* alpha_ab = h1_generic_output_register(stage->output_ab_2);
+		const char* alpha_cd = h1_generic_output_register(stage->output_cd_2);
+		const char* alpha_sum = h1_generic_output_register(stage->output_ab_cd_mux_sum_2);
+		if (color_ab) { sprintf_s(line, "\t%s.rgb = cab;\n", color_ab); source += line; }
+		if (color_cd) { sprintf_s(line, "\t%s.rgb = ccd;\n", color_cd); source += line; }
+		if (color_sum) { sprintf_s(line, "\t%s.rgb = csum;\n", color_sum); source += line; }
+		if (alpha_ab) { sprintf_s(line, "\t%s.a = aab;\n", alpha_ab); source += line; }
+		if (alpha_cd) { sprintf_s(line, "\t%s.a = acd;\n", alpha_cd); source += line; }
+		if (alpha_sum) { sprintf_s(line, "\t%s.a = asum;\n", alpha_sum); source += line; }
+	}
+	source += k_h1_generic_pixel_shader_footer;
+
+	IDirect3DPixelShader9* pixel_shader = h1_compile_pixel_shader(source.c_str(), g_h1_cache_file->tag_name_get(shader_index));
+	g_h1_generic_shaders[shader_index] = pixel_shader;
+	return pixel_shader;
+}

@@ -117,6 +117,7 @@
 #include "objects/widgets/antenna.h"
 #include "physics/physics_constants.h"
 #include "units/unit_action_system.h"
+#include "halo1/h1_map_loader.h"
 
 /* typedefs */
 
@@ -744,6 +745,7 @@ static void h2mod_apply_hooks(void)
 		new_hud_draw_apply_patches();
 		user_interface_utilities_apply_patches();
 		scenario_apply_patches();
+		h1_maps_apply_patches();
 
 		
 	}
