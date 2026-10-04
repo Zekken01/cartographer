@@ -122,6 +122,7 @@ sampler2D lightmap : register(s4);
 float4 detail_scales : register(c0);	// primary, secondary, micro
 float4 modes : register(c1);			// type, detail function, micro detail function, alpha tested
 float4 ambient : register(c2);			// lightmap missing ambient color, w: has lightmap
+float4 debug_mode : register(c3);		// x: 1 flat color, 2 base map only, 3 lightmap only, 4 detail only
 
 PS_OUTPUT main(PS_INPUT input)
 {
@@ -144,6 +145,12 @@ PS_OUTPUT main(PS_INPUT input)
 
 	PS_OUTPUT output;
 	output.color = float4(color * light, 1.0f);
+	if (debug_mode.x > 0.5f && debug_mode.x < 1.5f) output.color = float4(1.0f, 0.0f, 1.0f, 1.0f);
+	else if (debug_mode.x > 1.5f && debug_mode.x < 2.5f) output.color = float4(base.rgb, 1.0f);
+	else if (debug_mode.x > 2.5f && debug_mode.x < 3.5f) output.color = float4(light, 1.0f);
+	else if (debug_mode.x > 3.5f && debug_mode.x < 4.5f) output.color = float4(detail, 1.0f);
+	else if (debug_mode.x > 4.5f && debug_mode.x < 5.5f) output.color = float4(micro.rgb, 1.0f);
+	else if (debug_mode.x > 5.5f) output.color = float4(debug_mode.yzw, 1.0f);
 	output.depth = pack_depth(input.depth);
 	return output;
 }
@@ -316,6 +323,12 @@ PS_OUTPUT main(PS_INPUT input)
 
 /* globals */
 
+int32 g_h1_render_debug_mode = 0;
+bool g_h1_render_debug_camera = false;
+real_point3d g_h1_render_debug_camera_position = {};
+real32 g_h1_render_debug_camera_yaw = 0.f;
+real32 g_h1_render_debug_camera_pitch = 0.f;
+
 static IDirect3DVertexDeclaration9* g_h1_vertex_declaration = NULL;
 static IDirect3DVertexShader9* g_h1_vertex_shader = NULL;
 static IDirect3DPixelShader9* g_h1_environment_shader = NULL;
@@ -434,6 +447,29 @@ void h1_render_set_camera_constants(const real_matrix4x3* object_to_world, bool 
 		{ view->n[2][0] * view->scale, view->n[2][1] * view->scale, view->n[2][2] * view->scale, 0.f },
 		{ view->n[3][0], view->n[3][1], view->n[3][2], 1.f },
 	};
+	real_point3d camera_point = frame->camera.point;
+	if (g_h1_render_debug_camera)
+	{
+		// development: fixed camera, halo 2 view space is x right, y up, z backward
+		const real32 cy = cosf(g_h1_render_debug_camera_yaw), sy = sinf(g_h1_render_debug_camera_yaw);
+		const real32 cp = cosf(g_h1_render_debug_camera_pitch), sp = sinf(g_h1_render_debug_camera_pitch);
+		const real32 forward[3] = { cy * cp, sy * cp, sp };
+		const real32 left[3] = { -sy, cy, 0.f };
+		const real32 up[3] = { -cy * sp, -sy * sp, cp };
+		const real32 eye[3] = { g_h1_render_debug_camera_position.x, g_h1_render_debug_camera_position.y, g_h1_render_debug_camera_position.z };
+		for (int32 i = 0; i < 3; i++)
+		{
+			world_to_view[i][0] = -left[i];
+			world_to_view[i][1] = up[i];
+			world_to_view[i][2] = -forward[i];
+			world_to_view[i][3] = 0.f;
+		}
+		world_to_view[3][0] = (eye[0] * left[0] + eye[1] * left[1] + eye[2] * left[2]);
+		world_to_view[3][1] = -(eye[0] * up[0] + eye[1] * up[1] + eye[2] * up[2]);
+		world_to_view[3][2] = (eye[0] * forward[0] + eye[1] * forward[1] + eye[2] * forward[2]);
+		world_to_view[3][3] = 1.f;
+		camera_point = g_h1_render_debug_camera_position;
+	}
 	if (sky)
 	{
 		// the sky is centered on the camera
@@ -488,7 +524,8 @@ void h1_render_set_camera_constants(const real_matrix4x3* object_to_world, bool 
 	}
 	device->SetVertexShaderConstantF(0, &transposed[0][0], 4);
 
-	const real32 view_forward[4] = { object_to_view[0][0], object_to_view[1][0], object_to_view[2][0], object_to_view[3][0] };
+	// halo 2 view space looks down -z
+	const real32 view_forward[4] = { -object_to_view[0][2], -object_to_view[1][2], -object_to_view[2][2], -object_to_view[3][2] };
 	device->SetVertexShaderConstantF(4, view_forward, 1);
 
 	const real32 depth_range = frame->camera.z_far - frame->camera.z_near;
@@ -507,7 +544,7 @@ void h1_render_set_camera_constants(const real_matrix4x3* object_to_world, bool 
 	}
 	device->SetVertexShaderConstantF(6, &rotation[0][0], 3);
 
-	real_point3d camera = frame->camera.point;
+	real_point3d camera = camera_point;
 	real32 camera_object[4] = { camera.x, camera.y, camera.z, 1.f };
 	if (sky)
 	{
@@ -635,6 +672,8 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 		device->SetPixelShaderConstantF(0, detail_scales, 1);
 		device->SetPixelShaderConstantF(1, modes, 1);
 		device->SetPixelShaderConstantF(2, ambient, 1);
+		const real32 debug_mode[4] = { (real32)g_h1_render_debug_mode, 0.f, 0.f, 0.f };
+		device->SetPixelShaderConstantF(3, debug_mode, 1);
 		return true;
 	}
 	case 'soso':

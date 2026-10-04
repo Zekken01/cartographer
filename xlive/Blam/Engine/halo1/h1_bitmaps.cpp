@@ -243,7 +243,15 @@ static IDirect3DBaseTexture9* h1_bitmap_texture_create(const h1_bitm_bitmaps* bi
 
 	const uint32 width = (uint32)bitmap->width;
 	const uint32 height = (uint32)bitmap->height;
-	const uint32 level_count = (uint32)bitmap->mipmap_count + 1;
+	uint32 level_count = (uint32)bitmap->mipmap_count + 1;
+	if (info.block_compressed)
+	{
+		// xbox caches leave dxt mip levels below 4x4 empty (black), the hardware never samples them
+		while (level_count > 1 && (MAX(1u, width >> (level_count - 1)) < 4 || MAX(1u, height >> (level_count - 1)) < 4))
+		{
+			level_count--;
+		}
+	}
 	const uint32 face_count = bitmap->type == _h1_bitmap_type_cube_map ? 6 : 1;
 
 	const uint8* file_data = g_h1_cache_file->file_data();

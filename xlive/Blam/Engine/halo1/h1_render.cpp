@@ -33,6 +33,7 @@ struct s_h1_structure_draw
 	int32 vertex_count;
 	int32 first_index;
 	int32 triangle_count;
+	int32 lighting_material_index;
 };
 
 struct s_h1_scenery_instance
@@ -67,6 +68,7 @@ struct s_h1_render_globals
 	bool failed;
 	datum lightmap_bitmap_tag;
 	datum sky_model_index;
+	real_rgb_color sky_fog_color;
 	s_h1_render_lighting lighting;
 	IDirect3DVertexBuffer9* vertex_buffer;
 	IDirect3DIndexBuffer9* index_buffer;
@@ -79,6 +81,7 @@ struct s_h1_render_globals
 
 /* globals */
 
+extern int32 g_h1_render_debug_mode;
 static s_h1_render_globals g_h1_render{};
 
 /* prototypes */
@@ -103,7 +106,11 @@ void h1_render_structure_opaque(void)
 		return;
 	}
 
-	h1_render_structure_pass(_h1_render_pass_opaque);
+	if (g_h1_render_debug_mode != 9)
+	{
+		h1_render_structure_pass(_h1_render_pass_opaque);
+	}
+
 
 	const real32 game_time = h1_render_game_time();
 	for (const s_h1_scenery_instance& instance : g_h1_render.scenery)
@@ -148,6 +155,35 @@ bool h1_render_sky(void)
 		// the sky sits on the far plane behind everything already drawn
 		device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
 		device->SetRenderState(D3DRS_COLORWRITEENABLE1, 0);
+
+		// halo 1 clears to the sky's fog color before drawing the sky, the sky layers blend over it
+		{
+			D3DVIEWPORT9 viewport;
+			device->GetViewport(&viewport);
+			const real_rgb_color* color = &g_h1_render.sky_fog_color;
+			const D3DCOLOR diffuse = D3DCOLOR_COLORVALUE(color->red, color->green, color->blue, 1.f);
+			struct { real32 x, y, z, rhw; D3DCOLOR color; } quad[4] =
+			{
+				{ (real32)viewport.X - 0.5f, (real32)viewport.Y - 0.5f, 0.99999f, 1.f, diffuse },
+				{ (real32)(viewport.X + viewport.Width) - 0.5f, (real32)viewport.Y - 0.5f, 0.99999f, 1.f, diffuse },
+				{ (real32)viewport.X - 0.5f, (real32)(viewport.Y + viewport.Height) - 0.5f, 0.99999f, 1.f, diffuse },
+				{ (real32)(viewport.X + viewport.Width) - 0.5f, (real32)(viewport.Y + viewport.Height) - 0.5f, 0.99999f, 1.f, diffuse },
+			};
+			device->SetVertexShader(NULL);
+			device->SetPixelShader(NULL);
+			device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+			device->SetTexture(0, NULL);
+			device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+			device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+			device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+			device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+			device->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+			device->SetRenderState(D3DRS_LIGHTING, FALSE);
+			device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+			device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(quad[0]));
+			device->SetVertexDeclaration(h1_render_vertex_declaration());
+			device->SetVertexShader(h1_render_vertex_shader());
+		}
 
 		const real32 game_time = h1_render_game_time();
 		s_h1_render_lighting sky_lighting = {};
@@ -250,8 +286,41 @@ static void h1_render_end(void)
 	return;
 }
 
+extern bool g_h1_render_debug_camera;
+extern real_point3d g_h1_render_debug_camera_position;
+extern real32 g_h1_render_debug_camera_yaw;
+extern real32 g_h1_render_debug_camera_pitch;
+
 static bool h1_render_initialize(void)
 {
+	// development: h1_debug.txt lines "mode <1 flat, 2 base, 3 lightmap, 4 detail>" and "camera x y z yaw pitch" (degrees)
+	{
+		g_h1_render_debug_mode = 0;
+		g_h1_render_debug_camera = false;
+		FILE* file = _wfsopen(L"h1_debug.txt", L"r", _SH_DENYNO);
+		if (file)
+		{
+			char line[128];
+			while (fgets(line, sizeof(line), file))
+			{
+				real32 x, y, z, yaw, pitch;
+				int32 mode;
+				if (sscanf_s(line, "mode %d", &mode) == 1)
+				{
+					g_h1_render_debug_mode = mode;
+				}
+				else if (sscanf_s(line, "camera %f %f %f %f %f", &x, &y, &z, &yaw, &pitch) == 5)
+				{
+					g_h1_render_debug_camera = true;
+					g_h1_render_debug_camera_position = { x, y, z };
+					g_h1_render_debug_camera_yaw = DEGREES_TO_RADIANS(yaw);
+					g_h1_render_debug_camera_pitch = DEGREES_TO_RADIANS(pitch);
+				}
+			}
+			fclose(file);
+		}
+	}
+
 	if (!h1_render_shaders_initialize())
 	{
 		h1_log("render: failed to create shaders");
@@ -391,6 +460,7 @@ static bool h1_render_structure_initialize(void)
 			draw.vertex_count = material_vertex_count;
 			draw.first_index = index_cursor;
 			draw.triangle_count = 0;
+			draw.lighting_material_index = lighting_material_index;
 
 			for (int32 s = 0; s < material->surface_count; s++)
 			{
@@ -454,6 +524,7 @@ static void h1_render_scenery_initialize(void)
 		if (sky)
 		{
 			g_h1_render.sky_model_index = sky->model.index;
+			g_h1_render.sky_fog_color = sky->outdoor_fog_color;
 		}
 	}
 
@@ -503,8 +574,34 @@ static void h1_render_structure_pass(e_h1_render_pass pass)
 			h1_bitmap_texture_get(g_h1_render.lightmap_bitmap_tag, draw.lightmap_bitmap_index) :
 			NULL;
 
-		if (h1_render_shader_bind(draw.shader_group, draw.shader_index, &g_h1_render.lighting, lightmap, game_time))
+		// surfaces without a lightmap use their material's radiosity lighting
+		s_h1_render_lighting material_lighting = g_h1_render.lighting;
+		if (!lightmap && VALID_INDEX(draw.lighting_material_index, (int32)g_h1_render.lighting_materials.size()))
 		{
+			const s_h1_lighting_material* material = &g_h1_render.lighting_materials[draw.lighting_material_index];
+			material_lighting.ambient = material->ambient;
+			material_lighting.light0_color = material->light0_color;
+			material_lighting.light0_direction = material->light0_direction;
+			material_lighting.light1_color = material->light1_color;
+			material_lighting.light1_direction = material->light1_direction;
+		}
+
+		if (h1_render_shader_bind(draw.shader_group, draw.shader_index, &material_lighting, lightmap, game_time))
+		{
+			if (g_h1_render_debug_mode == 6)
+			{
+				// development: a distinct color per draw
+				const int32 draw_index = (int32)(&draw - g_h1_render.draws.data());
+				const real32 debug_color[4] = { 6.f, (real32)(((draw_index + 1) * 67) % 256) / 255.f, (real32)(((draw_index + 1) * 151) % 256) / 255.f, (real32)(((draw_index + 1) * 211) % 256) / 255.f };
+				device->SetPixelShaderConstantF(3, debug_color, 1);
+				static bool x_logged = false;
+				if (!x_logged && draw_index == (int32)g_h1_render.draws.size() - 1) x_logged = true;
+				if (!x_logged)
+				{
+					h1_log("draw %d: %.4s %s lightmap %d triangles %d color %d %d %d", draw_index, (const char*)&draw.shader_group, g_h1_cache_file->tag_name_get(draw.shader_index), draw.lightmap_bitmap_index, draw.triangle_count,
+						(draw_index * 67) % 256, (draw_index * 151) % 256, (draw_index * 211) % 256);
+				}
+			}
 			device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, draw.base_vertex, 0, draw.vertex_count, draw.first_index, draw.triangle_count);
 			h1_render_shader_unbind();
 		}
