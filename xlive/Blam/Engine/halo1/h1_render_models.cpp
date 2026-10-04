@@ -253,10 +253,13 @@ void h1_render_model_draw(datum model_tag_index, int16 permutation, const real_m
 				continue;
 			}
 
-			if (h1_render_shader_bind(shader_reference->shader.group_tag, shader_reference->shader.index, lighting, NULL, game_time))
+			for (int32 subpass = 0; subpass < h1_render_shader_subpass_count(shader_reference->shader.group_tag); subpass++)
 			{
-				device->DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP, part->base_vertex, 0, part->vertex_count, part->first_index, part->index_count - 2);
-				h1_render_shader_unbind();
+				if (h1_render_shader_bind(shader_reference->shader.group_tag, shader_reference->shader.index, lighting, NULL, game_time, subpass))
+				{
+					device->DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP, part->base_vertex, 0, part->vertex_count, part->first_index, part->index_count - 2);
+					h1_render_shader_unbind();
+				}
 			}
 		}
 	}

@@ -36,8 +36,11 @@ void h1_render_set_camera_constants(const real_matrix4x3* object_to_world, bool 
 // the pass a shader draws in
 e_h1_render_pass h1_render_shader_pass(uint32 shader_group);
 
-// binds the pixel shader, textures, constants and blend state for a shader, returns false if it can't be drawn
-bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_render_lighting* lighting, IDirect3DBaseTexture9* lightmap, real32 game_time);
+// how many times geometry with this shader is drawn (water draws the background and the reflection separately)
+int32 h1_render_shader_subpass_count(uint32 shader_group);
+
+// binds the pixel shader, textures, constants and blend state for a shader, returns false if it (or this subpass) isn't drawn
+bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_render_lighting* lighting, IDirect3DBaseTexture9* lightmap, real32 game_time, int32 subpass = 0);
 
 // restores the default opaque render state after a bound shader
 void h1_render_shader_unbind(void);

@@ -317,6 +317,61 @@ PS_OUTPUT main(PS_INPUT input)
 }
 )";
 
+
+// shader_transparent_water: the background is multiplied by the base map, then the ripple bumped
+// reflection is added (rasterizer_xbox_water.c). The ripple bump map Halo builds each frame is
+// summed here from the four ripple layers.
+static const char k_h1_water_pixel_shader[] = H1_PIXEL_SHADER_COMMON R"(
+sampler2D base_map : register(s0);
+sampler2D ripple_map : register(s1);
+samplerCUBE reflection_map : register(s4);
+
+float4 ripple_transforms[4] : register(c0);	// uv scale, uv offset per ripple
+float4 ripple_weights : register(c4);		// first pair blend, second pair blend, pair blend
+float4 perpendicular_tint : register(c5);	// rgb tint, a brightness
+float4 parallel_tint : register(c6);
+float4 settings : register(c7);				// x: pass (0 background, 1 reflection), y: base map alpha modulates reflection
+
+PS_OUTPUT main(PS_INPUT input)
+{
+	PS_OUTPUT output;
+	output.depth = pack_depth(input.depth);
+	float4 base = tex2D(base_map, input.texcoord);
+	if (settings.x < 0.5f)
+	{
+		output.color = float4(base.rgb, 1.0f);
+		return output;
+	}
+
+	float3 n0 = tex2D(ripple_map, input.texcoord * ripple_transforms[0].xy + ripple_transforms[0].zw).rgb * 2.0f - 1.0f;
+	float3 n1 = tex2D(ripple_map, input.texcoord * ripple_transforms[1].xy + ripple_transforms[1].zw).rgb * 2.0f - 1.0f;
+	float3 n2 = tex2D(ripple_map, input.texcoord * ripple_transforms[2].xy + ripple_transforms[2].zw).rgb * 2.0f - 1.0f;
+	float3 n3 = tex2D(ripple_map, input.texcoord * ripple_transforms[3].xy + ripple_transforms[3].zw).rgb * 2.0f - 1.0f;
+	float3 bump = lerp(lerp(n3, n2, ripple_weights.y), lerp(n1, n0, ripple_weights.x), ripple_weights.z);
+
+	// tangent frame from the texture coordinate derivatives
+	float3 position = -input.view;
+	float3 dp1 = ddx(position), dp2 = ddy(position);
+	float2 duv1 = ddx(input.texcoord), duv2 = ddy(input.texcoord);
+	float3 normal = normalize(input.normal);
+	float3 dp2perp = cross(dp2, normal), dp1perp = cross(normal, dp1);
+	float3 tangent = dp2perp * duv1.x + dp1perp * duv2.x;
+	float3 binormal = dp2perp * duv1.y + dp1perp * duv2.y;
+	float frame_scale = rsqrt(max(dot(tangent, tangent), dot(binormal, binormal)) + 1e-12f);
+	float3 bumped = normalize(tangent * frame_scale * bump.x + binormal * frame_scale * bump.y + normal * max(bump.z, 0.05f));
+
+	float3 view = normalize(input.view);
+	float3 reflection = texCUBE(reflection_map, reflect(-view, bumped)).rgb;
+	float facing = saturate(dot(view, normal));
+	float4 tint = lerp(parallel_tint, perpendicular_tint, facing);
+	float3 tint2 = tint.rgb * tint.rgb;
+	float3 color = (1.0f - reflection * reflection) * tint2 * tint2 + reflection * reflection * reflection;
+	float opacity = settings.y > 0.5f ? tint.a * base.a : 1.0f;
+	output.color = float4(color * opacity, 1.0f);
+	return output;
+}
+)";
+
 /* globals */
 
 int32 g_h1_render_debug_mode = 0;
@@ -331,6 +386,7 @@ static IDirect3DPixelShader9* g_h1_environment_shader = NULL;
 static IDirect3DPixelShader9* g_h1_model_shader = NULL;
 static std::unordered_map<datum, IDirect3DPixelShader9*> g_h1_generic_shaders;
 static IDirect3DPixelShader9* g_h1_chicago_shader = NULL;
+static IDirect3DPixelShader9* g_h1_water_shader = NULL;
 static IDirect3DTexture9* g_h1_default_textures[4] = {};
 
 /* prototypes */
@@ -373,20 +429,21 @@ bool h1_render_shaders_initialize(void)
 	g_h1_environment_shader = h1_compile_pixel_shader(k_h1_environment_pixel_shader, "environment");
 	g_h1_model_shader = h1_compile_pixel_shader(k_h1_model_pixel_shader, "model");
 	g_h1_chicago_shader = h1_compile_pixel_shader(k_h1_chicago_pixel_shader, "transparent chicago");
+	g_h1_water_shader = h1_compile_pixel_shader(k_h1_water_pixel_shader, "transparent water");
 
 	g_h1_default_textures[0] = h1_solid_texture(0xFFFFFFFF);
 	g_h1_default_textures[1] = h1_solid_texture(0xFF808080);
 	g_h1_default_textures[2] = h1_solid_texture(0xFF000000);
 	g_h1_default_textures[3] = h1_solid_texture(0xFF8080FF);
 
-	return g_h1_vertex_declaration && g_h1_vertex_shader && g_h1_environment_shader && g_h1_model_shader && g_h1_chicago_shader;
+	return g_h1_vertex_declaration && g_h1_vertex_shader && g_h1_environment_shader && g_h1_model_shader && g_h1_chicago_shader && g_h1_water_shader;
 }
 
 void h1_render_shaders_dispose(void)
 {
 	IUnknown* resources[] =
 	{
-		g_h1_vertex_declaration, g_h1_vertex_shader, g_h1_environment_shader, g_h1_model_shader, g_h1_chicago_shader,
+		g_h1_vertex_declaration, g_h1_vertex_shader, g_h1_environment_shader, g_h1_model_shader, g_h1_chicago_shader, g_h1_water_shader,
 		g_h1_default_textures[0], g_h1_default_textures[1], g_h1_default_textures[2], g_h1_default_textures[3],
 	};
 	for (int32 i = 0; i < NUMBEROF(resources); i++)
@@ -409,6 +466,7 @@ void h1_render_shaders_dispose(void)
 	}
 	g_h1_generic_shaders.clear();
 	g_h1_chicago_shader = NULL;
+	g_h1_water_shader = NULL;
 	csmemset(g_h1_default_textures, 0, sizeof(g_h1_default_textures));
 	return;
 }
@@ -614,7 +672,12 @@ static void h1_map_transform(real32* out, real32 u_scale, real32 v_scale, real32
 	return;
 }
 
-bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_render_lighting* lighting, IDirect3DBaseTexture9* lightmap, real32 game_time)
+int32 h1_render_shader_subpass_count(uint32 shader_group)
+{
+	return shader_group == 'swat' ? 2 : 1;
+}
+
+bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_render_lighting* lighting, IDirect3DBaseTexture9* lightmap, real32 game_time, int32 subpass)
 {
 	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
 	void* definition = g_h1_cache_file->tag_get(shader_group, shader_index);
@@ -790,6 +853,66 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 		// flags: alpha tested, decal, two sided, first map is in screenspace, draw before water, ignore effect, scale first map with distance, numeric
 		device->SetRenderState(D3DRS_CULLMODE, TEST_BIT(shader->flags_3, 2) ? D3DCULL_NONE : D3DCULL_CCW);
 		h1_bind_framebuffer_blend(shader->framebuffer_blend_function);
+		return true;
+	}
+	case 'swat':
+	{
+		const h1_swat* water = (const h1_swat*)definition;
+		// flags: base map alpha modulates reflection, base map color modulates background
+		if (subpass == 0 && !TEST_BIT(water->flags, 1))
+		{
+			return false;
+		}
+		device->SetPixelShader(g_h1_water_shader);
+
+		device->SetTexture(0, h1_texture_or_default(water->base_map, 0));
+		h1_set_sampler_addressing(0, true, true, false);
+		const h1_swat_ripples* first_ripple = g_h1_cache_file->block_get(water->ripples, 0);
+		IDirect3DBaseTexture9* ripple_texture = h1_bitmap_texture_get(water->ripple_maps, first_ripple ? first_ripple->map_index : 0);
+		device->SetTexture(1, ripple_texture ? ripple_texture : g_h1_default_textures[3]);
+		h1_set_sampler_addressing(1, false, false, false);
+		device->SetTexture(4, h1_bitmap_texture_get(water->reflection_map));
+		h1_set_sampler_addressing(4, true, true, false);
+
+		// each ripple layer scrolls inside the ripple map, which itself scrolls over the surface
+		const real32 ripple_scale = water->ripple_scale != 0.f ? water->ripple_scale : 1.f;
+		const real32 global_u = cosf(water->ripple_animation_angle) * water->ripple_animation_velocity * game_time;
+		const real32 global_v = sinf(water->ripple_animation_angle) * water->ripple_animation_velocity * game_time;
+		real32 contributions[4] = {};
+		real32 transforms[4][4] = {};
+		for (int32 i = 0; i < 4; i++)
+		{
+			const h1_swat_ripples* ripple = g_h1_cache_file->block_get(water->ripples, i);
+			const real32 repeats = ripple && ripple->map_repeats > 0 ? (real32)ripple->map_repeats : 1.f;
+			contributions[i] = ripple ? ripple->contribution_factor : 0.f;
+			const real32 u = ripple ? game_time * ripple->animation_velocity * cosf(ripple->animation_angle) + ripple->map_offset.i : 0.f;
+			const real32 v = ripple ? game_time * ripple->animation_velocity * sinf(ripple->animation_angle) + ripple->map_offset.j : 0.f;
+			transforms[i][0] = ripple_scale * repeats;
+			transforms[i][1] = ripple_scale * repeats;
+			transforms[i][2] = global_u * repeats + u;
+			transforms[i][3] = global_v * repeats + v;
+		}
+		if (contributions[0] == 0.f && contributions[1] == 0.f) contributions[1] = 1.f;
+		if (contributions[2] == 0.f && contributions[3] == 0.f) contributions[3] = 1.f;
+		const real32 first_pair = contributions[0] + contributions[1];
+		const real32 second_pair = contributions[2] + contributions[3];
+		const real32 weights[4] = { contributions[0] / first_pair, contributions[2] / second_pair, first_pair / (first_pair + second_pair), 0.f };
+		const real32 perpendicular[4] = { water->view_perpendicular_tint_color.red, water->view_perpendicular_tint_color.green, water->view_perpendicular_tint_color.blue, water->view_perpendicular_brightness };
+		const real32 parallel[4] = { water->view_parallel_tint_color.red, water->view_parallel_tint_color.green, water->view_parallel_tint_color.blue, water->view_parallel_brightness };
+		const real32 settings[4] = { (real32)subpass, TEST_BIT(water->flags, 0) ? 1.f : 0.f, 0.f, 0.f };
+		device->SetPixelShaderConstantF(0, &transforms[0][0], 4);
+		device->SetPixelShaderConstantF(4, weights, 1);
+		device->SetPixelShaderConstantF(5, perpendicular, 1);
+		device->SetPixelShaderConstantF(6, parallel, 1);
+		device->SetPixelShaderConstantF(7, settings, 1);
+
+		device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+		device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+		device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+		device->SetRenderState(D3DRS_COLORWRITEENABLE1, 0);
+		device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+		device->SetRenderState(D3DRS_SRCBLEND, subpass == 0 ? D3DBLEND_ZERO : D3DBLEND_ONE);
+		device->SetRenderState(D3DRS_DESTBLEND, subpass == 0 ? D3DBLEND_SRCCOLOR : D3DBLEND_ONE);
 		return true;
 	}
 	case 'schi':

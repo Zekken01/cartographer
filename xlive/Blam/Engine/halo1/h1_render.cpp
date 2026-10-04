@@ -592,24 +592,27 @@ static void h1_render_structure_pass(e_h1_render_pass pass)
 			material_lighting.light1_direction = material->light1_direction;
 		}
 
-		if (h1_render_shader_bind(draw.shader_group, draw.shader_index, &material_lighting, lightmap, game_time))
+		for (int32 subpass = 0; subpass < h1_render_shader_subpass_count(draw.shader_group); subpass++)
 		{
-			if (g_h1_render_debug_mode == 6)
+			if (h1_render_shader_bind(draw.shader_group, draw.shader_index, &material_lighting, lightmap, game_time, subpass))
 			{
-				// development: a distinct color per draw
-				const int32 draw_index = (int32)(&draw - g_h1_render.draws.data());
-				const real32 debug_color[4] = { 6.f, (real32)(((draw_index + 1) * 67) % 256) / 255.f, (real32)(((draw_index + 1) * 151) % 256) / 255.f, (real32)(((draw_index + 1) * 211) % 256) / 255.f };
-				device->SetPixelShaderConstantF(3, debug_color, 1);
-				static bool x_logged = false;
-				if (!x_logged && draw_index == (int32)g_h1_render.draws.size() - 1) x_logged = true;
-				if (!x_logged)
+				if (g_h1_render_debug_mode == 6)
 				{
-					h1_log("draw %d: %.4s %s lightmap %d triangles %d color %d %d %d", draw_index, (const char*)&draw.shader_group, g_h1_cache_file->tag_name_get(draw.shader_index), draw.lightmap_bitmap_index, draw.triangle_count,
-						(draw_index * 67) % 256, (draw_index * 151) % 256, (draw_index * 211) % 256);
+					// development: a distinct color per draw
+					const int32 draw_index = (int32)(&draw - g_h1_render.draws.data());
+					const real32 debug_color[4] = { 6.f, (real32)(((draw_index + 1) * 67) % 256) / 255.f, (real32)(((draw_index + 1) * 151) % 256) / 255.f, (real32)(((draw_index + 1) * 211) % 256) / 255.f };
+					device->SetPixelShaderConstantF(3, debug_color, 1);
+					static bool x_logged = false;
+					if (!x_logged && draw_index == (int32)g_h1_render.draws.size() - 1) x_logged = true;
+					if (!x_logged)
+					{
+						h1_log("draw %d: %.4s %s lightmap %d triangles %d color %d %d %d", draw_index, (const char*)&draw.shader_group, g_h1_cache_file->tag_name_get(draw.shader_index), draw.lightmap_bitmap_index, draw.triangle_count,
+							(draw_index * 67) % 256, (draw_index * 151) % 256, (draw_index * 211) % 256);
+					}
 				}
+				device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, draw.base_vertex, 0, draw.vertex_count, draw.first_index, draw.triangle_count);
+				h1_render_shader_unbind();
 			}
-			device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, draw.base_vertex, 0, draw.vertex_count, draw.first_index, draw.triangle_count);
-			h1_render_shader_unbind();
 		}
 	}
 	return;
