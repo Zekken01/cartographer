@@ -10,6 +10,7 @@
 
 #include "cache/cache_files.h"
 #include "scenario/scenario_definitions.h"
+#include "scenario/scenario_fog.h"
 #include "structures/structure_bsp_definitions.h"
 #include "structures/structure_bsp_definitions.h"
 
@@ -219,8 +220,38 @@ static bool h1_scenario_build_structure_bsps(scenario* h2_scenario, const h1_scn
 		return false;
 	}
 
-	const structure_bsp* bsp = (const structure_bsp*)tag_get('sbsp', reference->structure_bsp.index);
+	structure_bsp* bsp = (structure_bsp*)tag_get('sbsp', reference->structure_bsp.index);
 	const int32 cluster_count = bsp->clusters.count;
+
+	// halo 1 outdoor fog (from the sky) becomes halo 2 atmospheric fog for every cluster that sees the sky
+	bool outdoor_fog = false;
+	const h1_scnr_skies* sky_reference = g_h1_cache_file->block_get(h1_scenario->skies, 0);
+	const h1_sky* sky = sky_reference ? (const h1_sky*)g_h1_cache_file->tag_get(sky_reference->sky) : NULL;
+	if (sky && sky->outdoor_fog_maximum_density > 0.f && sky->outdoor_fog_opaque_distance > sky->outdoor_fog_start_distance)
+	{
+		s_scenario_atmospheric_fog_palette_entry* fog_entry = h1_runtime_block_new<s_scenario_atmospheric_fog_palette_entry>(&h2_scenario->atmospheric_fog_palette, 1);
+		fog_entry->name = _string_id_empty_string;
+		fog_entry->color = sky->outdoor_fog_color;
+		fog_entry->spread_distance_world_units = 1.f;
+		fog_entry->maximum_density = sky->outdoor_fog_maximum_density;
+		fog_entry->start_distance_world_units = sky->outdoor_fog_start_distance;
+		fog_entry->opaque_distance_world_units = sky->outdoor_fog_opaque_distance;
+		fog_entry->secondary_fog_color = sky->outdoor_fog_color;
+		fog_entry->patchy_fog.group = (tag_group)NONE;
+		fog_entry->patchy_fog.index = NONE;
+		outdoor_fog = true;
+
+		const h1_sbsp* h1_bsp = (const h1_sbsp*)g_h1_cache_file->tag_get('sbsp', g_h1_cache_file->structure_bsp_tag_get(0));
+		for (int32 i = 0; i < cluster_count; i++)
+		{
+			const h1_sbsp_clusters* h1_cluster = g_h1_cache_file->block_get(h1_bsp->clusters, i);
+			structure_cluster* cluster = (structure_cluster*)tag_block_get_element_with_size(&bsp->clusters, i, sizeof(structure_cluster));
+			if (h1_cluster && h1_cluster->sky != NONE)
+			{
+				cluster->scenario_atmospheric_fog_index = 0;
+			}
+		}
+	}
 
 	// per cluster scenario data
 	if (h2_scenario->scenario_cluster_data.count > 0)
@@ -238,7 +269,7 @@ static bool h1_scenario_build_structure_bsps(scenario* h2_scenario, const h1_scn
 			sounds[i].palette_index = NONE;
 			environments[i].palette_index = NONE;
 			weather[i].palette_index = NONE;
-			fog[i].palette_index = NONE;
+			fog[i].palette_index = outdoor_fog && cluster->scenario_atmospheric_fog_index != 0xFF ? 0 : NONE;
 			centroids[i].centroid.x = (cluster->bounds.x0 + cluster->bounds.x1) * 0.5f;
 			centroids[i].centroid.y = (cluster->bounds.y0 + cluster->bounds.y1) * 0.5f;
 			centroids[i].centroid.z = (cluster->bounds.z0 + cluster->bounds.z1) * 0.5f;
