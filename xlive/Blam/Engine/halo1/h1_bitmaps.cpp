@@ -151,7 +151,8 @@ static bool h1_bitmap_format_info(int16 format, s_h1_format_info* out_info)
 {
 	switch (format)
 	{
-	case _h1_bitmap_format_a8:			*out_info = { D3DFMT_A8, 8, 1, false }; return true;
+	// alpha only bitmaps are white on xbox (d3d9 A8 would sample black)
+	case _h1_bitmap_format_a8:			*out_info = { D3DFMT_A8L8, 8, 2, false }; return true;
 	case _h1_bitmap_format_y8:			*out_info = { D3DFMT_L8, 8, 1, false }; return true;
 	case _h1_bitmap_format_ay8:			*out_info = { D3DFMT_A8L8, 8, 2, false }; return true;
 	case _h1_bitmap_format_a8y8:		*out_info = { D3DFMT_A8L8, 16, 2, false }; return true;
@@ -209,6 +210,10 @@ static void h1_bitmap_level_copy(const h1_bitm_bitmaps* bitmap, const s_h1_forma
 
 			switch (bitmap->format)
 			{
+			case _h1_bitmap_format_a8:
+				dst[0] = 0xFF;
+				dst[1] = src[0];
+				break;
 			case _h1_bitmap_format_ay8:
 				dst[0] = src[0];
 				dst[1] = src[0];

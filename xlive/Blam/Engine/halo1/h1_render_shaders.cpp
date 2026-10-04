@@ -265,20 +265,21 @@ float2 map_texcoord(float2 texcoord, int index)
 
 float4 combine(float4 current, float4 next, float function)
 {
-	// current, next map, multiply, double multiply, add, add signed current, add signed next, subtract current,
-	// subtract next, blend current alpha, blend current alpha inverse, blend next alpha, blend next alpha inverse
+	// the xbox combiner table: current, next map, multiply, double multiply, add, add signed current,
+	// add signed next, subtract current, subtract next, blend current alpha, blend current alpha inverse,
+	// blend next alpha, blend next alpha inverse
 	int f = (int)function;
 	if (f == 0) return current;
 	if (f == 1) return next;
 	if (f == 2) return current * next;
 	if (f == 3) return 2.0f * current * next;
 	if (f == 4) return current + next;
-	if (f == 5) return current + next - 0.5f;
-	if (f == 6) return current + next - 0.5f;
-	if (f == 7) return current - next;
-	if (f == 8) return next - current;
-	if (f == 9) return lerp(next, current, current.a);
-	if (f == 10) return lerp(current, next, current.a);
+	if (f == 5) return next + 2.0f * current - 1.0f;
+	if (f == 6) return current + 2.0f * next - 1.0f;
+	if (f == 7) return next - current;
+	if (f == 8) return current - next;
+	if (f == 9) return lerp(current, next, current.a);
+	if (f == 10) return lerp(next, current, current.a);
 	if (f == 11) return lerp(current, next, next.a);
 	return lerp(next, current, next.a);
 }
@@ -294,13 +295,6 @@ PS_OUTPUT main(PS_INPUT input)
 	maps[2] = tex2D(map2, map_texcoord(input.texcoord, 2));
 	maps[3] = tex2D(map3, map_texcoord(input.texcoord, 3));
 
-	[unroll]
-	for (int i = 0; i < 4; i++)
-	{
-		if (functions[i].z > 0.5f)
-			maps[i].a = dot(maps[i].rgb, float3(0.333f, 0.333f, 0.334f));
-	}
-
 	float4 result = maps[0];
 	int map_count = (int)settings.x;
 	[unroll]
@@ -308,7 +302,9 @@ PS_OUTPUT main(PS_INPUT input)
 	{
 		if (j < map_count)
 		{
-			float3 color = saturate(combine(result, maps[j], functions[j - 1].x).rgb);
+			// alpha replicate of the previous map feeds this map's alpha into the color combine
+			float4 next_color = functions[j - 1].z > 0.5f ? maps[j].aaaa : maps[j];
+			float3 color = saturate(combine(result, next_color, functions[j - 1].x).rgb);
 			float alpha = saturate(combine(result.aaaa, maps[j].aaaa, functions[j - 1].y).a);
 			result = float4(color, alpha);
 		}
@@ -1054,6 +1050,11 @@ static IDirect3DPixelShader9* h1_generic_shader_get(datum shader_index, const h1
 
 	std::string source = k_h1_generic_pixel_shader_header;
 	char line[256];
+	if (shader->stages.count <= 0)
+	{
+		// without stages the xbox combiner passes the first map through
+		source += "\tr0 = m0;\n";
+	}
 	const int32 stage_count = MIN(shader->stages.count, (int32)k_h1_maximum_generic_stages);
 	for (int32 i = 0; i < stage_count; i++)
 	{
