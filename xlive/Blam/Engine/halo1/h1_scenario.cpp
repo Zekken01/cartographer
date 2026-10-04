@@ -2,6 +2,7 @@
 #include "h1_scenario.h"
 
 #include "h1_cache_file.h"
+#include "h1_equipment.h"
 #include "h1_log.h"
 #include "h1_runtime.h"
 #include "h1_structure_bsp.h"
@@ -46,6 +47,7 @@ bool h1_scenario_build(void)
 	h1_scenario_clear_host_placements(h2_scenario);
 	h1_scenario_build_player_starting_locations(h2_scenario, h1_scenario);
 	h1_scenario_build_netgame_flags(h2_scenario, h1_scenario);
+	h1_equipment_build(h2_scenario, h1_scenario);
 	return h1_scenario_build_structure_bsps(h2_scenario, h1_scenario);
 }
 

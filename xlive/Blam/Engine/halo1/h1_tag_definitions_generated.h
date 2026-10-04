@@ -2968,4 +2968,741 @@ struct h1_lens
 };
 ASSERT_STRUCT_SIZE(h1_lens, 0xf0);
 
+struct h1_itmc_2_item_permutations
+{
+	int8 pad_0[32];
+	real32 weight; // 0x20
+	h1_tag_reference item; // 0x24
+	int8 pad_34[32];
+};
+ASSERT_STRUCT_SIZE(h1_itmc_2_item_permutations, 0x54);
+
+struct h1_itmc_2
+{
+	h1_tag_block<h1_itmc_2_item_permutations> item_permutations; // 0x0
+	int16 spawn_time_in_seconds_0_default; // 0xc
+	int16 unknown; // 0xe
+	int8 pad_10[76];
+};
+ASSERT_STRUCT_SIZE(h1_itmc_2, 0x5c);
+
+struct h1_vehi_attachments
+{
+	h1_tag_reference type; // 0x0
+	char marker[32]; // 0x10
+	int16 primary_scale; // 0x30
+	int16 secondary_scale; // 0x32
+	int16 change_color; // 0x34
+	int16 unknown; // 0x36
+	int8 pad_38[16];
+};
+ASSERT_STRUCT_SIZE(h1_vehi_attachments, 0x48);
+
+struct h1_vehi_widgets
+{
+	h1_tag_reference reference; // 0x0
+	int8 pad_10[16];
+};
+ASSERT_STRUCT_SIZE(h1_vehi_widgets, 0x20);
+
+struct h1_vehi_functions
+{
+	uint32 flags; // 0x0
+	real32 period; // 0x4
+	int16 scale_period_by; // 0x8
+	int16 function; // 0xa
+	int16 scale_function_by; // 0xc
+	int16 wobble_function; // 0xe
+	real32 wobble_period; // 0x10
+	real32 wobble_magnitude; // 0x14
+	real32 square_wave_threshold; // 0x18
+	int16 step_count; // 0x1c
+	int16 map_to; // 0x1e
+	int16 sawtooth_count; // 0x20
+	int16 add; // 0x22
+	int16 scale_result_by; // 0x24
+	int16 bounds_mode; // 0x26
+	real_bounds bounds; // 0x28
+	int8 pad_30[4];
+	int16 unknown; // 0x34
+	int16 turn_off_with_index; // 0x36
+	real32 scale_by; // 0x38
+	int8 pad_3c[252];
+	real32 inverse_bounds; // 0x138
+	real32 inverse_sawtooth; // 0x13c
+	real32 inverse_step; // 0x140
+	real32 inverse_period; // 0x144
+	char usage[32]; // 0x148
+};
+ASSERT_STRUCT_SIZE(h1_vehi_functions, 0x168);
+
+struct h1_vehi_change_colors_permutations
+{
+	real32 weight; // 0x0
+	real_rgb_color color_lower_bound; // 0x4
+	real_rgb_color color_upper_bound; // 0x10
+};
+ASSERT_STRUCT_SIZE(h1_vehi_change_colors_permutations, 0x1c);
+
+struct h1_vehi_change_colors
+{
+	int16 darken_by; // 0x0
+	int16 scale_by; // 0x2
+	uint32 scale_flags; // 0x4
+	real_rgb_color color_lower_bound; // 0x8
+	real_rgb_color color_upper_bound; // 0x14
+	h1_tag_block<h1_vehi_change_colors_permutations> permutations; // 0x20
+};
+ASSERT_STRUCT_SIZE(h1_vehi_change_colors, 0x2c);
+
+struct h1_vehi_predicted_resources
+{
+	int16 type; // 0x0
+	int16 resource_index; // 0x2
+	datum tag_index; // 0x4
+};
+ASSERT_STRUCT_SIZE(h1_vehi_predicted_resources, 0x8);
+
+struct h1_vehi_camera_tracks
+{
+	h1_tag_reference track; // 0x0
+	int8 pad_10[12];
+};
+ASSERT_STRUCT_SIZE(h1_vehi_camera_tracks, 0x1c);
+
+struct h1_vehi_new_hud_interfaces
+{
+	h1_tag_reference unit_hud_interface; // 0x0
+	int8 pad_10[32];
+};
+ASSERT_STRUCT_SIZE(h1_vehi_new_hud_interfaces, 0x30);
+
+struct h1_vehi_dialogue_variants
+{
+	int16 variant_number; // 0x0
+	int16 unknown; // 0x2
+	int8 pad_4[4];
+	h1_tag_reference dialogue; // 0x8
+};
+ASSERT_STRUCT_SIZE(h1_vehi_dialogue_variants, 0x18);
+
+struct h1_vehi_powered_seats
+{
+	int8 pad_0[4];
+	real32 driver_powerup_time; // 0x4
+	real32 driver_powerdown_time; // 0x8
+	int8 pad_c[56];
+};
+ASSERT_STRUCT_SIZE(h1_vehi_powered_seats, 0x44);
+
+struct h1_vehi_weapons
+{
+	h1_tag_reference weapon; // 0x0
+	int8 pad_10[20];
+};
+ASSERT_STRUCT_SIZE(h1_vehi_weapons, 0x24);
+
+struct h1_vehi_seats_camera_tracks
+{
+	h1_tag_reference track; // 0x0
+	int8 pad_10[12];
+};
+ASSERT_STRUCT_SIZE(h1_vehi_seats_camera_tracks, 0x1c);
+
+struct h1_vehi_seats_unit_hud_interface
+{
+	h1_tag_reference unit_hud_interface; // 0x0
+	int8 pad_10[32];
+};
+ASSERT_STRUCT_SIZE(h1_vehi_seats_unit_hud_interface, 0x30);
+
+struct h1_vehi_seats
+{
+	uint32 flags; // 0x0
+	char label[32]; // 0x4
+	char marker_name[32]; // 0x24
+	int8 pad_44[32];
+	real_vector3d acceleration_scale; // 0x64
+	int8 pad_70[12];
+	real32 yaw_rate; // 0x7c
+	real32 pitch_rate; // 0x80
+	char camera_marker_name[32]; // 0x84
+	char camera_submerged_marker_name[32]; // 0xa4
+	real32 pitch_auto_level; // 0xc4
+	real_bounds pitch_range; // 0xc8
+	h1_tag_block<h1_vehi_seats_camera_tracks> camera_tracks; // 0xd0
+	h1_tag_block<h1_vehi_seats_unit_hud_interface> unit_hud_interface; // 0xdc
+	int8 pad_e8[4];
+	int16 hud_text_message_index; // 0xec
+	int16 unknown; // 0xee
+	real_bounds yaw; // 0xf0
+	h1_tag_reference built_in_gunner; // 0xf8
+	int8 pad_108[20];
+};
+ASSERT_STRUCT_SIZE(h1_vehi_seats, 0x11c);
+
+struct h1_vehi
+{
+	int16 object_type; // 0x0
+	uint16 flags; // 0x2
+	real32 bounding_radius; // 0x4
+	real_point3d bounding_offset; // 0x8
+	real_point3d origin_offset; // 0x14
+	real32 acceleration_scale; // 0x20
+	uint32 runtime_flags; // 0x24
+	h1_tag_reference model; // 0x28
+	h1_tag_reference animation_graph; // 0x38
+	int8 pad_48[40];
+	h1_tag_reference collision_model; // 0x70
+	h1_tag_reference physics; // 0x80
+	h1_tag_reference modifier_shader; // 0x90
+	h1_tag_reference creation_effect; // 0xa0
+	int8 pad_b0[84];
+	real32 render_bounding_radius; // 0x104
+	int16 a_in; // 0x108
+	int16 b_in; // 0x10a
+	int16 c_in; // 0x10c
+	int16 d_in; // 0x10e
+	int8 pad_110[44];
+	int16 hud_text_message_index; // 0x13c
+	int16 forced_shader_permutation_index; // 0x13e
+	h1_tag_block<h1_vehi_attachments> attachments; // 0x140
+	h1_tag_block<h1_vehi_widgets> widgets; // 0x14c
+	h1_tag_block<h1_vehi_functions> functions; // 0x158
+	h1_tag_block<h1_vehi_change_colors> change_colors; // 0x164
+	h1_tag_block<h1_vehi_predicted_resources> predicted_resources; // 0x170
+	uint32 flags_2; // 0x17c
+	int16 default_team; // 0x180
+	int16 constant_sound_volume; // 0x182
+	real32 rider_damage_fraction; // 0x184
+	h1_tag_reference integrated_light_toggle; // 0x188
+	int16 a_in_2; // 0x198
+	int16 b_in_2; // 0x19a
+	int16 c_in_2; // 0x19c
+	int16 d_in_2; // 0x19e
+	real32 camera_field_of_view; // 0x1a0
+	real32 camera_stiffness; // 0x1a4
+	char camera_marker_name[32]; // 0x1a8
+	char camera_submerged_marker_name[32]; // 0x1c8
+	real32 pitch_auto_level; // 0x1e8
+	real_bounds pitch_range; // 0x1ec
+	h1_tag_block<h1_vehi_camera_tracks> camera_tracks; // 0x1f4
+	real_vector3d seat_acceleration_scale; // 0x200
+	int8 pad_20c[12];
+	real32 soft_ping_threshold; // 0x218
+	real32 soft_ping_interrupt_time; // 0x21c
+	real32 hard_ping_threshold; // 0x220
+	real32 hard_ping_interrupt_time; // 0x224
+	real32 hard_death_threshold; // 0x228
+	real32 feign_death_threshold; // 0x22c
+	real32 feign_death_time; // 0x230
+	real32 distance_of_evade_animation; // 0x234
+	real32 distance_of_dive_animation; // 0x238
+	int8 pad_23c[4];
+	real32 stunned_movement_threshold; // 0x240
+	real32 feign_death_chance; // 0x244
+	real32 feign_repeat_chance; // 0x248
+	h1_tag_reference spawned_actor; // 0x24c
+	short_bounds spawned_actor_count; // 0x25c
+	real32 spawned_velocity; // 0x260
+	real32 aiming_velocity_maximum; // 0x264
+	real32 aiming_acceleration_maximum; // 0x268
+	real32 casual_aiming_modifier; // 0x26c
+	real32 looking_velocity_maximum; // 0x270
+	real32 looking_acceleration_maximum; // 0x274
+	int8 pad_278[8];
+	real32 ai_vehicle_radius; // 0x280
+	real32 ai_danger_radius; // 0x284
+	h1_tag_reference melee_damage; // 0x288
+	int16 motion_sensor_blip_size; // 0x298
+	int16 unknown; // 0x29a
+	int8 pad_29c[12];
+	h1_tag_block<h1_vehi_new_hud_interfaces> new_hud_interfaces; // 0x2a8
+	h1_tag_block<h1_vehi_dialogue_variants> dialogue_variants; // 0x2b4
+	real32 grenade_velocity; // 0x2c0
+	int16 grenade_type; // 0x2c4
+	int16 grenade_count; // 0x2c6
+	int16 soft_ping_interrupt_ticks; // 0x2c8
+	int16 hard_ping_interrupt_ticks; // 0x2ca
+	h1_tag_block<h1_vehi_powered_seats> powered_seats; // 0x2cc
+	h1_tag_block<h1_vehi_weapons> weapons; // 0x2d8
+	h1_tag_block<h1_vehi_seats> seats; // 0x2e4
+	uint32 flags_3; // 0x2f0
+	int16 type; // 0x2f4
+	int16 unknown_2; // 0x2f6
+	real32 maximum_forward_speed; // 0x2f8
+	real32 maximum_reverse_speed; // 0x2fc
+	real32 speed_acceleration; // 0x300
+	real32 speed_deceleration; // 0x304
+	real32 maximum_left_turn; // 0x308
+	real32 maximum_right_turn_negative; // 0x30c
+	real32 wheel_circumference; // 0x310
+	real32 turn_rate; // 0x314
+	real32 blur_speed; // 0x318
+	int16 a_in_3; // 0x31c
+	int16 b_in_3; // 0x31e
+	int16 c_in_3; // 0x320
+	int16 d_in_3; // 0x322
+	int8 pad_324[12];
+	real32 maximum_left_slide; // 0x330
+	real32 maximum_right_slide; // 0x334
+	real32 slide_acceleration; // 0x338
+	real32 slide_deceleration; // 0x33c
+	real32 minimum_flipping_angular_velocity; // 0x340
+	real32 maximum_flipping_angular_velocity; // 0x344
+	int8 pad_348[24];
+	real32 fixed_gun_yaw; // 0x360
+	real32 fixed_gun_pitch; // 0x364
+	int8 pad_368[24];
+	real32 ai_sideslip_distance; // 0x380
+	real32 ai_destination_radius; // 0x384
+	real32 ai_avoidance_distance; // 0x388
+	real32 ai_pathfinding_radius; // 0x38c
+	real32 ai_charge_repeat_timeout; // 0x390
+	real32 ai_strafing_abort_range; // 0x394
+	real_bounds ai_oversteering_bounds; // 0x398
+	real32 ai_steering_maximum; // 0x3a0
+	real32 ai_throttle_maximum; // 0x3a4
+	real32 ai_move_position_time; // 0x3a8
+	int8 pad_3ac[4];
+	h1_tag_reference suspension_sound; // 0x3b0
+	h1_tag_reference crash_sound; // 0x3c0
+	h1_tag_reference material_effects; // 0x3d0
+	h1_tag_reference effect; // 0x3e0
+};
+ASSERT_STRUCT_SIZE(h1_vehi, 0x3f0);
+
+struct h1_eqip_attachments
+{
+	h1_tag_reference type; // 0x0
+	char marker[32]; // 0x10
+	int16 primary_scale; // 0x30
+	int16 secondary_scale; // 0x32
+	int16 change_color; // 0x34
+	int16 unknown; // 0x36
+	int8 pad_38[16];
+};
+ASSERT_STRUCT_SIZE(h1_eqip_attachments, 0x48);
+
+struct h1_eqip_widgets
+{
+	h1_tag_reference reference; // 0x0
+	int8 pad_10[16];
+};
+ASSERT_STRUCT_SIZE(h1_eqip_widgets, 0x20);
+
+struct h1_eqip_functions
+{
+	uint32 flags; // 0x0
+	real32 period; // 0x4
+	int16 scale_period_by; // 0x8
+	int16 function; // 0xa
+	int16 scale_function_by; // 0xc
+	int16 wobble_function; // 0xe
+	real32 wobble_period; // 0x10
+	real32 wobble_magnitude; // 0x14
+	real32 square_wave_threshold; // 0x18
+	int16 step_count; // 0x1c
+	int16 map_to; // 0x1e
+	int16 sawtooth_count; // 0x20
+	int16 add; // 0x22
+	int16 scale_result_by; // 0x24
+	int16 bounds_mode; // 0x26
+	real_bounds bounds; // 0x28
+	int8 pad_30[4];
+	int16 unknown; // 0x34
+	int16 turn_off_with_index; // 0x36
+	real32 scale_by; // 0x38
+	int8 pad_3c[252];
+	real32 inverse_bounds; // 0x138
+	real32 inverse_sawtooth; // 0x13c
+	real32 inverse_step; // 0x140
+	real32 inverse_period; // 0x144
+	char usage[32]; // 0x148
+};
+ASSERT_STRUCT_SIZE(h1_eqip_functions, 0x168);
+
+struct h1_eqip_change_colors_permutations
+{
+	real32 weight; // 0x0
+	real_rgb_color color_lower_bound; // 0x4
+	real_rgb_color color_upper_bound; // 0x10
+};
+ASSERT_STRUCT_SIZE(h1_eqip_change_colors_permutations, 0x1c);
+
+struct h1_eqip_change_colors
+{
+	int16 darken_by; // 0x0
+	int16 scale_by; // 0x2
+	uint32 scale_flags; // 0x4
+	real_rgb_color color_lower_bound; // 0x8
+	real_rgb_color color_upper_bound; // 0x14
+	h1_tag_block<h1_eqip_change_colors_permutations> permutations; // 0x20
+};
+ASSERT_STRUCT_SIZE(h1_eqip_change_colors, 0x2c);
+
+struct h1_eqip_predicted_resources
+{
+	int16 type; // 0x0
+	int16 resource_index; // 0x2
+	datum tag_index; // 0x4
+};
+ASSERT_STRUCT_SIZE(h1_eqip_predicted_resources, 0x8);
+
+struct h1_eqip
+{
+	int16 object_type; // 0x0
+	uint16 flags; // 0x2
+	real32 bounding_radius; // 0x4
+	real_point3d bounding_offset; // 0x8
+	real_point3d origin_offset; // 0x14
+	real32 acceleration_scale; // 0x20
+	uint32 runtime_flags; // 0x24
+	h1_tag_reference model; // 0x28
+	h1_tag_reference animation_graph; // 0x38
+	int8 pad_48[40];
+	h1_tag_reference collision_model; // 0x70
+	h1_tag_reference physics; // 0x80
+	h1_tag_reference modifier_shader; // 0x90
+	h1_tag_reference creation_effect; // 0xa0
+	int8 pad_b0[84];
+	real32 render_bounding_radius; // 0x104
+	int16 a_in; // 0x108
+	int16 b_in; // 0x10a
+	int16 c_in; // 0x10c
+	int16 d_in; // 0x10e
+	int8 pad_110[44];
+	int16 hud_text_message_index; // 0x13c
+	int16 forced_shader_permutation_index; // 0x13e
+	h1_tag_block<h1_eqip_attachments> attachments; // 0x140
+	h1_tag_block<h1_eqip_widgets> widgets; // 0x14c
+	h1_tag_block<h1_eqip_functions> functions; // 0x158
+	h1_tag_block<h1_eqip_change_colors> change_colors; // 0x164
+	h1_tag_block<h1_eqip_predicted_resources> predicted_resources; // 0x170
+	uint32 flags_2; // 0x17c
+	int16 message_index; // 0x180
+	int16 sort_order; // 0x182
+	real32 scale; // 0x184
+	int16 hud_message_value_scale; // 0x188
+	int16 unknown; // 0x18a
+	int8 pad_18c[16];
+	int16 a_in_2; // 0x19c
+	int16 b_in_2; // 0x19e
+	int16 c_in_2; // 0x1a0
+	int16 d_in_2; // 0x1a2
+	int8 pad_1a4[164];
+	h1_tag_reference material_effects; // 0x248
+	h1_tag_reference collision_sound; // 0x258
+	int8 pad_268[120];
+	real_bounds detonation_delay; // 0x2e0
+	h1_tag_reference detonating_effect; // 0x2e8
+	h1_tag_reference detonation_effect; // 0x2f8
+	int16 powerup_type; // 0x308
+	int16 grenade_type; // 0x30a
+	real32 powerup_time; // 0x30c
+	h1_tag_reference pickup_sound; // 0x310
+	int8 pad_320[144];
+};
+ASSERT_STRUCT_SIZE(h1_eqip, 0x3b0);
+
+struct h1_weap_attachments
+{
+	h1_tag_reference type; // 0x0
+	char marker[32]; // 0x10
+	int16 primary_scale; // 0x30
+	int16 secondary_scale; // 0x32
+	int16 change_color; // 0x34
+	int16 unknown; // 0x36
+	int8 pad_38[16];
+};
+ASSERT_STRUCT_SIZE(h1_weap_attachments, 0x48);
+
+struct h1_weap_widgets
+{
+	h1_tag_reference reference; // 0x0
+	int8 pad_10[16];
+};
+ASSERT_STRUCT_SIZE(h1_weap_widgets, 0x20);
+
+struct h1_weap_functions
+{
+	uint32 flags; // 0x0
+	real32 period; // 0x4
+	int16 scale_period_by; // 0x8
+	int16 function; // 0xa
+	int16 scale_function_by; // 0xc
+	int16 wobble_function; // 0xe
+	real32 wobble_period; // 0x10
+	real32 wobble_magnitude; // 0x14
+	real32 square_wave_threshold; // 0x18
+	int16 step_count; // 0x1c
+	int16 map_to; // 0x1e
+	int16 sawtooth_count; // 0x20
+	int16 add; // 0x22
+	int16 scale_result_by; // 0x24
+	int16 bounds_mode; // 0x26
+	real_bounds bounds; // 0x28
+	int8 pad_30[4];
+	int16 unknown; // 0x34
+	int16 turn_off_with_index; // 0x36
+	real32 scale_by; // 0x38
+	int8 pad_3c[252];
+	real32 inverse_bounds; // 0x138
+	real32 inverse_sawtooth; // 0x13c
+	real32 inverse_step; // 0x140
+	real32 inverse_period; // 0x144
+	char usage[32]; // 0x148
+};
+ASSERT_STRUCT_SIZE(h1_weap_functions, 0x168);
+
+struct h1_weap_change_colors_permutations
+{
+	real32 weight; // 0x0
+	real_rgb_color color_lower_bound; // 0x4
+	real_rgb_color color_upper_bound; // 0x10
+};
+ASSERT_STRUCT_SIZE(h1_weap_change_colors_permutations, 0x1c);
+
+struct h1_weap_change_colors
+{
+	int16 darken_by; // 0x0
+	int16 scale_by; // 0x2
+	uint32 scale_flags; // 0x4
+	real_rgb_color color_lower_bound; // 0x8
+	real_rgb_color color_upper_bound; // 0x14
+	h1_tag_block<h1_weap_change_colors_permutations> permutations; // 0x20
+};
+ASSERT_STRUCT_SIZE(h1_weap_change_colors, 0x2c);
+
+struct h1_weap_predicted_resources
+{
+	int16 type; // 0x0
+	int16 resource_index; // 0x2
+	datum tag_index; // 0x4
+};
+ASSERT_STRUCT_SIZE(h1_weap_predicted_resources, 0x8);
+
+struct h1_weap_predicted_resources_2
+{
+	int16 type; // 0x0
+	int16 resource_index; // 0x2
+	datum tag_index; // 0x4
+};
+ASSERT_STRUCT_SIZE(h1_weap_predicted_resources_2, 0x8);
+
+struct h1_weap_magazines_magazines
+{
+	int16 rounds; // 0x0
+	int16 unknown; // 0x2
+	int8 pad_4[8];
+	h1_tag_reference equipment; // 0xc
+};
+ASSERT_STRUCT_SIZE(h1_weap_magazines_magazines, 0x1c);
+
+struct h1_weap_magazines
+{
+	uint32 flags; // 0x0
+	int16 rounds_recharged; // 0x4
+	int16 rounds_total_initial; // 0x6
+	int16 rounds_total_maximum; // 0x8
+	int16 rounds_loaded_maximum; // 0xa
+	int8 pad_c[8];
+	real32 reload_time; // 0x14
+	int16 rounds_reloaded; // 0x18
+	int16 unknown; // 0x1a
+	real32 chamber_time; // 0x1c
+	int8 pad_20[24];
+	h1_tag_reference reloading_effect; // 0x38
+	h1_tag_reference chambering_effect; // 0x48
+	int8 pad_58[12];
+	h1_tag_block<h1_weap_magazines_magazines> magazines; // 0x64
+};
+ASSERT_STRUCT_SIZE(h1_weap_magazines, 0x70);
+
+struct h1_weap_triggers_firing_effects
+{
+	int16 shot_count_lower_bound; // 0x0
+	int16 shot_count_upper_bound; // 0x2
+	int8 pad_4[32];
+	h1_tag_reference firing_effect; // 0x24
+	h1_tag_reference misfire_effect; // 0x34
+	h1_tag_reference empty_effect; // 0x44
+	h1_tag_reference firing_damage; // 0x54
+	h1_tag_reference misfire_damage; // 0x64
+	h1_tag_reference empty_damage; // 0x74
+};
+ASSERT_STRUCT_SIZE(h1_weap_triggers_firing_effects, 0x84);
+
+struct h1_weap_triggers
+{
+	uint32 flags; // 0x0
+	real_bounds rounds_per_second; // 0x4
+	real32 acceleration_time; // 0xc
+	real32 deceleration_time; // 0x10
+	real32 blurred_rate_of_fire; // 0x14
+	int8 pad_18[8];
+	int16 magazine_index; // 0x20
+	int16 rounds_per_shot; // 0x22
+	int16 minimum_rounds_loaded; // 0x24
+	int16 rounds_between_tracers; // 0x26
+	int8 pad_28[4];
+	int16 unknown; // 0x2c
+	int16 firing_noise; // 0x2e
+	real_bounds error; // 0x30
+	real32 acceleration_time_2; // 0x38
+	real32 deceleration_time_2; // 0x3c
+	int8 pad_40[8];
+	real32 charging_time; // 0x48
+	real32 charged_time; // 0x4c
+	int16 overcharged_action; // 0x50
+	int16 unknown_2; // 0x52
+	real32 charged_illumination; // 0x54
+	real32 spew_time; // 0x58
+	h1_tag_reference charging_effect; // 0x5c
+	int16 distribution_function; // 0x6c
+	int16 projectiles_per_shot; // 0x6e
+	real32 distribution_angle; // 0x70
+	int8 pad_74[4];
+	real32 minimum_error; // 0x78
+	real_bounds error_angle; // 0x7c
+	real_point3d first_person_offset; // 0x84
+	int8 pad_90[4];
+	h1_tag_reference projectile; // 0x94
+	real32 ejection_port_recovery_time; // 0xa4
+	real32 illumination_recovery_time; // 0xa8
+	int8 pad_ac[12];
+	real32 heat_generated_per_round; // 0xb8
+	real32 age_generated_per_round; // 0xbc
+	int8 pad_c0[4];
+	real32 overload_time; // 0xc4
+	int8 pad_c8[40];
+	real32 illumination_recovery_rate; // 0xf0
+	real32 ejection_port_recovery_rate; // 0xf4
+	real32 rate_of_fire_acceleration_rate; // 0xf8
+	real32 rate_of_fire_deceleration_rate; // 0xfc
+	real32 error_acceleration_rate; // 0x100
+	real32 error_deceleration_rate; // 0x104
+	h1_tag_block<h1_weap_triggers_firing_effects> firing_effects; // 0x108
+};
+ASSERT_STRUCT_SIZE(h1_weap_triggers, 0x114);
+
+struct h1_weap
+{
+	int16 object_type; // 0x0
+	uint16 flags; // 0x2
+	real32 bounding_radius; // 0x4
+	real_point3d bounding_offset; // 0x8
+	real_point3d origin_offset; // 0x14
+	real32 acceleration_scale; // 0x20
+	uint32 runtime_flags; // 0x24
+	h1_tag_reference model; // 0x28
+	h1_tag_reference animation_graph; // 0x38
+	int8 pad_48[40];
+	h1_tag_reference collision_model; // 0x70
+	h1_tag_reference physics; // 0x80
+	h1_tag_reference modifier_shader; // 0x90
+	h1_tag_reference creation_effect; // 0xa0
+	int8 pad_b0[84];
+	real32 render_bounding_radius; // 0x104
+	int16 a_in; // 0x108
+	int16 b_in; // 0x10a
+	int16 c_in; // 0x10c
+	int16 d_in; // 0x10e
+	int8 pad_110[44];
+	int16 hud_text_message_index; // 0x13c
+	int16 forced_shader_permutation_index; // 0x13e
+	h1_tag_block<h1_weap_attachments> attachments; // 0x140
+	h1_tag_block<h1_weap_widgets> widgets; // 0x14c
+	h1_tag_block<h1_weap_functions> functions; // 0x158
+	h1_tag_block<h1_weap_change_colors> change_colors; // 0x164
+	h1_tag_block<h1_weap_predicted_resources> predicted_resources; // 0x170
+	uint32 flags_2; // 0x17c
+	int16 message_index; // 0x180
+	int16 sort_order; // 0x182
+	real32 scale; // 0x184
+	int16 hud_message_value_scale; // 0x188
+	int16 unknown; // 0x18a
+	int8 pad_18c[16];
+	int16 a_in_2; // 0x19c
+	int16 b_in_2; // 0x19e
+	int16 c_in_2; // 0x1a0
+	int16 d_in_2; // 0x1a2
+	int8 pad_1a4[164];
+	h1_tag_reference material_effects; // 0x248
+	h1_tag_reference collision_sound; // 0x258
+	int8 pad_268[120];
+	real_bounds detonation_delay; // 0x2e0
+	h1_tag_reference detonating_effect; // 0x2e8
+	h1_tag_reference detonation_effect; // 0x2f8
+	uint32 flags_3; // 0x308
+	char label[32]; // 0x30c
+	int16 secondary_trigger_mode; // 0x32c
+	int16 maximum_alternate_shots_loaded; // 0x32e
+	int16 a_in_3; // 0x330
+	int16 b_in_3; // 0x332
+	int16 c_in_3; // 0x334
+	int16 d_in_3; // 0x336
+	real32 ready_time; // 0x338
+	h1_tag_reference ready_effect; // 0x33c
+	real32 heat_recovery_threshold; // 0x34c
+	real32 overheated_threshold; // 0x350
+	real32 heat_detonation_threshold; // 0x354
+	real32 heat_detonation_fraction; // 0x358
+	real32 heat_loss_per_second; // 0x35c
+	real32 heat_illumination; // 0x360
+	int8 pad_364[16];
+	h1_tag_reference overheated; // 0x374
+	h1_tag_reference detonation; // 0x384
+	h1_tag_reference player_melee_damage; // 0x394
+	h1_tag_reference player_melee_response; // 0x3a4
+	int8 pad_3b4[8];
+	h1_tag_reference actor_firing_parameters; // 0x3bc
+	real32 near_reticle_range; // 0x3cc
+	real32 far_reticle_range; // 0x3d0
+	real32 intersection_reticle_range; // 0x3d4
+	int16 unknown_2; // 0x3d8
+	int16 magnification_levels; // 0x3da
+	real_bounds magnification_range; // 0x3dc
+	real32 autoaim_angle; // 0x3e4
+	real32 autoaim_range; // 0x3e8
+	real32 magnetism_angle; // 0x3ec
+	real32 magnetism_range; // 0x3f0
+	real32 deviation_angle; // 0x3f4
+	int8 pad_3f8[4];
+	int16 movement_penalized; // 0x3fc
+	int16 unknown_3; // 0x3fe
+	real32 forward_movement_penalty; // 0x400
+	real32 sideways_movement_penalty; // 0x404
+	int8 pad_408[4];
+	real32 minimum_target_range; // 0x40c
+	real32 looking_time_modifier; // 0x410
+	int8 pad_414[4];
+	real32 light_power_on_time; // 0x418
+	real32 light_power_off_time; // 0x41c
+	h1_tag_reference light_power_on_effect; // 0x420
+	h1_tag_reference light_power_off_effect; // 0x430
+	real32 age_heat_recovery_penalty; // 0x440
+	real32 age_rate_of_fire_penalty; // 0x444
+	real32 age_misfire_start; // 0x448
+	real32 age_misfire_chance; // 0x44c
+	int8 pad_450[12];
+	h1_tag_reference first_person_model; // 0x45c
+	h1_tag_reference first_person_animations; // 0x46c
+	int8 pad_47c[4];
+	h1_tag_reference hud_interface; // 0x480
+	h1_tag_reference pickup_sound; // 0x490
+	h1_tag_reference zoom_in_sound; // 0x4a0
+	h1_tag_reference zoom_out_sound; // 0x4b0
+	int8 pad_4c0[12];
+	real32 active_camo_ding; // 0x4cc
+	real32 active_camo_regrowth_rate; // 0x4d0
+	int8 pad_4d4[12];
+	int16 unknown_4; // 0x4e0
+	int16 weapon_type; // 0x4e2
+	h1_tag_block<h1_weap_predicted_resources_2> predicted_resources_2; // 0x4e4
+	h1_tag_block<h1_weap_magazines> magazines; // 0x4f0
+	h1_tag_block<h1_weap_triggers> triggers; // 0x4fc
+};
+ASSERT_STRUCT_SIZE(h1_weap, 0x508);
+
 #pragma pack(pop)

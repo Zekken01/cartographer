@@ -5504,4 +5504,36 @@ struct h2x_sky
 };
 ASSERT_STRUCT_SIZE(h2x_sky, 0xac);
 
+struct h2x_itmc_item_permutations
+{
+	real32 weight; // 0x0
+	tag_reference item; // 0x4
+	string_id variant_name; // 0xc
+};
+ASSERT_STRUCT_SIZE(h2x_itmc_item_permutations, 0x10);
+
+struct h2x_itmc
+{
+	tag_block<h2x_itmc_item_permutations> item_permutations; // 0x0
+	int16 spawn_time; // 0x8
+	int16 unknown; // 0xa
+};
+ASSERT_STRUCT_SIZE(h2x_itmc, 0xc);
+
+struct h2x_vehc_vehicle_permutations
+{
+	real32 weight; // 0x0
+	tag_reference vehicle; // 0x4
+	string_id variant_name; // 0xc
+};
+ASSERT_STRUCT_SIZE(h2x_vehc_vehicle_permutations, 0x10);
+
+struct h2x_vehc
+{
+	tag_block<h2x_vehc_vehicle_permutations> vehicle_permutations; // 0x0
+	int16 spawn_time; // 0x8
+	int16 unknown; // 0xa
+};
+ASSERT_STRUCT_SIZE(h2x_vehc, 0xc);
+
 #pragma pack(pop)
