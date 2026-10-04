@@ -127,17 +127,19 @@ static void h1_scenario_build_netgame_flags(scenario* h2_scenario, const h1_scnr
 		}
 	}
 
-	scenario_netpoint* points = h1_runtime_block_new<scenario_netpoint>(&h2_scenario->netgame_flags, count);
+	h2x_scnr_netgame_flags* points = (h2x_scnr_netgame_flags*)h1_runtime_block_allocate(&h2_scenario->netgame_flags, sizeof(h2x_scnr_netgame_flags), count);
 	int32 point_index = 0;
 
 	auto add_point = [&](const h1_scnr_netgame_flags* source, e_netpoint_type type, int16 team) -> void
 	{
-		scenario_netpoint* point = &points[point_index++];
+		h2x_scnr_netgame_flags* point = &points[point_index++];
 		point->position = source->position;
-		point->facing_degrees = RADIANS_TO_DEGREES(source->facing);
-		point->type = type;
-		point->team_designator = (e_game_team)team;
-		point->flags = (e_scenario_netpoint_flags)0;
+		point->facing = RADIANS_TO_DEGREES(source->facing);
+		point->type = (int16)type;
+		point->team_designator = team;
+		// teleporters pair by identifier, hills and race checkpoints are ordered by it
+		point->identifier = source->usage_id;
+		point->flags = 0;
 		point->spawn_object_name = _string_id_empty_string;
 		point->spawn_marker_name = _string_id_empty_string;
 	};
