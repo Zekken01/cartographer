@@ -5,6 +5,9 @@
 #include "h1_log.h"
 #include "h1_mopp.h"
 #include "h1_runtime.h"
+
+#include <unordered_map>
+#include <vector>
 #include "h2_tag_definitions_generated.h"
 
 #include "cache/cache_files.h"
@@ -55,7 +58,9 @@ static const int16 k_h1_material_type_to_global_material[] =
 /* prototypes */
 
 static int16 h1_index_to_h2_short(int32 index);
-static void h1_collision_bsp_build(collision_bsp* destination, const h1_sbsp_collision_bsp* source);
+static void h1_collision_bsp_build(collision_bsp* destination, const h1_sbsp_collision_bsp* source, int16 material_offset);
+static void h1_structure_material_set(structure_collision_material* material, int16 h1_material_type);
+static int32 h1_instanced_geometry_build(structure_bsp* bsp, const structure_bsp* host_bsp, int32 structure_material_count, std::vector<real_rectangle3d>& out_instance_bounds);
 
 /* public code */
 
@@ -81,35 +86,21 @@ bool h1_structure_bsp_build(int32 h1_bsp_index, datum h2_structure_bsp_index, da
 	uint32 bsp_offset;
 	structure_bsp* bsp = (structure_bsp*)h1_runtime_allocate(sizeof(structure_bsp), &bsp_offset);
 
-	// collision materials
+	// collision materials (scenery collision models append theirs, see h1_instanced_geometry_build)
 	const int32 material_count = source->collision_materials.count;
 	structure_collision_material* materials = h1_runtime_block_new(&bsp->collision_materials, material_count);
 	for (int32 i = 0; i < material_count; i++)
 	{
 		const h1_sbsp_collision_materials* h1_material = g_h1_cache_file->block_get(source->collision_materials, i);
-		materials[i].old_shader.group = (tag_group)NONE;
-		materials[i].old_shader.index = NONE;
-		materials[i].new_shader.group = (tag_group)NONE;
-		materials[i].new_shader.index = NONE;
-		materials[i].global_material_index = h1_material_type_to_global_material(h1_material->material_type);
-		materials[i].conveyor_surface_index = (uint16)NONE;
+		h1_structure_material_set(&materials[i], h1_material->material_type);
 	}
 
 	// collision bsp
+	collision_bsp* collision = NULL;
 	if (source->collision_bsp.count > 0)
 	{
-		collision_bsp* collision = h1_runtime_block_new(&bsp->collision, 1);
-		h1_collision_bsp_build(collision, g_h1_cache_file->block_get(source->collision_bsp, 0));
-
-		// havok queries the structure through a mopp tree over the collision surfaces
-		uint8* mopp = NULL;
-		uint32 mopp_size = 0;
-		if (h1_mopp_build_for_collision_bsp(collision, &mopp, &mopp_size, &bsp->structure_physics.mopp_bounds_min, &bsp->structure_physics.mopp_bounds_max))
-		{
-			h1_runtime_data_set(&bsp->structure_physics.mopp_code, mopp, mopp_size);
-			h1_mopp_free(mopp);
-			h1_log("bsp: %u bytes of mopp code", mopp_size);
-		}
+		collision = h1_runtime_block_new(&bsp->collision, 1);
+		h1_collision_bsp_build(collision, g_h1_cache_file->block_get(source->collision_bsp, 0), 0);
 	}
 
 	bsp->vehicle_z_limits.lower = source->vehicle_floor;
@@ -220,6 +211,50 @@ bool h1_structure_bsp_build(int32 h1_bsp_index, datum h2_structure_bsp_index, da
 		}
 	}
 
+	// scenery collision as instanced geometry
+	std::vector<real_rectangle3d> instance_bounds;
+	const int32 definition_count = h1_instanced_geometry_build(bsp, host_bsp, material_count, instance_bounds);
+	const int32 instance_count = (int32)instance_bounds.size();
+	for (int32 i = 0; i < cluster_count; i++)
+	{
+		structure_cluster* cluster = &clusters[i];
+		std::vector<uint16> indices;
+		for (int32 j = 0; j < instance_count; j++)
+		{
+			const real_rectangle3d& a = cluster->bounds;
+			const real_rectangle3d& b = instance_bounds[j];
+			if (a.x0 <= b.x1 && b.x0 <= a.x1 && a.y0 <= b.y1 && b.y0 <= a.y1 && a.z0 <= b.z1 && b.z0 <= a.z1)
+			{
+				indices.push_back((uint16)j);
+			}
+		}
+		uint16* cluster_indices = h1_runtime_block_new(&cluster->instanced_geometry_indices, (int32)indices.size());
+		for (size_t j = 0; j < indices.size(); j++)
+		{
+			cluster_indices[j] = indices[j];
+		}
+	}
+
+	// havok queries the structure through a mopp tree over the collision surfaces and instances
+	if (collision)
+	{
+		std::vector<s_h1_mopp_item> items;
+		h1_mopp_collect_surfaces(collision, k_mopp_structure_surface_key, items);
+		for (int32 i = 0; i < instance_count; i++)
+		{
+			items.push_back({ k_mopp_instanced_geometry_key | (uint32)i, instance_bounds[i] });
+		}
+
+		uint8* mopp = NULL;
+		uint32 mopp_size = 0;
+		if (h1_mopp_build(items, &mopp, &mopp_size, &bsp->structure_physics.mopp_bounds_min, &bsp->structure_physics.mopp_bounds_max))
+		{
+			h1_runtime_data_set(&bsp->structure_physics.mopp_code, mopp, mopp_size);
+			h1_mopp_free(mopp);
+			h1_log("bsp: %u bytes of mopp code", mopp_size);
+		}
+	}
+
 	// potentially visible set, two bit vectors per cluster; everything is visible for now
 	{
 		const int32 row_size = ((cluster_count + 31) / 32) * sizeof(uint32) * 2;
@@ -288,11 +323,27 @@ bool h1_structure_bsp_build(int32 h1_bsp_index, datum h2_structure_bsp_index, da
 			render_info[i].palette_index = NONE;
 		}
 
+		h2x_ltmp_lightmap_groups_poop_definitions* poop_definitions = h1_runtime_block_new(&group->poop_definitions, definition_count);
+		for (int32 i = 0; i < definition_count; i++)
+		{
+			poop_definitions[i].resource_block_offset = NONE;
+			poop_definitions[i].owner_tag = h2_lightmap_index;
+		}
+		h2x_ltmp_lightmap_groups_instance_render_info* instance_render_info = h1_runtime_block_new(&group->instance_render_info, instance_count);
+		h2x_ltmp_lightmap_groups_instance_bucket_refs* instance_bucket_refs = h1_runtime_block_new(&group->instance_bucket_refs, instance_count);
+		for (int32 i = 0; i < instance_count; i++)
+		{
+			instance_render_info[i].bitmap_index = NONE;
+			instance_render_info[i].palette_index = NONE;
+			instance_bucket_refs[i].bucket_index = NONE;
+		}
+
 		lightmap_instance->data_offset = lightmap_offset;
 		lightmap_instance->size = sizeof(h2x_ltmp);
 	}
 
-	h1_log("bsp: %d collision materials, %d leaves, %d clusters, %d portals", material_count, leaf_count, cluster_count, portal_count);
+	h1_log("bsp: %d collision materials, %d leaves, %d clusters, %d portals, %d scenery collision definitions, %d instances",
+		bsp->collision_materials.count, leaf_count, cluster_count, portal_count, definition_count, instance_count);
 	return true;
 }
 
@@ -321,7 +372,7 @@ static int32 h1_index_to_h2_bsp3d_child(int32 index)
 	return index;
 }
 
-static void h1_collision_bsp_build(collision_bsp* destination, const h1_sbsp_collision_bsp* source)
+static void h1_collision_bsp_build(collision_bsp* destination, const h1_sbsp_collision_bsp* source, int16 material_offset)
 {
 	// bsp3d nodes
 	{
@@ -399,7 +450,7 @@ static void h1_collision_bsp_build(collision_bsp* destination, const h1_sbsp_col
 			surfaces[i].first_edge_index = (uint16)surface->first_edge;
 			surfaces[i].flags = surface->flags;
 			surfaces[i].breakable_surface_index = surface->breakable_surface;
-			surfaces[i].material_index = surface->material;
+			surfaces[i].material_index = surface->material >= 0 ? surface->material + material_offset : surface->material;
 		}
 	}
 
@@ -432,4 +483,182 @@ static void h1_collision_bsp_build(collision_bsp* destination, const h1_sbsp_col
 		}
 	}
 	return;
+}
+
+static void h1_structure_material_set(structure_collision_material* material, int16 h1_material_type)
+{
+	material->old_shader.group = (tag_group)NONE;
+	material->old_shader.index = NONE;
+	material->new_shader.group = (tag_group)NONE;
+	material->new_shader.index = NONE;
+	material->global_material_index = h1_material_type_to_global_material(h1_material_type);
+	material->conveyor_surface_index = (uint16)NONE;
+	return;
+}
+
+// the collision bsp of a halo 1 collision model (node 0), the layout matches the structure collision bsp
+static const h1_sbsp_collision_bsp* h1_collision_model_bsp_get(const h1_coll* model)
+{
+	const h1_coll_nodes* node = g_h1_cache_file->block_get(model->nodes, 0);
+	if (!node || node->bsps.count <= 0)
+	{
+		return NULL;
+	}
+	static_assert(sizeof(h1_coll_nodes_bsps) == sizeof(h1_sbsp_collision_bsp));
+	return (const h1_sbsp_collision_bsp*)g_h1_cache_file->block_get(node->bsps, 0);
+}
+
+static int32 h1_instanced_geometry_build(structure_bsp* bsp, const structure_bsp* host_bsp, int32 structure_material_count, std::vector<real_rectangle3d>& out_instance_bounds)
+{
+	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
+
+	struct s_placement { datum model; real_matrix4x3 matrix; };
+	std::vector<datum> models;
+	std::unordered_map<datum, int32> model_definitions;
+	std::vector<s_placement> placements;
+
+	for (int32 i = 0; i < scenario->scenery.count; i++)
+	{
+		const h1_scnr_scenery* placement = g_h1_cache_file->block_get(scenario->scenery, i);
+		const h1_scnr_scenery_palette* palette = g_h1_cache_file->block_get(scenario->scenery_palette, placement->palette_index);
+		const h1_scen* scenery = palette ? (const h1_scen*)g_h1_cache_file->tag_get(palette->name) : NULL;
+		const h1_coll* model = scenery ? (const h1_coll*)g_h1_cache_file->tag_get(scenery->collision_model) : NULL;
+		if (!model || !h1_collision_model_bsp_get(model))
+		{
+			continue;
+		}
+
+		if (model_definitions.find(scenery->collision_model.index) == model_definitions.end())
+		{
+			model_definitions[scenery->collision_model.index] = (int32)models.size();
+			models.push_back(scenery->collision_model.index);
+		}
+
+		s_placement entry;
+		entry.model = scenery->collision_model.index;
+		h1_matrix_from_euler(&placement->rotation, &placement->position, &entry.matrix);
+		placements.push_back(entry);
+	}
+
+	if (models.empty())
+	{
+		return 0;
+	}
+
+	// the havok shapes of a definition are copied from the host and given our bounds and mopp
+	const h2x_sbsp_instanced_geometry_definitions_bsp_physics* physics_template = NULL;
+	if (host_bsp->instanced_geometry_definitions.count > 0)
+	{
+		const structure_instanced_geometry_definition* host_definition = host_bsp->instanced_geometry_definitions[0];
+		if (host_definition->bsp_physics.count > 0)
+		{
+			physics_template = (const h2x_sbsp_instanced_geometry_definitions_bsp_physics*)tag_block_get_element_with_size((const s_tag_block*)&host_definition->bsp_physics, 0, sizeof(h2x_sbsp_instanced_geometry_definitions_bsp_physics));
+		}
+	}
+	if (!physics_template)
+	{
+		h1_log("bsp: the host has no instanced geometry physics, scenery has no collision");
+		return 0;
+	}
+
+	// collision materials of every model follow the structure's
+	std::vector<int16> material_offsets;
+	int32 total_materials = structure_material_count;
+	for (datum model_index : models)
+	{
+		const h1_coll* model = (const h1_coll*)g_h1_cache_file->tag_get('coll', model_index);
+		material_offsets.push_back((int16)total_materials);
+		total_materials += model->materials.count;
+	}
+	{
+		const structure_collision_material* structure_materials = (const structure_collision_material*)tag_block_get_element_with_size((const s_tag_block*)&bsp->collision_materials, 0, sizeof(structure_collision_material));
+		std::vector<structure_collision_material> copy(structure_materials, structure_materials + structure_material_count);
+		structure_collision_material* materials = h1_runtime_block_new(&bsp->collision_materials, total_materials);
+		for (int32 i = 0; i < structure_material_count; i++)
+		{
+			materials[i] = copy[i];
+		}
+		for (size_t m = 0; m < models.size(); m++)
+		{
+			const h1_coll* model = (const h1_coll*)g_h1_cache_file->tag_get('coll', models[m]);
+			for (int32 i = 0; i < model->materials.count; i++)
+			{
+				h1_structure_material_set(&materials[material_offsets[m] + i], g_h1_cache_file->block_get(model->materials, i)->material_type);
+			}
+		}
+	}
+
+	// definitions
+	const int32 definition_count = (int32)models.size();
+	structure_instanced_geometry_definition* definitions = h1_runtime_block_new(&bsp->instanced_geometry_definitions, definition_count);
+	for (int32 i = 0; i < definition_count; i++)
+	{
+		const h1_coll* model = (const h1_coll*)g_h1_cache_file->tag_get('coll', models[i]);
+		structure_instanced_geometry_definition* definition = &definitions[i];
+
+		definition->render_info.block.block_offset = NONE;
+		definition->render_info.block.geometry_cache_index = NONE;
+		definition->checksum = (int32)models[i];
+		h1_collision_bsp_build(&definition->collision_info, h1_collision_model_bsp_get(model), material_offsets[i]);
+
+		real_rectangle3d bounds;
+		h1_mopp_collision_bsp_bounds(&definition->collision_info, NULL, &bounds);
+		definition->bounding_sphere_center = { (bounds.x0 + bounds.x1) * 0.5f, (bounds.y0 + bounds.y1) * 0.5f, (bounds.z0 + bounds.z1) * 0.5f };
+		const real32 dx = bounds.x1 - bounds.x0, dy = bounds.y1 - bounds.y0, dz = bounds.z1 - bounds.z0;
+		definition->bounding_sphere_radius = 0.5f * sqrtf(dx * dx + dy * dy + dz * dz);
+
+		// render leaves mirror the collision leaves
+		const int32 leaf_count = definition->collision_info.leaves.count;
+		structure_leaf* leaves = h1_runtime_block_new(&definition->render_leaves, leaf_count);
+		for (int32 j = 0; j < leaf_count; j++)
+		{
+			leaves[j].cluster = 0;
+		}
+
+		// havok shape over the definition's surfaces
+		std::vector<s_h1_mopp_item> items;
+		h1_mopp_collect_surfaces(&definition->collision_info, 0, items);
+		uint8* mopp = NULL;
+		uint32 mopp_size = 0;
+		real_point3d mopp_min, mopp_max;
+		if (h1_mopp_build(items, &mopp, &mopp_size, &mopp_min, &mopp_max))
+		{
+			h2x_sbsp_instanced_geometry_definitions_bsp_physics* physics = (h2x_sbsp_instanced_geometry_definitions_bsp_physics*)h1_runtime_block_allocate(
+				(s_tag_block*)&definition->bsp_physics, sizeof(h2x_sbsp_instanced_geometry_definitions_bsp_physics), 1);
+			*physics = *physics_template;
+			physics->user_data = 0;
+			physics->user_data_2 = 0;
+			physics->user_data_3 = 0;
+			physics->center = { definition->bounding_sphere_center.x, definition->bounding_sphere_center.y, definition->bounding_sphere_center.z };
+			physics->half_extent = { dx * 0.5f, dy * 0.5f, dz * 0.5f };
+			physics->runtime_model_tag.group = (tag_group)NONE;
+			physics->runtime_model_tag.index = NONE;
+			h1_runtime_data_set(&physics->mopp_code_data, mopp, mopp_size);
+			// the last field holds the mopp origin x in tool built maps
+			*(real32*)((uint8*)physics + 0x70) = *(const real32*)mopp;
+			h1_mopp_free(mopp);
+		}
+	}
+
+	// instances
+	const int32 instance_count = (int32)placements.size();
+	structure_instanced_geometry_instance* instances = h1_runtime_block_new(&bsp->instanced_geometry_instances, instance_count);
+	for (int32 i = 0; i < instance_count; i++)
+	{
+		const s_placement* placement = &placements[i];
+		const int32 definition_index = model_definitions[placement->model];
+		structure_instanced_geometry_instance* instance = &instances[i];
+		instance->scale = 1.f;
+		csmemcpy(&instance->transform, &placement->matrix.n[0][0], sizeof(instance->transform));
+		instance->position = { placement->matrix.n[3][0], placement->matrix.n[3][1], placement->matrix.n[3][2] };
+		instance->instance_definition = (uint16)definition_index;
+		instance->checksum = definitions[definition_index].checksum;
+		instance->name = _string_id_empty_string;
+
+		real_rectangle3d bounds;
+		h1_mopp_collision_bsp_bounds(&definitions[definition_index].collision_info, &placement->matrix, &bounds);
+		out_instance_bounds.push_back(bounds);
+	}
+
+	return definition_count;
 }

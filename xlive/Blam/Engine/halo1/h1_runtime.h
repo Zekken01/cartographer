@@ -53,3 +53,6 @@ datum h1_runtime_tag_find(tag_group group, const char* name);
 void h1_runtime_reference_set(tag_reference* reference, tag_group group, datum index);
 
 uint32 h1_runtime_used_size(void);
+
+// halo 1 placement rotation (yaw, pitch, roll in radians) and position to a halo matrix
+void h1_matrix_from_euler(const real_euler_angles3d* angles, const real_point3d* position, real_matrix4x3* out);

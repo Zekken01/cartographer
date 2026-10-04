@@ -7,6 +7,7 @@
 #include "h1_map_loader.h"
 #include "h1_render_models.h"
 #include "h1_render_shaders.h"
+#include "h1_runtime.h"
 
 #include "game/game_time.h"
 #include "rasterizer/rasterizer_globals.h"
@@ -93,7 +94,6 @@ static bool h1_render_begin(void);
 static void h1_render_end(void);
 static void h1_render_structure_pass(e_h1_render_pass pass);
 static void h1_unpack_normal(uint32 packed, real32* out);
-static void h1_matrix_from_euler(const real_euler_angles3d* angles, const real_point3d* position, real_matrix4x3* out);
 static real32 h1_render_game_time(void);
 static void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_lighting);
 
@@ -621,38 +621,6 @@ static void h1_unpack_normal(uint32 packed, real32* out)
 	return;
 }
 
-// yaw about z, then pitch (up), then roll about forward; matrix rows are forward, left, up and position
-static void h1_matrix_from_euler(const real_euler_angles3d* angles, const real_point3d* position, real_matrix4x3* out)
-{
-	const real32 cy = cosf(angles->yaw), sy = sinf(angles->yaw);
-	const real32 cp = cosf(angles->pitch), sp = sinf(angles->pitch);
-	const real32 cr = cosf(angles->roll), sr = sinf(angles->roll);
-
-	// M = Rz(yaw) * Ry(-pitch) * Rx(roll)
-	const real32 m[3][3] =
-	{
-		{ cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr },
-		{ sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr },
-		{ sp, -cp * sr, -cp * cr },
-	};
-
-	out->scale = 1.f;
-	for (int32 row = 0; row < 3; row++)
-	{
-		// row = image of basis vector = column of M
-		out->n[row][0] = m[0][row];
-		out->n[row][1] = m[1][row];
-		out->n[row][2] = m[2][row];
-	}
-	// up must be the cross of forward and left (right handed)
-	out->n[2][0] = out->n[0][1] * out->n[1][2] - out->n[0][2] * out->n[1][1];
-	out->n[2][1] = out->n[0][2] * out->n[1][0] - out->n[0][0] * out->n[1][2];
-	out->n[2][2] = out->n[0][0] * out->n[1][1] - out->n[0][1] * out->n[1][0];
-	out->n[3][0] = position->x;
-	out->n[3][1] = position->y;
-	out->n[3][2] = position->z;
-	return;
-}
 
 // lighting from the lightmapped structure surface below a point: the material's radiosity lights scaled by the lightmap
 static void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_lighting)

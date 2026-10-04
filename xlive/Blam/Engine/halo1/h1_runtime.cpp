@@ -151,3 +151,36 @@ uint32 h1_runtime_used_size(void)
 {
 	return g_h1_runtime_used_size;
 }
+
+// yaw about z, then pitch (up), then roll about forward; matrix rows are forward, left, up and position
+void h1_matrix_from_euler(const real_euler_angles3d* angles, const real_point3d* position, real_matrix4x3* out)
+{
+	const real32 cy = cosf(angles->yaw), sy = sinf(angles->yaw);
+	const real32 cp = cosf(angles->pitch), sp = sinf(angles->pitch);
+	const real32 cr = cosf(angles->roll), sr = sinf(angles->roll);
+
+	// M = Rz(yaw) * Ry(-pitch) * Rx(roll)
+	const real32 m[3][3] =
+	{
+		{ cy * cp, -cy * sp * sr - sy * cr, -cy * sp * cr + sy * sr },
+		{ sy * cp, -sy * sp * sr + cy * cr, -sy * sp * cr - cy * sr },
+		{ sp, cp * sr, cp * cr },
+	};
+
+	out->scale = 1.f;
+	for (int32 row = 0; row < 3; row++)
+	{
+		// row = image of basis vector = column of M
+		out->n[row][0] = m[0][row];
+		out->n[row][1] = m[1][row];
+		out->n[row][2] = m[2][row];
+	}
+	// up must be the cross of forward and left (right handed)
+	out->n[2][0] = out->n[0][1] * out->n[1][2] - out->n[0][2] * out->n[1][1];
+	out->n[2][1] = out->n[0][2] * out->n[1][0] - out->n[0][0] * out->n[1][2];
+	out->n[2][2] = out->n[0][0] * out->n[1][1] - out->n[0][1] * out->n[1][0];
+	out->n[3][0] = position->x;
+	out->n[3][1] = position->y;
+	out->n[3][2] = position->z;
+	return;
+}
