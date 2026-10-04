@@ -721,9 +721,9 @@ static void h1_map_transform(real32* out, real32 u_scale, real32 v_scale, real32
 	real32 u = u_offset;
 	real32 v = v_offset;
 	real32 rotation = rotation_degrees;
-	if (u_period > 0.f) u += h1_periodic_function(u_function, game_time / u_period + u_phase) * u_animation_scale;
-	if (v_period > 0.f) v += h1_periodic_function(v_function, game_time / v_period + v_phase) * v_animation_scale;
-	if (rotation_period > 0.f) rotation += h1_periodic_function(rotation_function, game_time / rotation_period + rotation_phase) * rotation_scale;
+	if (u_period != 0.f) u += h1_periodic_function(u_function, game_time / u_period + u_phase) * u_animation_scale;
+	if (v_period != 0.f) v += h1_periodic_function(v_function, game_time / v_period + v_phase) * v_animation_scale;
+	if (rotation_period != 0.f) rotation += h1_periodic_function(rotation_function, game_time / rotation_period + rotation_phase) * rotation_scale;
 
 	out[0] = u_scale != 0.f ? u_scale : 1.f;
 	out[1] = v_scale != 0.f ? v_scale : 1.f;
@@ -898,7 +898,7 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 
 			// constant color 0 animates between its bounds
 			real32 t = 0.f;
-			if (stage->color0_animation_period > 0.f)
+			if (stage->color0_animation_period != 0.f)
 			{
 				t = h1_periodic_function(stage->color0_animation_function, game_time / stage->color0_animation_period);
 			}
