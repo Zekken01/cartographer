@@ -329,13 +329,21 @@ bool h1_structure_bsp_build(int32 h1_bsp_index, datum h2_structure_bsp_index, da
 			poop_definitions[i].resource_block_offset = NONE;
 			poop_definitions[i].owner_tag = h2_lightmap_index;
 		}
+		// the geometry preload follows every instance bucket ref into the buckets without a bounds check
+		// (an unsigned bucket index), so the instances share one empty bucket
+		h2x_ltmp_lightmap_groups_geometry_buckets* bucket = h1_runtime_block_new(&group->geometry_buckets, instance_count > 0 ? 1 : 0);
+		if (bucket)
+		{
+			bucket->resource_block_offset = NONE;
+			bucket->owner_tag = h2_lightmap_index;
+		}
 		h2x_ltmp_lightmap_groups_instance_render_info* instance_render_info = h1_runtime_block_new(&group->instance_render_info, instance_count);
 		h2x_ltmp_lightmap_groups_instance_bucket_refs* instance_bucket_refs = h1_runtime_block_new(&group->instance_bucket_refs, instance_count);
 		for (int32 i = 0; i < instance_count; i++)
 		{
 			instance_render_info[i].bitmap_index = NONE;
 			instance_render_info[i].palette_index = NONE;
-			instance_bucket_refs[i].bucket_index = NONE;
+			instance_bucket_refs[i].bucket_index = 0;
 		}
 
 		lightmap_instance->data_offset = lightmap_offset;
