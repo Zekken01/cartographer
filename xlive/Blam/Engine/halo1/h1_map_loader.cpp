@@ -6,6 +6,7 @@
 #include "h1_render.h"
 #include "h1_runtime.h"
 #include "h1_scenario.h"
+#include "h1_sound.h"
 
 #include "cache/cache_files.h"
 #include "game/game.h"
@@ -192,8 +193,9 @@ uint32 h1_maps_tag_memory_required(void)
 
 bool h1_maps_scenario_tags_loaded(bool custom_map)
 {
-	// direct3d resources built for the previous halo 1 map
+	// direct3d resources and sounds of the previous halo 1 map
 	h1_render_dispose();
+	h1_sound_dispose();
 
 	// built-in maps don't go through the custom map open, drop whatever was loaded before
 	if (!custom_map)
@@ -214,11 +216,17 @@ bool h1_maps_scenario_tags_loaded(bool custom_map)
 	h1_runtime_begin();
 	const bool result = h1_scenario_build();
 	h1_log("maps: built %s, %u bytes of tag data", g_h1_cache_file->name(), h1_runtime_used_size());
+	if (result)
+	{
+		h1_sound_begin();
+	}
 	return result;
 }
 
 void h1_maps_update(void)
 {
+	h1_sound_update();
+
 	if (g_h1_autolaunch_done)
 	{
 		return;

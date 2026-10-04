@@ -8,6 +8,7 @@
 #include "h1_render_models.h"
 #include "h1_render_shaders.h"
 #include "h1_runtime.h"
+#include "h1_sound.h"
 
 #include "game/game_time.h"
 #include "rasterizer/rasterizer_globals.h"
@@ -106,11 +107,16 @@ void h1_render_structure_opaque(void)
 		return;
 	}
 
+	const s_frame* frame = global_window_parameters_get();
+	if (frame->window_bound_index == 0)
+	{
+		h1_sound_listener_set(&frame->camera);
+	}
+
 	if (g_h1_render_debug_mode != 9)
 	{
 		h1_render_structure_pass(_h1_render_pass_opaque);
 	}
-
 
 	const real32 game_time = h1_render_game_time();
 	for (const s_h1_scenery_instance& instance : g_h1_render.scenery)

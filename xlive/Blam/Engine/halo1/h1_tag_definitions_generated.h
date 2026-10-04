@@ -1477,7 +1477,7 @@ struct h1_bitm_bitmaps
 	int16 unknown; // 0x16
 	uint32 pixels_offset; // 0x18
 	uint32 pixels_size; // 0x1c
-	datum datum; // 0x20
+	datum f_datum; // 0x20
 	uint32 pointer; // 0x24
 	int8 pad_28[4];
 	int8 unknown_2; // 0x2c
@@ -3704,5 +3704,234 @@ struct h1_weap
 	h1_tag_block<h1_weap_triggers> triggers; // 0x4fc
 };
 ASSERT_STRUCT_SIZE(h1_weap, 0x508);
+
+struct h1_snd_pitch_ranges_permutations
+{
+	char name[32]; // 0x0
+	real32 skip_fraction; // 0x20
+	real32 gain; // 0x24
+	int16 compression; // 0x28
+	int16 next_permutation_index; // 0x2a
+	uint32 samples_pointer; // 0x2c
+	int8 pad_30[4];
+	datum f_datum; // 0x34
+	int32 buffer_size; // 0x38
+	datum f_datum_2; // 0x3c
+	int32 sample_size; // 0x40
+	int8 pad_44[4];
+	uint32 sample_offset; // 0x48
+	int8 pad_4c[8];
+	h1_tag_data mouth_data; // 0x54
+	h1_tag_data subtitle_data; // 0x68
+};
+ASSERT_STRUCT_SIZE(h1_snd_pitch_ranges_permutations, 0x7c);
+
+struct h1_snd_pitch_ranges
+{
+	char name[32]; // 0x0
+	real32 natural_pitch; // 0x20
+	real_bounds bend_bounds; // 0x24
+	int16 actual_permutation_count; // 0x2c
+	int16 unknown; // 0x2e
+	real32 playback_rate; // 0x30
+	int32 unknown_2; // 0x34
+	int32 unknown_3; // 0x38
+	h1_tag_block<h1_snd_pitch_ranges_permutations> permutations; // 0x3c
+};
+ASSERT_STRUCT_SIZE(h1_snd_pitch_ranges, 0x48);
+
+struct h1_snd
+{
+	uint32 flags; // 0x0
+	int16 f_class; // 0x4
+	int16 sample_rate; // 0x6
+	real32 minimum_distance; // 0x8
+	real32 maximum_distance; // 0xc
+	real32 skip_fraction; // 0x10
+	real_bounds random_pitch_bounds; // 0x14
+	real32 inner_cone_angle; // 0x1c
+	real32 outer_cone_angle; // 0x20
+	real32 outer_cone_gain; // 0x24
+	real32 gain_modifier; // 0x28
+	real32 maximum_bend_per_second; // 0x2c
+	int8 pad_30[12];
+	real32 skip_fraction_modifier; // 0x3c
+	real32 gain_modifier_2; // 0x40
+	real32 pitch_modifier; // 0x44
+	int8 pad_48[12];
+	real32 skip_fraction_modifier_2; // 0x54
+	real32 gain_modifier_3; // 0x58
+	real32 pitch_modifier_2; // 0x5c
+	int8 pad_60[12];
+	int16 encoding; // 0x6c
+	int16 compression; // 0x6e
+	h1_tag_reference promotion_sound; // 0x70
+	int16 promotion_count; // 0x80
+	int16 unknown; // 0x82
+	int32 maximum_play_time; // 0x84
+	int8 pad_88[8];
+	int32 unknown_2; // 0x90
+	int32 unknown_3; // 0x94
+	h1_tag_block<h1_snd_pitch_ranges> pitch_ranges; // 0x98
+};
+ASSERT_STRUCT_SIZE(h1_snd, 0xa4);
+
+struct h1_lsnd_tracks
+{
+	uint32 flags; // 0x0
+	real32 gain; // 0x4
+	real32 fade_in_duration; // 0x8
+	real32 fade_out_duration; // 0xc
+	int8 pad_10[32];
+	h1_tag_reference start; // 0x30
+	h1_tag_reference loop; // 0x40
+	h1_tag_reference end; // 0x50
+	int8 pad_60[32];
+	h1_tag_reference alternate_loop; // 0x80
+	h1_tag_reference alternate_end; // 0x90
+};
+ASSERT_STRUCT_SIZE(h1_lsnd_tracks, 0xa0);
+
+struct h1_lsnd_detail_sounds
+{
+	h1_tag_reference sound; // 0x0
+	real_bounds random_period_bounds; // 0x10
+	real32 gain; // 0x18
+	uint32 flags; // 0x1c
+	int8 pad_20[48];
+	real_bounds yaw_bounds; // 0x50
+	real_bounds pitch_bounds; // 0x58
+	real_bounds distance_bounds; // 0x60
+};
+ASSERT_STRUCT_SIZE(h1_lsnd_detail_sounds, 0x68);
+
+struct h1_lsnd
+{
+	uint32 flags; // 0x0
+	real32 zero_detail_sound_period; // 0x4
+	real32 zero_runtime_unknown; // 0x8
+	real32 zero_runtime_unknown_2; // 0xc
+	real32 one_detail_sound_period; // 0x10
+	real32 one_runtime_unknown; // 0x14
+	real32 one_runtime_unknown_2; // 0x18
+	int32 runtime_unknown; // 0x1c
+	real32 maximum_distance; // 0x20
+	int8 pad_24[8];
+	h1_tag_reference continuous_damage_effect; // 0x2c
+	h1_tag_block<h1_lsnd_tracks> tracks; // 0x3c
+	h1_tag_block<h1_lsnd_detail_sounds> detail_sounds; // 0x48
+};
+ASSERT_STRUCT_SIZE(h1_lsnd, 0x54);
+
+struct h1_ssce_attachments
+{
+	h1_tag_reference type; // 0x0
+	char marker[32]; // 0x10
+	int16 primary_scale; // 0x30
+	int16 secondary_scale; // 0x32
+	int16 change_color; // 0x34
+	int16 unknown; // 0x36
+	int8 pad_38[16];
+};
+ASSERT_STRUCT_SIZE(h1_ssce_attachments, 0x48);
+
+struct h1_ssce_widgets
+{
+	h1_tag_reference reference; // 0x0
+	int8 pad_10[16];
+};
+ASSERT_STRUCT_SIZE(h1_ssce_widgets, 0x20);
+
+struct h1_ssce_functions
+{
+	uint32 flags; // 0x0
+	real32 period; // 0x4
+	int16 scale_period_by; // 0x8
+	int16 function; // 0xa
+	int16 scale_function_by; // 0xc
+	int16 wobble_function; // 0xe
+	real32 wobble_period; // 0x10
+	real32 wobble_magnitude; // 0x14
+	real32 square_wave_threshold; // 0x18
+	int16 step_count; // 0x1c
+	int16 map_to; // 0x1e
+	int16 sawtooth_count; // 0x20
+	int16 add; // 0x22
+	int16 scale_result_by; // 0x24
+	int16 bounds_mode; // 0x26
+	real_bounds bounds; // 0x28
+	int8 pad_30[4];
+	int16 unknown; // 0x34
+	int16 turn_off_with_index; // 0x36
+	real32 scale_by; // 0x38
+	int8 pad_3c[252];
+	real32 inverse_bounds; // 0x138
+	real32 inverse_sawtooth; // 0x13c
+	real32 inverse_step; // 0x140
+	real32 inverse_period; // 0x144
+	char usage[32]; // 0x148
+};
+ASSERT_STRUCT_SIZE(h1_ssce_functions, 0x168);
+
+struct h1_ssce_change_colors_permutations
+{
+	real32 weight; // 0x0
+	real_rgb_color color_lower_bound; // 0x4
+	real_rgb_color color_upper_bound; // 0x10
+};
+ASSERT_STRUCT_SIZE(h1_ssce_change_colors_permutations, 0x1c);
+
+struct h1_ssce_change_colors
+{
+	int16 darken_by; // 0x0
+	int16 scale_by; // 0x2
+	uint32 scale_flags; // 0x4
+	real_rgb_color color_lower_bound; // 0x8
+	real_rgb_color color_upper_bound; // 0x14
+	h1_tag_block<h1_ssce_change_colors_permutations> permutations; // 0x20
+};
+ASSERT_STRUCT_SIZE(h1_ssce_change_colors, 0x2c);
+
+struct h1_ssce_predicted_resources
+{
+	int16 type; // 0x0
+	int16 resource_index; // 0x2
+	datum tag_index; // 0x4
+};
+ASSERT_STRUCT_SIZE(h1_ssce_predicted_resources, 0x8);
+
+struct h1_ssce
+{
+	int16 object_type; // 0x0
+	uint16 flags; // 0x2
+	real32 bounding_radius; // 0x4
+	real_point3d bounding_offset; // 0x8
+	real_point3d origin_offset; // 0x14
+	real32 acceleration_scale; // 0x20
+	uint32 runtime_flags; // 0x24
+	h1_tag_reference model; // 0x28
+	h1_tag_reference animation_graph; // 0x38
+	int8 pad_48[40];
+	h1_tag_reference collision_model; // 0x70
+	h1_tag_reference physics; // 0x80
+	h1_tag_reference modifier_shader; // 0x90
+	h1_tag_reference creation_effect; // 0xa0
+	int8 pad_b0[84];
+	real32 render_bounding_radius; // 0x104
+	int16 a_in; // 0x108
+	int16 b_in; // 0x10a
+	int16 c_in; // 0x10c
+	int16 d_in; // 0x10e
+	int8 pad_110[44];
+	int16 hud_text_message_index; // 0x13c
+	int16 forced_shader_permutation_index; // 0x13e
+	h1_tag_block<h1_ssce_attachments> attachments; // 0x140
+	h1_tag_block<h1_ssce_widgets> widgets; // 0x14c
+	h1_tag_block<h1_ssce_functions> functions; // 0x158
+	h1_tag_block<h1_ssce_change_colors> change_colors; // 0x164
+	h1_tag_block<h1_ssce_predicted_resources> predicted_resources; // 0x170
+	int8 pad_17c[128];
+};
+ASSERT_STRUCT_SIZE(h1_ssce, 0x1fc);
 
 #pragma pack(pop)

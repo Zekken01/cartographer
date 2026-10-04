@@ -4207,7 +4207,7 @@ struct h2x_bitm_bitmaps
 	int32 lod2_size; // 0x38
 	int32 lod3_size; // 0x3c
 	int8 pad_40[12];
-	tag_reference datum; // 0x4c
+	tag_reference f_datum; // 0x4c
 	int8 pad_54[12];
 	int32 low_detail_offset; // 0x60
 	int32 low_detail_size; // 0x64
