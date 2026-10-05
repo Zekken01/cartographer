@@ -15,6 +15,7 @@
 #include "main/interpolator.h"
 #include "math/matrix_math.h"
 #include "objects/objects.h"
+#include "units/units.h"
 #include "objects/object_placement.h"
 #include "game/game.h"
 #include "game/game_time.h"
@@ -265,8 +266,19 @@ void h1_object_functions_export(datum h1_definition_index, const s_h1_object_vit
 			value = vitality->dead ? 0.f : 1.f;
 			break;
 		case _h1_object_function_compass:
-			// the object's heading isn't tracked, the value stays
-			value = functions->incoming[i];
+			// the heading from the scenario's north, a turn mapped to 0 to 1 (straight up and down keeps the value)
+			if (vitality->has_forward && fabsf(vitality->forward.k) < 0.995f)
+			{
+				const h1_scnr* scenario = g_h1_cache_file->scenario_get();
+				real32 difference = atan2f(vitality->forward.i, vitality->forward.j) - (scenario ? scenario->local_north : 0.f);
+				while (difference > _pi) difference -= 2.f * _pi;
+				while (difference <= -_pi) difference += 2.f * _pi;
+				value = PIN(0.15915494f * difference + 0.5f, 0.f, 1.f);
+			}
+			else
+			{
+				value = functions->incoming[i];
+			}
 			break;
 		default:
 			// umbrella shields, shield stun and region damage
@@ -450,14 +462,15 @@ static void h1_weapon_functions_export(const weapon_datum* weapon, datum object_
 			break;
 		case _h1_weapon_function_primary_ammunition:
 		case _h1_weapon_function_secondary_ammunition:
-			if (trigger_index < definition->magazines.count)
+		{
+			// the magazine's rounds loaded out of its maximum, from halo 1's weapon state
+			s_h1_weapon_interface_state weapon_state;
+			if (trigger_index < definition->magazines.count && h1_weapon_logic_interface_state(object_index, &weapon_state) &&
+				trigger_index < weapon_state.magazine_count && weapon_state.magazines[trigger_index].rounds_loaded_maximum > 0)
 			{
-				const h1_weap_magazines* magazine = g_h1_cache_file->block_get(definition->magazines, trigger_index);
-				if (magazine->rounds_loaded_maximum)
-				{
-					value = (real32)weapon->weapon.magazines[trigger_index].rounds_loaded / (real32)magazine->rounds_loaded_maximum;
-				}
+				value = (real32)weapon_state.magazines[trigger_index].rounds_loaded / (real32)weapon_state.magazines[trigger_index].rounds_loaded_maximum;
 			}
+		}
 			break;
 		case _h1_weapon_function_primary_ejection_port:
 		case _h1_weapon_function_secondary_ejection_port:
@@ -522,6 +535,15 @@ void h1_objects_update_functions(void)
 		vitality.current_body_damage = object->object.current_body_damage;
 		vitality.current_shield_damage = object->object.current_shield_damage;
 		vitality.dead = false;
+		// a held weapon points where its holder aims
+		vitality.has_forward = true;
+		vitality.forward = object->object.forward;
+		const unit_datum* holder = object->object.parent_object_index != NONE ?
+			(const unit_datum*)object_try_and_get_and_verify_type(object_get_ultimate_parent(object_index), _object_mask_unit) : NULL;
+		if (holder)
+		{
+			vitality.forward = holder->unit.aiming_vector;
+		}
 		h1_object_functions_export(binding->h1_definition_index, &vitality, functions);
 		const datum h1_weapon_index = h1_weapon_h1_get(object->definition_index);
 		if (h1_weapon_index != NONE)

@@ -169,6 +169,7 @@ void h1_scenery_update(void)
 		vitality.current_body_damage = state->current_body_damage;
 		vitality.current_shield_damage = state->current_shield_damage;
 		vitality.dead = false;
+		vitality.has_forward = false;
 		h1_object_functions_export(state->definition_index, &vitality, &state->functions);
 		h1_object_functions_update(state->definition_index, placement_index, &state->functions);
 	}

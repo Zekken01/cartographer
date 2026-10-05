@@ -788,6 +788,7 @@ static bool g_h1_fog_context_fogged = false;
 static bool g_h1_fog_context_has_centroid = false;
 static real_point3d g_h1_fog_context_centroid = {};
 static const real32* g_h1_object_function_values = NULL;
+static int16 g_h1_shader_permutation_index = 0;
 static const real_rgb_color* g_h1_object_change_colors = NULL;
 
 /* prototypes */
@@ -1179,6 +1180,12 @@ bool h1_render_environment_fog_bind(void)
 	h1_fog_set_shader_constants(_h1_fog_shader_mode_none, NULL);
 	h1_fog_set_environment_fog_constants();
 	return true;
+}
+
+void h1_render_shader_permutation_set(int16 permutation_index)
+{
+	g_h1_shader_permutation_index = permutation_index;
+	return;
 }
 
 void h1_render_shader_object_animation_set(const real32* function_values, const real_rgb_color* change_colors)
@@ -1682,6 +1689,27 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 		const int32 map_count = MIN(shader->maps.count, (int32)k_h1_maximum_shader_maps);
 		real32 transforms[8][4] = {};
 		real32 functions[4][4] = {};
+
+		// rasterizer_xbox_transparent_geometry.c: a numeric shader's first map shows one digit of the object's function (the
+		// part's permutation is the place), out of its bitmaps (8 of them counts with function d, the compass)
+		int32 first_bitmap_index = 0;
+		if (TEST_BIT(shader->flags_3, 7) && g_h1_object_function_values && map_count > 0 && !TEST_BIT(shader->extra_flags, 1))
+		{
+			const h1_schi_maps* map = g_h1_cache_file->block_get(shader->maps, 0);
+			const h1_bitm* bitmap_group = map->map.index != NONE ? (const h1_bitm*)g_h1_cache_file->tag_get('bitm', map->map.index) : NULL;
+			const int32 frame_count = bitmap_group ? bitmap_group->bitmaps.count : 0;
+			if (frame_count > 0)
+			{
+				const int32 function_index = frame_count == 8 ? 3 : 0;
+				const int32 counter_limit = (uint8)shader->numeric_counter_limit;
+				int32 counter_value = PIN((int32)floorf(counter_limit * g_h1_object_function_values[function_index] + 0.5f), 0, counter_limit);
+				for (int32 digit_index = 0; digit_index < g_h1_shader_permutation_index; digit_index++)
+				{
+					counter_value /= frame_count;
+				}
+				first_bitmap_index = counter_value % frame_count;
+			}
+		}
 		for (int32 i = 0; i < k_h1_maximum_shader_maps; i++)
 		{
 			const h1_schi_maps* map = i < map_count ? g_h1_cache_file->block_get(shader->maps, i) : NULL;
@@ -1694,7 +1722,7 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 			}
 
 			const bool cube = i == 0 && shader->first_map_type != 0;
-			IDirect3DBaseTexture9* texture = h1_bitmap_texture_get(map->map);
+			IDirect3DBaseTexture9* texture = h1_bitmap_texture_get(map->map, i == 0 ? first_bitmap_index : 0);
 			device->SetTexture(cube ? 4 : i, texture ? texture : (cube ? NULL : g_h1_default_textures[0]));
 			if (cube)
 			{

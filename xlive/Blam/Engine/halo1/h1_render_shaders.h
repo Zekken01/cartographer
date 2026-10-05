@@ -49,6 +49,8 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 // the function values (a, b, c, d out) and change colors of the object being drawn, NULL outside objects (structure, sky);
 // halo 1 objects without functions export 0 and white
 void h1_render_shader_object_animation_set(const real32* function_values, const real_rgb_color* change_colors);
+// the model part's shader permutation index (the digit a numeric shader shows)
+void h1_render_shader_permutation_set(int16 permutation_index);
 
 // what the following draws are for fog: structure (fogged, no centroid), an object (fogged, its center) or unfogged (the sky)
 void h1_render_shader_fog_context_set(bool fogged, const real_point3d* centroid);

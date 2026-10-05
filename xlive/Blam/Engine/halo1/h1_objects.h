@@ -101,6 +101,9 @@ struct s_h1_object_vitality
 	real32 current_body_damage;
 	real32 current_shield_damage;
 	bool dead;
+	// the compass input's forward (node 0's in halo 1), none when has_forward is false
+	bool has_forward;
+	real_vector3d forward;
 };
 
 // objects.c: an object's incoming and outgoing function values, which are active, and its change colors

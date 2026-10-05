@@ -301,6 +301,7 @@ void h1_render_model_draw(datum model_tag_index, int16 permutation, const real_m
 			if (!sky)
 			{
 				h1_render_shader_object_animation_set(function_values ? function_values : k_h1_object_function_values, change_colors ? change_colors : k_h1_object_change_colors);
+				h1_render_shader_permutation_set(shader_reference->permutation);
 			}
 			for (int32 subpass = 0; subpass < h1_render_shader_subpass_count(shader_reference->shader.group_tag); subpass++)
 			{
@@ -410,6 +411,7 @@ void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, cons
 
 			device->SetStreamSource(0, g_h1_skinned_vertex_buffer, 0, sizeof(s_h1_model_vertex));
 			h1_render_shader_object_animation_set(function_values ? function_values : k_h1_object_function_values, change_colors ? change_colors : k_h1_object_change_colors);
+			h1_render_shader_permutation_set(shader_reference->permutation);
 			for (int32 subpass = 0; subpass < h1_render_shader_subpass_count(shader_reference->shader.group_tag); subpass++)
 			{
 				if (h1_render_shader_bind(shader_reference->shader.group_tag, shader_reference->shader.index, lighting, NULL, game_time, subpass))
