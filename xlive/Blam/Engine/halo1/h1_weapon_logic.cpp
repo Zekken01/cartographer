@@ -529,6 +529,12 @@ static bool h1_weapon_update_hook(datum weapon_index)
 			state->primary_pressed = false;
 		}
 		state->primary_trigger = primary_trigger;
+		// game_tick: first_person_weapons_update comes before objects_update, where the weapon's messages set its state as it sends them
+		const bool first_person = in_hands && weapon->object.parent_object_index == h1_first_person_weapon_unit_get();
+		if (first_person)
+		{
+			h1_first_person_weapon_tick();
+		}
 		h1_weapon_tick(&context);
 		if (!object_try_and_get(weapon_index))
 		{
@@ -536,10 +542,9 @@ static bool h1_weapon_update_hook(datum weapon_index)
 			g_h1_weapon_logic.erase(weapon_index);
 			return false;
 		}
-		// game_tick: the first person weapon updates after the weapons, with this tick's messages
-		if (in_hands && weapon->object.parent_object_index == h1_first_person_weapon_unit_get())
+		if (first_person)
 		{
-			h1_first_person_weapon_tick();
+			h1_first_person_weapon_messages();
 		}
 	}
 	h1_weapon_mirror_to_h2(&context);

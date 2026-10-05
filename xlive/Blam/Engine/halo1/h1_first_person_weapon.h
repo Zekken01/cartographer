@@ -9,6 +9,8 @@
 void h1_first_person_weapon_reset(void);
 // first_person_weapons_update: a halo 1 tick, after the weapon in the local player's hands updated (h1_weapon_logic)
 void h1_first_person_weapon_tick(void);
+// the messages the weapon in the local player's hands sent this tick (first_person_weapon_message_from_weapon), after its update
+void h1_first_person_weapon_messages(void);
 // the local player's unit, NONE without one
 datum h1_first_person_weapon_unit_get(void);
 // first_person_weapon_build_node_matrices for a halo 1 model drawn in first person (the weapon's model or the hands) of

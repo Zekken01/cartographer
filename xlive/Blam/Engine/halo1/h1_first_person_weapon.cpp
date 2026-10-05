@@ -251,17 +251,7 @@ void h1_first_person_weapon_tick(void)
 		h1_fp_switch_weapons();
 	}
 
-	// first_person_weapon_message_from_weapon: the messages of the weapon in the unit's hands
 	const datum current_weapon = h1_fp_unit_current_weapon(unit_index);
-	if (current_weapon != NONE)
-	{
-		s_h1_first_person_weapon_message messages[k_h1_first_person_messages_per_tick];
-		const int32 count = h1_weapon_logic_first_person_messages_take(current_weapon, messages, k_h1_first_person_messages_per_tick);
-		for (int32 i = 0; i < count; i++)
-		{
-			h1_fp_message(messages[i].type, messages[i].magazine_busy);
-		}
-	}
 	// first_person_weapon_message_from_unit: halo 2's unit throws grenades and lowers the weapon, its first person action says so
 	const string_id action = first_person_weapon_action_get(0);
 	if (action != g_h1_fp.last_h2_action)
@@ -285,6 +275,31 @@ void h1_first_person_weapon_tick(void)
 	}
 	h1_fp_tick();
 	if (g_h1_fp.weapon_index != NONE)
+	{
+		h1_fp_compute_pose();
+	}
+	return;
+}
+
+void h1_first_person_weapon_messages(void)
+{
+	if (!h1_maps_active() || !g_h1_cache_file || g_h1_fp.unit_index == NONE)
+	{
+		return;
+	}
+	// first_person_weapon_message_from_weapon: the messages of the weapon in the unit's hands, as it sends them
+	const datum current_weapon = h1_fp_unit_current_weapon(g_h1_fp.unit_index);
+	if (current_weapon == NONE)
+	{
+		return;
+	}
+	s_h1_first_person_weapon_message messages[k_h1_first_person_messages_per_tick];
+	const int32 count = h1_weapon_logic_first_person_messages_take(current_weapon, messages, k_h1_first_person_messages_per_tick);
+	for (int32 i = 0; i < count; i++)
+	{
+		h1_fp_message(messages[i].type, messages[i].magazine_busy);
+	}
+	if (count > 0 && g_h1_fp.weapon_index != NONE)
 	{
 		h1_fp_compute_pose();
 	}
