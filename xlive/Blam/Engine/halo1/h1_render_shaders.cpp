@@ -206,8 +206,9 @@ samplerCUBE cube0 : register(s4);
 
 float4 map_transform[8] : register(c0);
 float4 stage_constants[14] : register(c8);	// constant color 0 and 1 per stage
-float4 settings : register(c71);			// stage count, first map is a cube map, fade mode
+float4 settings : register(c71);			// stage count, first map is a cube map, fade mode, fade intensity
 float4 vertex_light : register(c72);		// vertex color 0 (diffuse light)
+float4 blend_settings : register(c73);		// framebuffer blend function
 
 float2 map_texcoord(float2 texcoord, int index)
 {
@@ -236,6 +237,24 @@ PS_OUTPUT main(PS_INPUT input)
 )";
 
 static const char k_h1_generic_pixel_shader_footer[] = R"(
+	// fade: vertex alpha 0 without a fade mode, else vertex color 1 (alpha when perpendicular, blue when parallel)
+	float f = settings.z < 0.5f ? v0.a : (settings.z < 1.5f ? v1.a : v1.b);
+	f = saturate(f * settings.w);
+	float blend = blend_settings.x;
+	if (blend < 0.5f)							// alpha blend
+		r0.a = r0.a * f;
+	else if (blend < 1.5f || abs(blend - 5.0f) < 0.5f)	// multiply, component min: fade to white
+		r0.rgb = r0.rgb * f + (1.0f - f);
+	else if (blend < 2.5f)						// double multiply: fade to gray
+		r0.rgb = r0.rgb * f + 0.5f * (1.0f - f);
+	else if (blend < 6.5f)						// add, subtract, component max
+		r0.rgb = r0.rgb * f;
+	else										// alpha multiply add
+	{
+		r0.rgb = r0.rgb * f;
+		r0.a = r0.a * f;
+	}
+
 	PS_OUTPUT output;
 	output.color = saturate(r0);
 	output.depth = pack_depth(input.depth);
@@ -451,6 +470,8 @@ static IDirect3DPixelShader9* g_h1_chicago_shader = NULL;
 static IDirect3DPixelShader9* g_h1_water_shader = NULL;
 static IDirect3DPixelShader9* g_h1_glass_shader = NULL;
 static IDirect3DTexture9* g_h1_default_textures[4] = {};
+static const real32* g_h1_object_function_values = NULL;
+static const real_rgb_color* g_h1_object_change_colors = NULL;
 
 /* prototypes */
 
@@ -747,6 +768,13 @@ int32 h1_render_shader_subpass_count(uint32 shader_group)
 	}
 }
 
+void h1_render_shader_object_animation_set(const real32* function_values, const real_rgb_color* change_colors)
+{
+	g_h1_object_function_values = function_values;
+	g_h1_object_change_colors = change_colors;
+	return;
+}
+
 bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_render_lighting* lighting, IDirect3DBaseTexture9* lightmap, real32 game_time, int32 subpass)
 {
 	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
@@ -896,9 +924,13 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 		{
 			const h1_sotr_stages* stage = g_h1_cache_file->block_get(shader->stages, i);
 
-			// constant color 0 animates between its bounds
+			// constant color 0 animates between its bounds, by the object's a out when the stage says so
 			real32 t = 0.f;
-			if (stage->color0_animation_period != 0.f)
+			if (g_h1_object_function_values && TEST_BIT(stage->flags, 2))
+			{
+				t = g_h1_object_function_values[0];
+			}
+			else if (stage->color0_animation_period != 0.f)
 			{
 				t = h1_periodic_function(stage->color0_animation_function, game_time / stage->color0_animation_period);
 			}
@@ -908,6 +940,14 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 			stage_constants[i * 2][1] = lower->green + (upper->green - lower->green) * t;
 			stage_constants[i * 2][2] = lower->blue + (upper->blue - lower->blue) * t;
 			stage_constants[i * 2][3] = lower->alpha + (upper->alpha - lower->alpha) * t;
+			// tinted by one of the object's change colors
+			if (g_h1_object_change_colors && stage->color0_source > 0 && stage->color0_source <= 4)
+			{
+				const real_rgb_color* color = &g_h1_object_change_colors[stage->color0_source - 1];
+				stage_constants[i * 2][0] *= color->red;
+				stage_constants[i * 2][1] *= color->green;
+				stage_constants[i * 2][2] *= color->blue;
+			}
 			stage_constants[i * 2 + 1][0] = stage->color1.red;
 			stage_constants[i * 2 + 1][1] = stage->color1.green;
 			stage_constants[i * 2 + 1][2] = stage->color1.blue;
@@ -915,8 +955,15 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 		}
 		device->SetPixelShaderConstantF(8, &stage_constants[0][0], k_h1_maximum_generic_stages * 2);
 
-		const real32 settings[4] = { (real32)stage_count, shader->first_map_type != 0 ? 1.f : 0.f, (real32)shader->framebuffer_fade_mode, 0.f };
+		real32 fade_intensity = 1.f;
+		if (g_h1_object_function_values && shader->framebuffer_fade_source > 0 && shader->framebuffer_fade_source <= 4)
+		{
+			fade_intensity = g_h1_object_function_values[shader->framebuffer_fade_source - 1];
+		}
+		const real32 settings[4] = { (real32)stage_count, shader->first_map_type != 0 ? 1.f : 0.f, (real32)shader->framebuffer_fade_mode, fade_intensity };
 		device->SetPixelShaderConstantF(71, settings, 1);
+		const real32 blend_settings[4] = { (real32)shader->framebuffer_blend_function, 0.f, 0.f, 0.f };
+		device->SetPixelShaderConstantF(73, blend_settings, 1);
 		const real32 vertex_light[4] = { 1.f, 1.f, 1.f, 1.f };
 		device->SetPixelShaderConstantF(72, vertex_light, 1);
 

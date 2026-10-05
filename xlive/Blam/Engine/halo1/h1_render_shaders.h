@@ -42,6 +42,10 @@ int32 h1_render_shader_subpass_count(uint32 shader_group);
 // binds the pixel shader, textures, constants and blend state for a shader, returns false if it (or this subpass) isn't drawn
 bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_render_lighting* lighting, IDirect3DBaseTexture9* lightmap, real32 game_time, int32 subpass = 0);
 
+// the function values (a, b, c, d out) and change colors of the object being drawn, NULL outside objects (structure, sky);
+// halo 1 objects without functions export 0 and white
+void h1_render_shader_object_animation_set(const real32* function_values, const real_rgb_color* change_colors);
+
 // restores the default opaque render state after a bound shader
 void h1_render_shader_unbind(void);
 

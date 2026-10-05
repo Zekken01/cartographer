@@ -37,6 +37,7 @@ struct s_h1_structure_draw
 	int32 first_index;
 	int32 triangle_count;
 	int32 lighting_material_index;
+	int16 breakable_surface_index;	// NONE when the material can't break
 };
 
 struct s_h1_scenery_instance
@@ -97,6 +98,7 @@ static void h1_render_end(void);
 static void h1_render_structure_pass(e_h1_render_pass pass);
 static void h1_unpack_normal(uint32 packed, real32* out);
 static real32 h1_render_game_time(void);
+static bool h1_render_breakable_surface_extant(int16 breakable_surface_index);
 
 /* public code */
 
@@ -470,6 +472,7 @@ static bool h1_render_structure_initialize(void)
 			draw.first_index = index_cursor;
 			draw.triangle_count = 0;
 			draw.lighting_material_index = lighting_material_index;
+			draw.breakable_surface_index = material->breakable_surface;
 
 			for (int32 s = 0; s < material->surface_count; s++)
 			{
@@ -575,6 +578,11 @@ static void h1_render_structure_pass(e_h1_render_pass pass)
 	for (const s_h1_structure_draw& draw : g_h1_render.draws)
 	{
 		if (draw.triangle_count <= 0 || h1_render_shader_pass(draw.shader_group) != pass)
+		{
+			continue;
+		}
+		// halo 1 stops drawing a material once its breakable surface is broken (structure_render.c)
+		if (!h1_render_breakable_surface_extant(draw.breakable_surface_index))
 		{
 			continue;
 		}
@@ -705,4 +713,23 @@ void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_
 		out_lighting->ambient.blue = MAX(out_lighting->ambient.blue, sample.blue * 0.5f);
 	}
 	return;
+}
+
+// halo 2 keeps a bit per breakable surface of the structure of each bsp, set while the surface is intact (breakable_surfaces.cpp)
+static bool h1_render_breakable_surface_extant(int16 breakable_surface_index)
+{
+	if (breakable_surface_index < 0 || breakable_surface_index >= 256)
+	{
+		return true;
+	}
+
+	const uint8* breakable_surface_globals = *Memory::GetAddress<uint8**>(0x4D1298);
+	const int16 structure_bsp_index = *Memory::GetAddress<int16*>(0x4119A4);
+	if (!breakable_surface_globals || structure_bsp_index < 0 || structure_bsp_index >= 16)
+	{
+		return true;
+	}
+
+	const uint32* extant_bits = (const uint32*)(breakable_surface_globals + 1 + structure_bsp_index * 0x20);
+	return TEST_BIT(extant_bits[breakable_surface_index >> 5], breakable_surface_index & 31);
 }
