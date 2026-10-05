@@ -9,6 +9,7 @@
 #include "h1_weapon_logic.h"
 #include "h1_weapons.h"
 
+#include "game/game_engine.h"
 #include "game/game_time.h"
 #include "items/weapons.h"
 #include "objects/objects.h"
@@ -206,6 +207,37 @@ enum
 enum
 {
 	k_h1_multitexture_maps = 3,
+};
+
+// motion_sensor.c
+enum
+{
+	_h1_blip_type_self = 0,
+	_h1_blip_type_friend,
+	_h1_blip_type_enemy,
+	_h1_blip_type_vehicle_friend,
+	_h1_blip_type_vehicle_enemy,
+	_h1_blip_type_custom,
+	_h1_blip_type_none,
+};
+
+enum
+{
+	_h1_hud_blip_type_medium = 0,
+	_h1_hud_blip_type_small,
+	_h1_hud_blip_type_large,
+	k_h1_hud_blip_types
+};
+
+enum
+{
+	k_h1_maximum_motion_sensor_blips = 16,
+	k_h1_motion_sensor_history_count = 10,
+	k_h1_motion_sensor_update_period = 15,
+	// the target the blips are drawn to (the xbox's was 64 square)
+	k_h1_motion_sensor_target_size = 256,
+	// hud_definitions.h hud_globals_definition: defaults.motion_sensor_range and on
+	k_h1_hud_globals_motion_sensor_offset = 0x2D0,
 };
 
 // halo 2's unit control flags (unit +0x24)
@@ -575,6 +607,41 @@ struct s_h1_hud_window
 	D3DVIEWPORT9 viewport;
 };
 
+// motion_sensor.c motion_sensor_blip, motion_sensor_datum and motion_sensor_player for the one local player
+struct s_h1_motion_sensor_blip
+{
+	int8 x;
+	int8 y;
+	int8 type;
+	int8 size;
+};
+
+struct s_h1_motion_sensor_datum
+{
+	s_h1_motion_sensor_blip blips[k_h1_maximum_motion_sensor_blips];
+	real_point2d reference_point;
+	int32 blip_count;
+	real32 yaw;
+};
+
+struct s_h1_motion_sensor
+{
+	s_h1_motion_sensor_datum sensor_data[k_h1_motion_sensor_history_count];
+	datum unit_indices[k_h1_maximum_motion_sensor_blips];
+	int32 last_update_time;
+	int16 active_sensor_index;
+	bool update;
+	bool initialized;
+};
+
+// hud_definitions.h hud_defaults_definition's motion sensor
+struct s_h1_motion_sensor_defaults
+{
+	real32 range;
+	real32 velocity_sensitivity;
+	real32 scale;
+};
+
 /* globals */
 
 static s_h1_hud_state g_h1_hud = { {}, NONE, {}, 0 };
@@ -587,6 +654,8 @@ static IDirect3DVertexDeclaration9* g_h1_hud_vertex_declaration = NULL;
 static IDirect3DPixelShader9* g_h1_hud_multitexture_shader = NULL;
 static IDirect3DPixelShader9* g_h1_hud_screen_effect_shader = NULL;
 static IDirect3DTexture9* g_h1_hud_screen_copy = NULL;
+static IDirect3DTexture9* g_h1_motion_sensor_target = NULL;
+static s_h1_motion_sensor g_h1_motion_sensor = {};
 // the unit and weapon state of the hud being drawn (the multitexture overlays' effectors)
 static datum g_h1_hud_unit_index = NONE;
 static const s_h1_weapon_interface_state* g_h1_hud_weapon_state = NULL;
@@ -755,6 +824,7 @@ static void h1_hud_zoomed_layout_end(const real32* saved_bounds);
 static void h1_hud_set_framebuffer_blend_function(int16 function);
 static bool h1_hud_weapon_get(datum* unit_index, datum* weapon_index, const h1_weap** definition);
 static void h1_hud_render_unit(datum unit_index);
+static void h1_hud_render_motion_sensor(datum unit_index, const h1_unhi* hud);
 static void h1_hud_render_grenades(datum unit_index, const h1_weap* weapon_definition);
 static void h1_pixel32_to_argb(uint32 color, real32* argb);
 static uint32 h1_argb_to_pixel32(const real32* argb);
@@ -770,6 +840,7 @@ void h1_hud_dispose(void)
 	if (g_h1_hud_multitexture_shader) g_h1_hud_multitexture_shader->Release();
 	if (g_h1_hud_screen_effect_shader) g_h1_hud_screen_effect_shader->Release();
 	if (g_h1_hud_screen_copy) g_h1_hud_screen_copy->Release();
+	if (g_h1_motion_sensor_target) g_h1_motion_sensor_target->Release();
 	g_h1_hud_vertex_shader = NULL;
 	g_h1_hud_pixel_shader = NULL;
 	g_h1_hud_meter_shader = NULL;
@@ -777,6 +848,8 @@ void h1_hud_dispose(void)
 	g_h1_hud_multitexture_shader = NULL;
 	g_h1_hud_screen_effect_shader = NULL;
 	g_h1_hud_screen_copy = NULL;
+	g_h1_motion_sensor_target = NULL;
+	g_h1_motion_sensor.initialized = false;
 	return;
 }
 
@@ -2466,6 +2539,19 @@ static void h1_hud_render_unit(datum unit_index)
 			h1_hud_draw_static(&hud->absolute_placement, &hud->health_meter.background, draw_flags, state->last_health_flash_time);
 		}
 	}
+
+	// hud_unit.c: the motion sensor at the bottom left (always: the game variant's radar isn't read)
+	h1_hud_absolute_placement motion_sensor_placement = {};
+	motion_sensor_placement.corner = _h1_hud_anchor_bottom_left;
+	if (hud->motion_sensor_background.interface_bitmap.index != NONE)
+	{
+		h1_hud_draw_static(&motion_sensor_placement, &hud->motion_sensor_background, 0, NONE);
+	}
+	if (hud->motion_sensor_foreground.interface_bitmap.index != NONE)
+	{
+		h1_hud_draw_static(&motion_sensor_placement, &hud->motion_sensor_foreground, 0, NONE);
+	}
+	h1_hud_render_motion_sensor(unit_index, hud);
 	return;
 }
 
@@ -2537,18 +2623,359 @@ static void h1_hud_render_grenades(datum unit_index, const h1_weap* weapon_defin
 	return;
 }
 
+bool h1_hud_hides_halo2_motion_sensor(void)
+{
+	return h1_maps_active();
+}
+
 bool h1_hud_hides_halo2_widget(string_id name)
 {
 	if (!h1_maps_active())
 	{
 		return false;
 	}
-	// halo 1's unit hud shows the shield, health and grenades: halo 2's go
+	// halo 1's unit hud shows the shield, health, grenades and motion sensor: halo 2's go
 	const char* text = string_id_get_string_const(name);
 	if (!text)
 	{
 		return false;
 	}
 	return strncmp(text, "shield", 6) == 0 || strncmp(text, "frag", 4) == 0 || strncmp(text, "plasma", 6) == 0 ||
-		strstr(text, "grenade") != NULL || strncmp(text, "health", 6) == 0;
+		strstr(text, "grenade") != NULL || strncmp(text, "health", 6) == 0 || strncmp(text, "motion_tracker", 14) == 0;
+}
+
+/* motion sensor */
+
+static const h1_matg_interface_bitmaps* h1_hud_interface_bitmaps_get(void)
+{
+	const datum globals_index = g_h1_cache_file->tag_find('matg', "globals\\globals");
+	const h1_matg* globals = globals_index != NONE ? (const h1_matg*)g_h1_cache_file->tag_get('matg', globals_index) : NULL;
+	return globals && globals->interface_bitmaps.count > 0 ? g_h1_cache_file->block_get(globals->interface_bitmaps, 0) : NULL;
+}
+
+// motion_sensor.c should_track_object and should_draw_object: living units firing or moving
+static bool h1_motion_sensor_should_draw(datum unit_index, const s_h1_motion_sensor_defaults* defaults)
+{
+	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(unit_index, _object_mask_unit);
+	if (!unit || unit->object.object_damage_flags.test(_object_is_dead_bit))
+	{
+		return false;
+	}
+	if ((*(const uint32*)&unit->unit.control_flags & k_h2_unit_control_primary_trigger_held) != 0)
+	{
+		return true;
+	}
+	// halo 2's velocities are a second's, halo 1's a tick's
+	const real_vector3d& velocity = unit->object.translational_velocity;
+	const real32 tick_velocity_squared = (velocity.i * velocity.i + velocity.j * velocity.j + velocity.k * velocity.k) /
+		(real32)(k_h1_hud_ticks_per_second * k_h1_hud_ticks_per_second);
+	return tick_velocity_squared >= defaults->velocity_sensitivity;
+}
+
+// motion_sensor.c blip_type_get
+static int8 h1_motion_sensor_blip_type(datum object_index, datum local_unit_index)
+{
+	if (object_index == local_unit_index)
+	{
+		return _h1_blip_type_self;
+	}
+	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(object_index, _object_mask_unit);
+	const unit_datum* local_unit = (const unit_datum*)object_try_and_get_and_verify_type(local_unit_index, _object_mask_unit);
+	if (!unit || !local_unit)
+	{
+		return _h1_blip_type_enemy;
+	}
+	const bool enemy = game_engine_team_is_enemy(unit->unit.unit_team, local_unit->unit.unit_team);
+	if (object_try_and_get_and_verify_type(object_index, _object_mask_vehicle))
+	{
+		// (the vehicle's team stands in for its gunner's and driver's)
+		return (int8)(enemy ? _h1_blip_type_vehicle_enemy : _h1_blip_type_vehicle_friend);
+	}
+	return (int8)(enemy ? _h1_blip_type_enemy : _h1_blip_type_friend);
+}
+
+// motion_sensor.c tiny_point2d_set
+static void h1_motion_sensor_tiny_point_set(s_h1_motion_sensor_blip* blip, real32 x, real32 y, real32 range)
+{
+	blip->x = (int8)PIN(x / range * 127.f, -127.f, 127.f);
+	blip->y = (int8)PIN(y / range * 127.f, -127.f, 127.f);
+	return;
+}
+
+// motion_sensor.c motion_sensor_tick and motion_sensor_update: a tick's history entry, the units scanned every half second
+static void h1_motion_sensor_update(datum local_unit_index, const s_h1_motion_sensor_defaults* defaults)
+{
+	s_h1_motion_sensor* sensor_globals = &g_h1_motion_sensor;
+	const int32 current_time = h1_hud_time();
+	if (!sensor_globals->initialized || sensor_globals->last_update_time > current_time)
+	{
+		csmemset(sensor_globals, 0, sizeof(*sensor_globals));
+		for (s_h1_motion_sensor_datum& sensor : sensor_globals->sensor_data)
+		{
+			for (s_h1_motion_sensor_blip& blip : sensor.blips)
+			{
+				blip.type = _h1_blip_type_none;
+			}
+		}
+		for (datum& unit_index : sensor_globals->unit_indices)
+		{
+			unit_index = NONE;
+		}
+		sensor_globals->last_update_time = NONE;
+		sensor_globals->initialized = true;
+	}
+	if (sensor_globals->last_update_time == current_time)
+	{
+		return;
+	}
+	sensor_globals->update = true;
+	sensor_globals->last_update_time = current_time;
+	const int16 active_sensor_index = (int16)((sensor_globals->active_sensor_index + 1) % k_h1_motion_sensor_history_count);
+	sensor_globals->active_sensor_index = active_sensor_index;
+	s_h1_motion_sensor_datum* sensor = &sensor_globals->sensor_data[active_sensor_index];
+
+	if ((current_time % k_h1_motion_sensor_update_period) && current_time)
+	{
+		const int16 previous_sensor_index = (int16)((active_sensor_index + k_h1_motion_sensor_history_count - 1) % k_h1_motion_sensor_history_count);
+		*sensor = sensor_globals->sensor_data[previous_sensor_index];
+		return;
+	}
+
+	real_point3d camera_position;
+	unit_get_camera_position(local_unit_index, &camera_position);
+	sensor->blip_count = 0;
+	for (s_h1_motion_sensor_blip& blip : sensor->blips)
+	{
+		blip.type = _h1_blip_type_none;
+	}
+	int32 blip_index = 0;
+	object_iterator iterator;
+	object_iterator_new(&iterator, _object_mask_unit, 0);
+	while (blip_index < k_h1_maximum_motion_sensor_blips && object_iterator_next(&iterator))
+	{
+		const datum object_index = iterator.index;
+		if (!h1_motion_sensor_should_draw(object_index, defaults))
+		{
+			continue;
+		}
+		const object_datum* object = object_get(object_index);
+		// the multiplayer range ignores height
+		const real32 dx = object->object.center.x - camera_position.x;
+		const real32 dy = object->object.center.y - camera_position.y;
+		if (dx * dx + dy * dy <= defaults->range * defaults->range)
+		{
+			s_h1_motion_sensor_blip* blip = &sensor->blips[blip_index];
+			blip->type = h1_motion_sensor_blip_type(object_index, local_unit_index);
+			// (halo 2's units have no halo 1 blip size)
+			blip->size = _h1_hud_blip_type_medium;
+			sensor_globals->unit_indices[blip_index] = object_index;
+			sensor->blip_count++;
+			blip_index++;
+		}
+	}
+	return;
+}
+
+// motion_sensor.c update_motion_sensor: the active entry follows its units every frame
+static void h1_motion_sensor_follow(datum local_unit_index, const s_h1_motion_sensor_defaults* defaults)
+{
+	s_h1_motion_sensor* sensor_globals = &g_h1_motion_sensor;
+	if (!sensor_globals->update)
+	{
+		return;
+	}
+	s_h1_motion_sensor_datum* sensor = &sensor_globals->sensor_data[sensor_globals->active_sensor_index];
+	real_point3d camera_position;
+	unit_get_camera_position(local_unit_index, &camera_position);
+	sensor->reference_point = { camera_position.x, camera_position.y };
+	for (int32 blip_index = 0; blip_index < k_h1_maximum_motion_sensor_blips; blip_index++)
+	{
+		const datum object_index = sensor_globals->unit_indices[blip_index];
+		if (!object_try_and_get_and_verify_type(object_index, _object_mask_unit))
+		{
+			continue;
+		}
+		const object_datum* object = object_get(object_index);
+		const real32 dx = object->object.center.x - sensor->reference_point.x;
+		const real32 dy = object->object.center.y - sensor->reference_point.y;
+		if (h1_motion_sensor_should_draw(object_index, defaults) && dx * dx + dy * dy <= defaults->range * defaults->range)
+		{
+			h1_motion_sensor_tiny_point_set(&sensor->blips[blip_index], dx, dy, defaults->range);
+		}
+		else
+		{
+			sensor->blips[blip_index].type = _h1_blip_type_none;
+			sensor_globals->unit_indices[blip_index] = NONE;
+		}
+	}
+	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(local_unit_index, _object_mask_unit);
+	sensor->yaw = atan2f(unit->unit.aiming_vector.j, unit->unit.aiming_vector.i) + 1.5707964f;
+	return;
+}
+
+static void h1_motion_sensor_quad(IDirect3DDevice9Ex* device, real32 x0, real32 y0, real32 x1, real32 y1, const real_point2d* texcoords, D3DCOLOR color)
+{
+	// the corners as the xbox's fans give them
+	const s_h1_hud_vertex vertices[4] =
+	{
+		{ x0, y0, 0.f, 1.f, texcoords[0].x, texcoords[0].y, color },
+		{ x1, y0, 0.f, 1.f, texcoords[1].x, texcoords[1].y, color },
+		{ x1, y1, 0.f, 1.f, texcoords[2].x, texcoords[2].y, color },
+		{ x0, y1, 0.f, 1.f, texcoords[3].x, texcoords[3].y, color },
+	};
+	device->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, 2, vertices, sizeof(s_h1_hud_vertex));
+	return;
+}
+
+// motion_sensor.c render_motion_sensor and rasterizer_xbox_motion_sensor.c: the blip history drawn to a target, its sweep and
+// mask over them, then the target added to the screen around the blips' corner
+static void h1_hud_render_motion_sensor(datum unit_index, const h1_unhi* hud)
+{
+	const h1_matg_interface_bitmaps* interface_bitmaps = h1_hud_interface_bitmaps_get();
+	if (!interface_bitmaps || interface_bitmaps->hud_globals.index == NONE)
+	{
+		return;
+	}
+	const s_h1_motion_sensor_defaults* defaults = (const s_h1_motion_sensor_defaults*)
+		((const uint8*)g_h1_cache_file->tag_get('hudg', interface_bitmaps->hud_globals.index) + k_h1_hud_globals_motion_sensor_offset);
+	if (defaults->range <= 0.f)
+	{
+		return;
+	}
+	h1_motion_sensor_update(unit_index, defaults);
+	h1_motion_sensor_follow(unit_index, defaults);
+
+	IDirect3DBaseTexture9* blip_texture = h1_bitmap_texture_get(interface_bitmaps->motion_sensor_blip_bitmap, 0);
+	IDirect3DBaseTexture9* sweep_texture = h1_bitmap_texture_get(interface_bitmaps->motion_sensor_sweep_bitmap, 0);
+	IDirect3DBaseTexture9* sweep_mask_texture = h1_bitmap_texture_get(interface_bitmaps->motion_sensor_sweep_bitmap_mask, 0);
+	if (!blip_texture || !sweep_texture || !sweep_mask_texture)
+	{
+		return;
+	}
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	if (!g_h1_motion_sensor_target &&
+		FAILED(device->CreateTexture(k_h1_motion_sensor_target_size, k_h1_motion_sensor_target_size, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+			D3DPOOL_DEFAULT, &g_h1_motion_sensor_target, NULL)))
+	{
+		g_h1_motion_sensor_target = NULL;
+		return;
+	}
+
+	// motion_sensor_tick: the sweep's scale
+	const real32 sweep_time = fmodf((real32)h1_hud_time() * (1.f / k_h1_hud_ticks_per_second), 2.1f);
+	const real32 sweep_theta = sweep_time < 2.0375f ? 1.f / ((sweep_time + 0.0625f) * 1.1f) : 0.4f;
+
+	IDirect3DSurface9* screen_target = NULL;
+	IDirect3DSurface9* sensor_target = NULL;
+	device->GetRenderTarget(0, &screen_target);
+	g_h1_motion_sensor_target->GetSurfaceLevel(0, &sensor_target);
+	device->SetRenderTarget(0, sensor_target);
+	device->Clear(0, NULL, D3DCLEAR_TARGET, 0x00000000, 1.f, 0);
+	device->SetPixelShader(g_h1_hud_pixel_shader);
+	device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+	device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+	device->SetRenderState(D3DRS_COLORWRITEENABLE, D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
+	device->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_BORDER);
+	device->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_BORDER);
+	device->SetSamplerState(0, D3DSAMP_BORDERCOLOR, 0x00000000);
+	device->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+	device->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+	device->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_POINT);
+
+	// the blips, added
+	device->SetTexture(0, blip_texture);
+	device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+	device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
+	const real32 range = defaults->range;
+	const real32 relative_scale = defaults->scale / range;
+	static const real_rgb_color k_blip_colors[] =
+	{
+		{ 1.f, .5f, 0.f }, { 1.f, 1.f, 0.f }, { 1.f, 0.f, 0.f }, { 1.f, 1.f, 0.f }, { 1.f, 0.f, 0.f }, { .5f, .5f, 1.f }, { 0.f, 0.f, 0.f }
+	};
+	static const real32 k_blip_sizes[k_h1_hud_blip_types] = { 0.f, -0.75f, 1.f };
+	const real_point2d blip_texcoords[4] = { { 0.f, 0.f }, { 1.f, 0.f }, { 1.f, 1.f }, { 0.f, 1.f } };
+	for (int16 history_index = 0; history_index < k_h1_motion_sensor_history_count; history_index++)
+	{
+		const int16 sensor_index = (int16)((g_h1_motion_sensor.active_sensor_index - history_index + k_h1_motion_sensor_history_count) %
+			k_h1_motion_sensor_history_count);
+		const s_h1_motion_sensor_datum* sensor = &g_h1_motion_sensor.sensor_data[sensor_index];
+		const real32 weight = (real32)(k_h1_motion_sensor_history_count - history_index) * 0.1f;
+		const real32 fade = weight * weight;
+		const real32 radius = powf(1.f - weight, 3.5f) * 7.f + 1.f;
+		const real32 sine = sinf(-sensor->yaw);
+		const real32 cosine = cosf(-sensor->yaw);
+		for (const s_h1_motion_sensor_blip& blip : sensor->blips)
+		{
+			if (!VALID_INDEX(blip.type, _h1_blip_type_none))
+			{
+				continue;
+			}
+			// render_blip: turned to the player's facing, its distance mapped by its 0.7th power
+			const real32 x = (real32)blip.x * range * (1.f / 127.f);
+			const real32 y = (real32)blip.y * range * (1.f / 127.f);
+			real_point2d position = { x * cosine - y * sine, x * sine + y * cosine };
+			const real32 distance_squared = position.x * position.x + position.y * position.y;
+			if (distance_squared >= range * range)
+			{
+				continue;
+			}
+			const real32 distance = MAX(sqrtf(distance_squared), 0.015625f);
+			const real32 mapped_distance = range * powf(distance / range, 0.7f);
+			position.x = position.x / distance * mapped_distance * relative_scale;
+			position.y = position.y / distance * mapped_distance * relative_scale;
+			const real32 size = k_blip_sizes[VALID_INDEX(blip.size, k_h1_hud_blip_types) ? blip.size : 0] + radius;
+			// _rasterizer_hud_motion_sensor_blip_draw
+			const real32 blip_radius = size * 0.0625f;
+			const real32 cx = position.x * -0.03125f;
+			const real32 cy = position.y * -0.03125f;
+			const real_rgb_color& color = k_blip_colors[blip.type];
+			const D3DCOLOR vertex_color = D3DCOLOR_COLORVALUE(PIN(color.red * fade, 0.f, 1.f), PIN(color.green * fade, 0.f, 1.f),
+				PIN(color.blue * fade, 0.f, 1.f), 1.f);
+			h1_motion_sensor_quad(device, cx - blip_radius, cy + blip_radius, cx + blip_radius, cy - blip_radius, blip_texcoords, vertex_color);
+		}
+	}
+
+	// the sweep: its color plus the blips times its alpha, the blips outside it dimmed by its border
+	const real32 half_scale = sweep_theta * 0.5f;
+	const real32 low = 0.5f - half_scale;
+	const real32 high = 0.5f + half_scale;
+	const real_point2d sweep_texcoords[4] = { { high, low }, { low, low }, { low, high }, { high, high } };
+	device->SetTexture(0, sweep_texture);
+	device->SetSamplerState(0, D3DSAMP_BORDERCOLOR, 0x46000000);
+	device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+	device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_SRCALPHA);
+	h1_motion_sensor_quad(device, -1.015625f, 1.046875f, 1.046875f, -1.015625f, sweep_texcoords, D3DCOLOR_COLORVALUE(0.4588f, 0.7294f, 1.f, 1.f));
+
+	// the mask: everything times its alpha
+	const real_point2d mask_texcoords[4] = { { 1.f, 0.f }, { 0.f, 0.f }, { 0.f, 1.f }, { 1.f, 1.f } };
+	device->SetTexture(0, sweep_mask_texture);
+	device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ZERO);
+	device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_SRCALPHA);
+	h1_motion_sensor_quad(device, -1.015625f, 1.046875f, 1.046875f, -1.015625f, mask_texcoords, 0xFFFFFFFF);
+
+	// the target added to the screen around the blips' corner
+	device->SetRenderTarget(0, screen_target);
+	device->SetViewport(&g_h1_hud_window.viewport);
+	sensor_target->Release();
+	screen_target->Release();
+	device->SetTexture(0, g_h1_motion_sensor_target);
+	device->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+	device->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+	device->SetSamplerState(0, D3DSAMP_BORDERCOLOR, 0x00000000);
+	device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+	device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+	h1_hud_absolute_placement placement = {};
+	placement.corner = _h1_hud_anchor_bottom_left;
+	real_point2d center;
+	h1_hud_calculate_point(&placement, &hud->blip_placement, &center);
+	const real32 radius = 42.f;
+	const D3DVIEWPORT9& viewport = g_h1_hud_window.viewport;
+	const real32 pixel_scale = g_h1_hud_window.pixel_scale;
+	const real32 x0 = ((center.x - radius) * pixel_scale - 0.5f) * 2.f / (real32)viewport.Width - 1.f;
+	const real32 x1 = ((center.x + radius) * pixel_scale - 0.5f) * 2.f / (real32)viewport.Width - 1.f;
+	const real32 y0 = 1.f - ((center.y - radius) * pixel_scale - 0.5f) * 2.f / (real32)viewport.Height;
+	const real32 y1 = 1.f - ((center.y + radius) * pixel_scale - 0.5f) * 2.f / (real32)viewport.Height;
+	h1_motion_sensor_quad(device, x0, y0, x1, y1, blip_texcoords, 0xFFFFFFFF);
+	device->SetTexture(0, NULL);
+	return;
 }

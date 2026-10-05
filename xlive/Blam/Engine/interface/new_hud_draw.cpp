@@ -126,6 +126,7 @@ static void __cdecl draw_hud_text_widget(
 	s_draw_hud_widget_input_results* widget_function_results);
 
 static void __cdecl draw_hud_player_indicators(uint32 local_render_user_index);
+static void __cdecl draw_hud_motion_sensor(int32 user_index, int32 unused, const point2d* point);
 
 static void rasterizer_setup_2d_vertex_shader_user_interface_constants(void);
 
@@ -140,6 +141,7 @@ void new_hud_draw_apply_patches(void)
 	PatchCall(Memory::GetAddress(0x226702), draw_hud_player_indicators);
 	PatchCall(Memory::GetAddress(0x224F46), draw_hud_bitmap_widget);
 	PatchCall(Memory::GetAddress(0x224FDA), draw_hud_text_widget);
+	PatchCall(Memory::GetAddress(0x2266F9), draw_hud_motion_sensor);
 
 	DETOUR_ATTACH(p_draw_ingame_user_interface_hud_element, Memory::GetAddress<t_render_ingame_user_interface_hud_element>(0x221E3B), render_ingame_user_interface_hud_element);
 	DETOUR_ATTACH(p_render_ingame_user_interface_hud_indicators_element, Memory::GetAddress<t_render_ingame_user_interface_hud_indicators_element_hook>(0x221C77), render_ingame_user_interface_hud_indicators_element_hook);
@@ -1027,5 +1029,16 @@ static void __cdecl render_ingame_user_interface_hud_indicators_element_hook(int
 {
 	rasterizer_setup_2d_vertex_shader_user_interface_constants();
 	p_render_ingame_user_interface_hud_indicators_element(a1, tag_index, bitmap_index, a4, shader_index);
+	return;
+}
+
+// halo 1 maps draw halo 1's motion sensor (h1_hud.cpp): halo 2's sweep and blips go
+static void __cdecl draw_hud_motion_sensor(int32 user_index, int32 unused, const point2d* point)
+{
+	if (h1_hud_hides_halo2_motion_sensor())
+	{
+		return;
+	}
+	INVOKE(0x22C86F, 0x0, draw_hud_motion_sensor, user_index, unused, point);
 	return;
 }
