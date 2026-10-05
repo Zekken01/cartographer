@@ -14,3 +14,5 @@ datum h1_first_person_weapon_unit_get(void);
 // first_person_weapon_build_node_matrices for a halo 1 model drawn in first person (the weapon's model or the hands) of
 // the weapon object: the model's node matrices, false when halo 1's first person weapon doesn't show it
 bool h1_first_person_weapon_model_nodes_get(datum h1_model_index, datum weapon_object_index, real_matrix4x3* node_matrices, int32 node_count);
+// the unit's halo 1 first person weapon is in its melee animation
+bool h1_first_person_weapon_meleeing(datum unit_index);

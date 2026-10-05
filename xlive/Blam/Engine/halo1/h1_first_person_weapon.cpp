@@ -294,6 +294,11 @@ void h1_first_person_weapon_tick(void)
 	return;
 }
 
+bool h1_first_person_weapon_meleeing(datum unit_index)
+{
+	return unit_index != NONE && g_h1_fp.unit_index == unit_index && g_h1_fp.state == _h1_fp_state_melee;
+}
+
 datum h1_first_person_weapon_unit_get(void)
 {
 	const datum player_index = player_index_from_user_index(0);
