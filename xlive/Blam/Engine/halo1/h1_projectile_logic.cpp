@@ -244,6 +244,8 @@ void h1_projectile_logic_new(datum projectile_index, real32 inherited_velocity, 
 	h1_projectile_initialize(projectile_index, projectile, &velocity);
 	projectile->target_object_index = target_object_index;
 	SET_BIT(projectile->flags, _h1_projectile_tracer_bit, tracer);
+	// objects.c object_new: its attachments (the tracer's contrail) from the start
+	h1_effects_object_attachments_new(projectile_index);
 	return;
 }
 
@@ -324,6 +326,7 @@ static bool h1_projectile_update_hook(datum projectile_index)
 			forward.k * definition->initial_velocity + (thrown.k - forward.k * definition->initial_velocity) / k_h1_ticks_per_second
 		};
 		h1_projectile_initialize(projectile_index, projectile, &velocity);
+		h1_effects_object_attachments_new(projectile_index);
 	}
 	h1_projectile_update(projectile_index, projectile);
 	return true;
@@ -451,6 +454,7 @@ static void h1_projectile_update(datum projectile_index, s_h1_projectile* projec
 		real32 final_speed = speed;
 		real32 average_speed = speed;
 		bool moved = false;
+		bool bounced = false;
 
 		// guidance toward the target, wandering when far
 		if (projectile->target_object_index != NONE && definition->guided_angular_velocity > 0.f && object_try_and_get(projectile->target_object_index))
@@ -565,6 +569,7 @@ static void h1_projectile_update(datum projectile_index, s_h1_projectile* projec
 			projectile->ignore_object_index = NONE;
 			h1_projectile_collision(projectile_index, projectile, definition, &collision, &new_position, &new_velocity);
 			collision_count++;
+			bounced = true;
 			if (TEST_BIT(projectile->flags, _h1_projectile_attached_bit))
 			{
 				moved = false;
@@ -620,6 +625,11 @@ static void h1_projectile_update(datum projectile_index, s_h1_projectile* projec
 			projectile->velocity = new_velocity;
 			h1_object_set_velocities(projectile_index, projectile);
 			object = object_get(projectile_index);
+			// contrail_owner_collision: the contrails bend where it bounced
+			if (bounced && time_remaining != 0.f)
+			{
+				h1_contrails_owner_collision(projectile_index, false);
+			}
 		}
 	}
 
@@ -630,11 +640,13 @@ static void h1_projectile_update(datum projectile_index, s_h1_projectile* projec
 		{
 			break;
 		}
+		h1_contrails_owner_collision(projectile_index, true);
 		h1_projectile_detonate(projectile_index, projectile, definition);
 		g_h1_projectiles.erase(projectile_index);
 		object_delete(projectile_index);
 		break;
 	case _h1_projectile_action_disappear:
+		h1_contrails_owner_collision(projectile_index, true);
 		g_h1_projectiles.erase(projectile_index);
 		object_delete(projectile_index);
 		break;

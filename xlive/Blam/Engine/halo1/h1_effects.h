@@ -50,5 +50,9 @@ void h1_effect_stop(int32 id);
 // unnamed and the unknown), its damage parts dealt by the owner (halo 1's projectiles: their impacts and detonations)
 void h1_effect_new_from_markers(datum h1_effect_index, datum owner_object_index, int32 marker_count, const char* const* marker_names,
 	const real_point3d* marker_points, const real_vector3d* marker_forwards, real32 scale_a, real32 scale_b);
+// objects.c object_attachments_new: an object's contrails and particle systems from the moment it is made (projectiles)
+void h1_effects_object_attachments_new(datum object_index);
+// contrails.c contrail_owner_collision: the object's contrails take a point where it is now (it hit something), and lose it when it dies
+void h1_contrails_owner_collision(datum object_index, bool object_dying);
 // the empty halo 2 effect a halo 2 tag refers to where a halo 1 effect plays instead (built on first use)
 datum h1_effects_stub_effect_get(void);

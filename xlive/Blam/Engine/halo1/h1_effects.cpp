@@ -16,6 +16,7 @@
 #include "h2_tag_definitions_generated.h"
 
 #include "game/game.h"
+#include "game/game_time.h"
 #include "objects/objects.h"
 #include "physics/collisions.h"
 #include "rasterizer/dx9/rasterizer_dx9_main.h"
@@ -39,6 +40,9 @@ enum
 	k_h1_maximum_particle_systems = 64,
 	k_h1_maximum_system_particles = 1024,
 	k_h1_maximum_sprites = 4096,
+	k_h1_maximum_contrails = 256,
+	k_h1_maximum_contrail_instances = 4,
+	k_h1_maximum_contrail_points = 256,
 	k_h1_maximum_lights = 64,
 	k_h1_maximum_shader_lights = 8,
 	k_h1_maximum_attachments = 512,
@@ -232,6 +236,54 @@ static const real32 k_h1_lens_flare_occlusion_rate = 12.f;			// lens flares fade
 
 static const char* const k_h1_projectile_effect_marker_names[] = { "", "gravity" };
 
+// contrails.c and contrail_definitions.h
+enum
+{
+	_h1_contrail_point_new_bit = 0,
+	_h1_contrail_point_transitioning_bit,
+	_h1_contrail_point_expired_bit,
+};
+
+enum
+{
+	_h1_contrail_state_duration_bit = 0,
+	_h1_contrail_state_duration_delta_bit,
+	_h1_contrail_state_transition_duration_bit,
+	_h1_contrail_state_transition_duration_delta_bit,
+	_h1_contrail_state_width_bit,
+	_h1_contrail_state_color_bit,
+};
+
+enum
+{
+	_h1_contrail_scales_point_generation_rate_bit = 0,
+	_h1_contrail_scales_point_velocity_bit,
+	_h1_contrail_scales_point_velocity_delta_bit,
+	_h1_contrail_scales_point_velocity_cone_angle_bit,
+	_h1_contrail_scales_inherited_velocity_fraction_bit,
+	_h1_contrail_scales_sequence_animation_rate_bit,
+	_h1_contrail_texture_repeats_u_bit,
+	_h1_contrail_texture_repeats_v_bit,
+	_h1_contrail_scales_texture_animation_u_bit,
+	_h1_contrail_scales_texture_animation_v_bit,
+};
+
+enum
+{
+	_h1_contrail_first_point_unfaded_bit = 0,
+	_h1_contrail_last_point_unfaded_bit,
+	_h1_contrail_fades_slowly_bit = 6,
+};
+
+enum
+{
+	_h1_contrail_render_type_vertical = 0,
+	_h1_contrail_render_type_horizontal,
+	_h1_contrail_render_type_media,
+	_h1_contrail_render_type_ground,
+	_h1_contrail_render_type_viewer,
+};
+
 /* structures */
 
 struct s_h1_effect_location
@@ -340,6 +392,78 @@ struct s_h1_shader_effect
 };
 static_assert(sizeof(s_h1_shader_effect) == 0xB4);
 static_assert(offsetof(s_h1_shader_effect, secondary_map) == 0x4C);
+
+// contrail_definitions.h contrail_point_state
+struct s_h1_contrail_point_state
+{
+	real_bounds duration;
+	real_bounds transition_duration;
+	h1_tag_reference physics;
+	int32 reserved20[8];
+	real32 width;
+	real_argb_color color_lower_bound;
+	real_argb_color color_upper_bound;
+	uint32 scale_flags;
+};
+static_assert(sizeof(s_h1_contrail_point_state) == 0x68);
+
+// contrail_definitions.h contrail_definition
+struct s_h1_contrail_definition
+{
+	uint16 flags;
+	uint16 scale_flags;
+	real32 point_generation_rate;
+	real_bounds point_velocity;
+	real32 point_velocity_cone_angle;
+	real32 point_inherited_velocity_fraction;
+	int16 render_type;
+	uint16 pad1A;
+	real32 texture_repeats_u;
+	real32 texture_repeats_v;
+	real32 texture_animation_u;
+	real32 texture_animation_v;
+	real32 frames_per_second;
+	h1_tag_reference bitmap;
+	int16 first_sequence_index;
+	int16 sequence_count;
+	int32 reserved44[16];
+	s_h1_shader_effect shader;
+	h1_tag_block<s_h1_contrail_point_state> states;
+};
+static_assert(sizeof(s_h1_contrail_definition) == 0x144);
+
+// contrails.h contrail_point_datum
+struct s_h1_contrail_point
+{
+	uint8 flags;
+	int8 state_index;
+	real32 time;
+	real32 delta;
+	real32 density;
+	real_point3d position;
+	real_vector3d velocity;
+};
+
+// contrails.h contrail_datum: its points newest first, a list for each of the attachment's markers
+struct s_h1_contrail
+{
+	datum definition_index;
+	datum object_index;
+	int16 attachment_index;
+	const char* marker_name;
+	int16 density_function_index;
+	int16 change_color_index;
+	bool active;
+	real32 density;
+	int16 sequence_index;
+	int16 frame_index;
+	real32 texture_offset_u;
+	real32 texture_offset_v;
+	real32 time_until_point;
+	real32 frame_time;
+	real32 expired_dt;
+	std::vector<s_h1_contrail_point> points[k_h1_maximum_contrail_instances];
+};
 
 // particle_system_definitions.h
 struct s_h1_pctl_physics_constant
@@ -477,6 +601,9 @@ struct s_h1_particle_system
 	real_argb_color color;
 	real_rgb_color lighting;
 	s_h1_ps_type types[4];
+	// particle_systems.c particle_system_new_attached: it follows its object's marker, and stops when the object goes
+	datum attached_object_index;
+	const char* attached_marker;
 };
 
 // a sprite queued for drawing (render_sprite.c build_sprite), drawn in batches of one shader and bitmap
@@ -560,6 +687,9 @@ struct s_h1_effects_globals
 	real32 frame_dt;
 	uint32 next_light_id;
 	std::vector<s_h1_flare_query> flare_queries;
+	std::vector<s_h1_contrail> contrails;
+	int32 contrail_last_game_time;
+	real32 contrail_pending_dt;
 	real32 light_constants[2 * k_h1_maximum_shader_lights][4];
 };
 
@@ -599,6 +729,13 @@ static real32 h1_effect_distribution_integral(int16 function, real32 fraction);
 static void h1_particle_new(const s_h1_new_particle* data);
 static bool h1_particle_update(s_h1_particle* particle, real32 dt);
 static bool h1_particle_follow_marker(s_h1_particle* particle);
+static void h1_contrails_update(real32 dt);
+static void h1_attachment_new_contrail_or_particle_system(datum object_index, const object_datum* object, const h1_proj* definition, int16 i);
+static void h1_contrails_build_sprites(void);
+static void h1_contrail_new(datum definition_index, datum object_index, int16 attachment_index, const char* marker_name, int16 density_function_index,
+	int16 change_color_index);
+static void h1_effects_random_vector_in_cone(const real_vector3d* axis, real32 angle, real_vector3d* result);
+static int16 h1_object_markers_get_third_person(datum object_index, const char* marker_name, object_marker* markers, int16 maximum_count);
 static bool h1_effect_location_marker_get(datum object_index, const char* marker_name, int16 marker_ordinal, bool first_person, real_point3d* position,
 	real_vector3d* forward, real_vector3d* up);
 static void h1_particle_spawn_effect(const s_h1_particle* particle, const h1_tag_reference* reference, real32 scale);
@@ -644,6 +781,9 @@ void h1_effects_reset(void)
 	g_h1_effects.sprites.clear();
 	g_h1_effects.lights.clear();
 	g_h1_effects.attachments.clear();
+	g_h1_effects.contrails.clear();
+	g_h1_effects.contrail_last_game_time = NONE;
+	g_h1_effects.contrail_pending_dt = 0.f;
 	g_h1_effects.decals.clear();
 	for (s_h1_flare_query& query : g_h1_effects.flare_queries)
 	{
@@ -785,6 +925,7 @@ void h1_effects_update(void)
 
 	h1_objects_update_functions();
 	h1_attachments_update(dt);
+	h1_contrails_update(dt);
 	for (size_t i = 0; i < g_h1_effects.effects.size();)
 	{
 		s_h1_effect* effect = &g_h1_effects.effects[i];
@@ -845,6 +986,23 @@ void h1_effects_update(void)
 	}
 	for (size_t i = 0; i < g_h1_effects.particle_systems.size();)
 	{
+		s_h1_particle_system* attached_system = &g_h1_effects.particle_systems[i];
+		if (attached_system->attached_object_index != NONE)
+		{
+			const object_datum* attached_object = (const object_datum*)object_try_and_get(attached_system->attached_object_index);
+			if (!attached_object)
+			{
+				attached_system->attached_object_index = NONE;
+				attached_system->active = false;
+			}
+			else
+			{
+				object_marker marker;
+				attached_system->position = h1_object_markers_get_third_person(attached_system->attached_object_index, attached_system->attached_marker, &marker, 1) > 0 ?
+					marker.matrix.position : attached_object->object.position;
+				attached_system->velocity = attached_object->object.translational_velocity;
+			}
+		}
 		if (!h1_particle_system_update(&g_h1_effects.particle_systems[i], dt))
 		{
 			g_h1_effects.particle_systems.erase(g_h1_effects.particle_systems.begin() + i);
@@ -864,6 +1022,7 @@ void h1_effects_render(void)
 	{
 		h1_particles_build_sprites();
 		h1_particle_systems_build_sprites();
+		h1_contrails_build_sprites();
 		h1_sprites_draw();
 	}
 	return;
@@ -2152,6 +2311,8 @@ static void h1_particle_system_new(datum definition_index, const real_point3d* p
 	system.color = *color;
 	system.scale = scale;
 	system.active = true;
+	system.attached_object_index = NONE;
+	system.attached_marker = NULL;
 	s_h1_render_lighting lighting;
 	h1_render_lighting_at(position, &lighting);
 	system.lighting.red = MIN(lighting.ambient.red + lighting.light0_color.red + lighting.light1_color.red, 1.f);
@@ -2870,7 +3031,7 @@ static void h1_attachments_update(real32 dt)
 		{
 			const h1_proj_attachments* attachment_definition = g_h1_cache_file->block_get(definition->attachments, i);
 			const uint32 group_tag = attachment_definition->type.group_tag;
-			if ((group_tag != 'effe' && group_tag != 'ligh') || attachment_definition->type.index == NONE)
+			if ((group_tag != 'effe' && group_tag != 'ligh' && group_tag != 'cont' && group_tag != 'pctl') || attachment_definition->type.index == NONE)
 			{
 				continue;
 			}
@@ -2894,6 +3055,13 @@ static void h1_attachments_update(real32 dt)
 				created.object_index = object_index;
 				created.attachment_index = i;
 				created.group_tag = group_tag;
+				if (group_tag == 'cont' || group_tag == 'pctl')
+				{
+					h1_attachment_new_contrail_or_particle_system(object_index, object, definition, i);
+					g_h1_effects.attachments.push_back(std::move(created));
+					g_h1_effects.attachments.back().seen = true;
+					continue;
+				}
 				if (group_tag == 'effe')
 				{
 					const h1_effe* effect_definition = (const h1_effe*)g_h1_cache_file->tag_get('effe', attachment_definition->type.index);
@@ -2928,6 +3096,10 @@ static void h1_attachments_update(real32 dt)
 				attachment = &g_h1_effects.attachments.back();
 			}
 			attachment->seen = true;
+			if (group_tag == 'cont' || group_tag == 'pctl')
+			{
+				continue;
+			}
 
 			// effects.c effect_update of looping effects and object_lights.c: the attachment's primary scale function
 			const int16 function_index = attachment_definition->primary_scale > 0 ? (int16)(attachment_definition->primary_scale - 1) : (int16)NONE;
@@ -3829,4 +4001,665 @@ static bool h1_effect_location_marker_get(datum object_index, const char* marker
 		*up = object->object.up;
 	}
 	return true;
+}
+
+/* contrails */
+
+// contrails.c contrail_scale_value and contrail_scale_random_value
+static real32 h1_contrail_scale_value(real32 value, real32 scale, uint32 flags, int32 flag_bit)
+{
+	return TEST_BIT(flags, flag_bit) ? scale * value : scale;
+}
+
+static real32 h1_contrail_scale_random_value(real32 value, real32 lower, real32 upper, uint32 flags, int32 flag_bit)
+{
+	const real32 minimum = h1_contrail_scale_value(value, lower, flags, flag_bit);
+	const real32 range = h1_contrail_scale_value(value, upper - lower, flags, flag_bit + 1);
+	return h1_effects_random_range(0.f, range) + minimum;
+}
+
+// contrails.c contrail_next_frame: the next bitmap of the sequence, a random sequence when it runs out
+static void h1_contrail_next_frame(s_h1_contrail* contrail)
+{
+	const s_h1_contrail_definition* definition = (const s_h1_contrail_definition*)g_h1_cache_file->tag_get('cont', contrail->definition_index);
+	const h1_bitm* bitmap = definition->bitmap.index != NONE ? (const h1_bitm*)g_h1_cache_file->tag_get('bitm', definition->bitmap.index) : NULL;
+	contrail->frame_time = 0.f;
+	contrail->frame_index++;
+	const h1_bitm_sequences* sequence = bitmap && VALID_INDEX(contrail->sequence_index, bitmap->sequences.count) ?
+		g_h1_cache_file->block_get(bitmap->sequences, contrail->sequence_index) : NULL;
+	if (!sequence || contrail->frame_index < 0 || contrail->frame_index >= sequence->bitmap_count)
+	{
+		contrail->sequence_index = (int16)h1_effects_random_range((real32)definition->first_sequence_index,
+			(real32)(definition->first_sequence_index + definition->sequence_count));
+		if (contrail->sequence_index >= definition->first_sequence_index + definition->sequence_count)
+		{
+			contrail->sequence_index = definition->first_sequence_index;
+		}
+		contrail->frame_index = 0;
+	}
+	return;
+}
+
+// contrails.c contrail_compute_new_point_count
+static int16 h1_contrail_compute_new_point_count(s_h1_contrail* contrail, real32 dt)
+{
+	const s_h1_contrail_definition* definition = (const s_h1_contrail_definition*)g_h1_cache_file->tag_get('cont', contrail->definition_index);
+	real32 rate = definition->point_generation_rate;
+	if (TEST_BIT(definition->scale_flags, _h1_contrail_scales_point_generation_rate_bit))
+	{
+		rate *= contrail->density;
+	}
+	if (rate <= 0.f)
+	{
+		return 0;
+	}
+	const real32 time_between_points = 1.f / rate;
+	int16 count = 0;
+	while (dt != 0.f && count < 64)
+	{
+		if (dt >= contrail->time_until_point)
+		{
+			dt -= contrail->time_until_point;
+			contrail->time_until_point = time_between_points;
+			count++;
+		}
+		else
+		{
+			contrail->time_until_point -= dt;
+			break;
+		}
+	}
+	return count;
+}
+
+// contrails.c contrail_add_points: points at each of the attachment's markers, the ones since the last point spread along the way
+static void h1_contrail_add_points(s_h1_contrail* contrail, int16 point_count, bool force)
+{
+	if (point_count == 0 || contrail->object_index == NONE)
+	{
+		return;
+	}
+	const s_h1_contrail_definition* definition = (const s_h1_contrail_definition*)g_h1_cache_file->tag_get('cont', contrail->definition_index);
+	const object_datum* object = (const object_datum*)object_try_and_get(contrail->object_index);
+	if (!object)
+	{
+		return;
+	}
+	object_marker markers[k_h1_maximum_contrail_instances];
+	int16 marker_count = h1_object_markers_get_third_person(contrail->object_index, contrail->marker_name, markers, k_h1_maximum_contrail_instances);
+	if (marker_count <= 0)
+	{
+		markers[0].matrix.position = object->object.position;
+		markers[0].matrix.vectors.forward = object->object.forward;
+		markers[0].matrix.vectors.up = object->object.up;
+		marker_count = 1;
+	}
+
+	const real32 density = contrail->density;
+	const real32 point_velocity = h1_contrail_scale_random_value(density, definition->point_velocity.lower, definition->point_velocity.upper,
+		definition->scale_flags, _h1_contrail_scales_point_velocity_bit);
+	const real32 cone_angle = h1_contrail_scale_value(density, definition->point_velocity_cone_angle, definition->scale_flags,
+		_h1_contrail_scales_point_velocity_cone_angle_bit);
+	const real32 inherited_fraction = h1_contrail_scale_value(density, definition->point_inherited_velocity_fraction, definition->scale_flags,
+		_h1_contrail_scales_inherited_velocity_fraction_bit);
+	for (int16 marker_index = 0; marker_index < marker_count; marker_index++)
+	{
+		std::vector<s_h1_contrail_point>& points = contrail->points[marker_index];
+		const s_h1_contrail_point* previous = points.empty() ? NULL : &points.front();
+		const int16 new_point_count = previous ? point_count : 1;
+		const real_point3d& marker_position = markers[marker_index].matrix.position;
+		if (previous && !force && csmemcmp(&marker_position, &previous->position, sizeof(real_point3d)) == 0)
+		{
+			continue;
+		}
+		const s_h1_contrail_point previous_point = previous ? *previous : s_h1_contrail_point{};
+		for (int16 point_index = 1; point_index <= new_point_count && points.size() < k_h1_maximum_contrail_points; point_index++)
+		{
+			s_h1_contrail_point point = {};
+			point.time = 0.f;
+			point.delta = 0.f;
+			point.flags = FLAG(_h1_contrail_point_new_bit) | FLAG(_h1_contrail_point_transitioning_bit);
+			point.state_index = NONE;
+			point.density = density;
+			real_vector3d direction;
+			h1_effects_random_vector_in_cone(&markers[marker_index].matrix.vectors.forward, cone_angle, &direction);
+			point.position = marker_position;
+			// (halo 2's velocities are a second's, as the point velocities are)
+			point.velocity =
+			{
+				inherited_fraction * object->object.translational_velocity.i + direction.i * point_velocity,
+				inherited_fraction * object->object.translational_velocity.j + direction.j * point_velocity,
+				inherited_fraction * object->object.translational_velocity.k + direction.k * point_velocity
+			};
+			if (point_index < new_point_count)
+			{
+				const real32 t = (real32)point_index / (real32)new_point_count;
+				const real32 one_minus_t = 1.f - t;
+				point.density = one_minus_t * previous_point.density + t * point.density;
+				point.position =
+				{
+					one_minus_t * previous_point.position.x + t * point.position.x,
+					one_minus_t * previous_point.position.y + t * point.position.y,
+					one_minus_t * previous_point.position.z + t * point.position.z
+				};
+				point.velocity =
+				{
+					one_minus_t * previous_point.velocity.i + t * point.velocity.i,
+					one_minus_t * previous_point.velocity.j + t * point.velocity.j,
+					one_minus_t * previous_point.velocity.k + t * point.velocity.k
+				};
+			}
+			points.insert(points.begin(), point);
+		}
+	}
+	return;
+}
+
+// contrails.c contrail_update_points: each point goes through its states (each state's duration then the transition to the next),
+// moves by its state's point physics, and the expired tail goes
+static void h1_contrail_update_points(s_h1_contrail* contrail, real32 dt)
+{
+	const s_h1_contrail_definition* definition = (const s_h1_contrail_definition*)g_h1_cache_file->tag_get('cont', contrail->definition_index);
+	for (std::vector<s_h1_contrail_point>& points : contrail->points)
+	{
+		for (s_h1_contrail_point& point : points)
+		{
+			if (!TEST_BIT(point.flags, _h1_contrail_point_expired_bit))
+			{
+				point.time += dt * point.delta;
+				while (point.delta == 0.f || point.time > 1.f)
+				{
+					if (TEST_BIT(point.flags, _h1_contrail_point_transitioning_bit))
+					{
+						if (!VALID_INDEX(point.state_index + 1, definition->states.count))
+						{
+							SET_BIT(point.flags, _h1_contrail_point_expired_bit, true);
+							break;
+						}
+						const s_h1_contrail_point_state* state = g_h1_cache_file->block_get(definition->states, point.state_index + 1);
+						point.state_index++;
+						point.time = 0.f;
+						point.delta = h1_contrail_scale_random_value(point.density, state->duration.lower, state->duration.upper, state->scale_flags,
+							_h1_contrail_state_duration_bit);
+						point.delta = point.delta != 0.f ? 1.f / point.delta : 0.f;
+						SET_BIT(point.flags, _h1_contrail_point_transitioning_bit, false);
+						if (point.delta == 0.f && point.state_index + 1 >= definition->states.count)
+						{
+							SET_BIT(point.flags, _h1_contrail_point_expired_bit, true);
+							break;
+						}
+					}
+					else if (point.state_index + 1 < definition->states.count)
+					{
+						const s_h1_contrail_point_state* state = g_h1_cache_file->block_get(definition->states, point.state_index);
+						point.time = 0.f;
+						point.delta = h1_contrail_scale_random_value(point.density, state->transition_duration.lower, state->transition_duration.upper,
+							state->scale_flags, _h1_contrail_state_transition_duration_bit);
+						point.delta = point.delta != 0.f ? 1.f / point.delta : 0.f;
+						SET_BIT(point.flags, _h1_contrail_point_transitioning_bit, true);
+					}
+					else
+					{
+						SET_BIT(point.flags, _h1_contrail_point_expired_bit, true);
+						break;
+					}
+				}
+			}
+
+			if (TEST_BIT(point.flags, _h1_contrail_point_new_bit))
+			{
+				SET_BIT(point.flags, _h1_contrail_point_new_bit, false);
+			}
+			else if (!TEST_BIT(point.flags, _h1_contrail_point_expired_bit) && VALID_INDEX(point.state_index, definition->states.count))
+			{
+				const s_h1_contrail_point_state* state = g_h1_cache_file->block_get(definition->states, point.state_index);
+				const h1_pphy* physics = state->physics.index != NONE ? (const h1_pphy*)g_h1_cache_file->tag_get('pphy', state->physics.index) : NULL;
+				if (physics)
+				{
+					real_vector3d normal;
+					h1_point_physics_update(physics, &point.position, &point.velocity, &normal, state->width * 0.5f, dt);
+				}
+			}
+		}
+
+		// the expired tail goes (an expired point stays while the one before it lives, it ends the strip)
+		while (points.size() > 1 && TEST_BIT(points.back().flags, _h1_contrail_point_expired_bit) &&
+			TEST_BIT(points[points.size() - 2].flags, _h1_contrail_point_expired_bit))
+		{
+			points.pop_back();
+		}
+		if (points.size() == 1 && TEST_BIT(points.front().flags, _h1_contrail_point_expired_bit))
+		{
+			points.clear();
+		}
+	}
+	return;
+}
+
+// contrails.c contrails_update: the attached objects' contrails take points as their objects move (on the frames after game ticks),
+// animate their bitmaps and textures, and the ones without an object go when their points are gone
+static void h1_contrails_update(real32 dt)
+{
+	g_h1_effects.contrail_pending_dt += dt;
+	real32 point_dt = 0.f;
+	if (g_h1_effects.contrail_last_game_time != (int32)game_time_get())
+	{
+		g_h1_effects.contrail_last_game_time = (int32)game_time_get();
+		point_dt = g_h1_effects.contrail_pending_dt;
+		g_h1_effects.contrail_pending_dt = 0.f;
+	}
+
+	for (size_t i = 0; i < g_h1_effects.contrails.size();)
+	{
+		s_h1_contrail* contrail = &g_h1_effects.contrails[i];
+		const s_h1_contrail_definition* definition = (const s_h1_contrail_definition*)g_h1_cache_file->tag_get('cont', contrail->definition_index);
+		const real32 frame_dt = dt - contrail->expired_dt;
+		contrail->expired_dt = 0.f;
+
+		if (contrail->object_index != NONE && !object_try_and_get(contrail->object_index))
+		{
+			contrail->object_index = NONE;
+		}
+		if (contrail->object_index != NONE)
+		{
+			real32 density = 1.f;
+			const bool active = h1_object_function_value_get(contrail->object_index, contrail->density_function_index, &density);
+			contrail->density = density;
+			if (active != contrail->active)
+			{
+				contrail->density = 0.f;
+				h1_contrail_add_points(contrail, 1, true);
+				contrail->density = density;
+			}
+			contrail->active = active;
+			if (active)
+			{
+				h1_contrail_add_points(contrail, h1_contrail_compute_new_point_count(contrail, point_dt), true);
+			}
+		}
+
+		real32 frames_per_second = definition->frames_per_second;
+		if (TEST_BIT(definition->scale_flags, _h1_contrail_scales_sequence_animation_rate_bit))
+		{
+			frames_per_second *= contrail->density;
+		}
+		if (frames_per_second > 0.f)
+		{
+			const real32 frame_period = 1.f / frames_per_second;
+			real32 remaining_dt = frame_dt;
+			for (int32 guard = 0; remaining_dt > 0.f && guard < 64; guard++)
+			{
+				const real32 until_next = frame_period - contrail->frame_time;
+				if (until_next <= remaining_dt)
+				{
+					h1_contrail_next_frame(contrail);
+					remaining_dt -= until_next;
+				}
+				else
+				{
+					contrail->frame_time += remaining_dt;
+					break;
+				}
+			}
+		}
+		const real32 animation_u = h1_contrail_scale_value(contrail->density, definition->texture_animation_u, definition->scale_flags, _h1_contrail_scales_texture_animation_u_bit);
+		const real32 animation_v = h1_contrail_scale_value(contrail->density, definition->texture_animation_v, definition->scale_flags, _h1_contrail_scales_texture_animation_v_bit);
+		contrail->texture_offset_u -= animation_u * frame_dt;
+		contrail->texture_offset_v += animation_v * frame_dt;
+
+		h1_contrail_update_points(contrail, dt);
+
+		bool has_points = false;
+		for (const std::vector<s_h1_contrail_point>& points : contrail->points)
+		{
+			has_points |= !points.empty();
+		}
+		if (!has_points && contrail->object_index == NONE)
+		{
+			g_h1_effects.contrails.erase(g_h1_effects.contrails.begin() + i);
+			continue;
+		}
+		i++;
+	}
+	return;
+}
+
+// contrails.c contrail_new for an object's contrail attachment
+static void h1_contrail_new(datum definition_index, datum object_index, int16 attachment_index, const char* marker_name, int16 density_function_index,
+	int16 change_color_index)
+{
+	if (g_h1_effects.contrails.size() >= k_h1_maximum_contrails || !g_h1_cache_file->tag_get('cont', definition_index))
+	{
+		return;
+	}
+	s_h1_contrail contrail = {};
+	contrail.definition_index = definition_index;
+	contrail.object_index = object_index;
+	contrail.attachment_index = attachment_index;
+	contrail.marker_name = marker_name;
+	contrail.density_function_index = density_function_index;
+	contrail.change_color_index = change_color_index;
+	contrail.sequence_index = NONE;
+	h1_contrail_next_frame(&contrail);
+	real32 density = 1.f;
+	if (h1_object_function_value_get(object_index, density_function_index, &density))
+	{
+		contrail.density = density;
+		contrail.active = true;
+		h1_contrail_add_points(&contrail, 1, true);
+	}
+	g_h1_effects.contrails.push_back(std::move(contrail));
+	return;
+}
+
+void h1_contrails_owner_collision(datum object_index, bool object_dying)
+{
+	for (s_h1_contrail& contrail : g_h1_effects.contrails)
+	{
+		if (contrail.object_index != object_index)
+		{
+			continue;
+		}
+		// contrail_owner_collision: a point where the owner hit, now
+		if (contrail.active)
+		{
+			const int16 point_count = h1_contrail_compute_new_point_count(&contrail, game_tick_length());
+			h1_contrail_add_points(&contrail, MAX((int16)1, point_count), false);
+		}
+		if (object_dying)
+		{
+			contrail.object_index = NONE;
+		}
+	}
+	return;
+}
+
+// render_contrails.c contrail_fade: faded by how much the strip faces the camera
+static real32 h1_contrail_fade(const s_h1_contrail_definition* definition, int16 fade_mode, const real_point3d* point, const real_vector3d* normal)
+{
+	if (!fade_mode)
+	{
+		return 1.f;
+	}
+	const real_point3d& camera_point = global_window_parameters_get()->camera.point;
+	const real_vector3d to_camera = { camera_point.x - point->x, camera_point.y - point->y, camera_point.z - point->z };
+	real32 result = fabsf(h1_dot(normal, &to_camera) / MAX(h1_magnitude(&to_camera), 0.0001f));
+	if (TEST_BIT(definition->flags, _h1_contrail_fades_slowly_bit))
+	{
+		result = h1_transition_function_evaluate(2, result);
+	}
+	return fade_mode == 2 ? 1.f - result : result;
+}
+
+// render_contrails.c render_contrail: a strip through the points, two vertices a point across the render type's direction, its
+// segments queued as sprites of the contrail's shader and bitmap
+static void h1_contrails_build_sprites(void)
+{
+	const real_point3d& camera_point = global_window_parameters_get()->camera.point;
+	for (const s_h1_contrail& contrail : g_h1_effects.contrails)
+	{
+		const s_h1_contrail_definition* definition = (const s_h1_contrail_definition*)g_h1_cache_file->tag_get('cont', contrail.definition_index);
+		const h1_bitm* bitmap_group = definition->bitmap.index != NONE ? (const h1_bitm*)g_h1_cache_file->tag_get('bitm', definition->bitmap.index) : NULL;
+		const h1_bitm_sequences* sequence = bitmap_group && VALID_INDEX(contrail.sequence_index, bitmap_group->sequences.count) ?
+			g_h1_cache_file->block_get(bitmap_group->sequences, contrail.sequence_index) : NULL;
+		if (!sequence || definition->render_type == _h1_contrail_render_type_ground || definition->render_type > _h1_contrail_render_type_viewer)
+		{
+			continue;
+		}
+		const int16 bitmap_index = (int16)(sequence->first_bitmap_index + (sequence->bitmap_count > 0 ? contrail.frame_index % sequence->bitmap_count : 0));
+		const s_h1_shader_effect* shader = &definition->shader;
+		const real_rgb_color* change_color = NULL;
+		if (contrail.object_index != NONE && contrail.change_color_index != NONE)
+		{
+			const s_h1_object_functions* functions = h1_object_functions_get(contrail.object_index);
+			change_color = functions && VALID_INDEX(contrail.change_color_index, 4) ? &functions->colors[contrail.change_color_index] : NULL;
+		}
+
+		for (const std::vector<s_h1_contrail_point>& points : contrail.points)
+		{
+			if (points.size() < 2)
+			{
+				continue;
+			}
+			const real32 u_step = -h1_contrail_scale_value(contrail.density, definition->texture_repeats_u, definition->scale_flags, _h1_contrail_texture_repeats_u_bit);
+			const real32 v_near = contrail.texture_offset_v;
+			const real32 v_far = h1_contrail_scale_value(contrail.density, definition->texture_repeats_v, definition->scale_flags, _h1_contrail_texture_repeats_v_bit) +
+				v_near;
+			real32 texture_u = contrail.texture_offset_u;
+
+			std::vector<s_h1_particle_vertex> strip(points.size() * 2);
+			for (size_t point_index = 0; point_index < points.size(); point_index++)
+			{
+				const s_h1_contrail_point& point = points[point_index];
+				const s_h1_contrail_point* previous = point_index > 0 ? &points[point_index - 1] : NULL;
+				const s_h1_contrail_point* next = point_index + 1 < points.size() ? &points[point_index + 1] : NULL;
+				const int16 state_index = (int16)PIN((int32)point.state_index, 0, definition->states.count - 1);
+				const s_h1_contrail_point_state* state = g_h1_cache_file->block_get(definition->states, state_index);
+				if (!state)
+				{
+					break;
+				}
+
+				auto state_values = [&](const s_h1_contrail_point_state* s, real32* width, real_argb_color* color)
+				{
+					const real32 color_scale = TEST_BIT(s->scale_flags, _h1_contrail_state_color_bit) ? point.density : 1.f;
+					*width = TEST_BIT(s->scale_flags, _h1_contrail_state_width_bit) ? s->width * point.density : s->width;
+					color->alpha = (s->color_upper_bound.alpha - s->color_lower_bound.alpha) * color_scale + s->color_lower_bound.alpha;
+					color->red = (s->color_upper_bound.red - s->color_lower_bound.red) * color_scale + s->color_lower_bound.red;
+					color->green = (s->color_upper_bound.green - s->color_lower_bound.green) * color_scale + s->color_lower_bound.green;
+					color->blue = (s->color_upper_bound.blue - s->color_lower_bound.blue) * color_scale + s->color_lower_bound.blue;
+				};
+				real32 width;
+				real_argb_color color;
+				state_values(state, &width, &color);
+				if (TEST_BIT(point.flags, _h1_contrail_point_transitioning_bit) && VALID_INDEX(point.state_index + 1, definition->states.count) && point.state_index >= 0)
+				{
+					real32 next_width;
+					real_argb_color next_color;
+					state_values(g_h1_cache_file->block_get(definition->states, point.state_index + 1), &next_width, &next_color);
+					const real32 t = point.time;
+					width = (next_width - width) * t + width;
+					color.alpha = (next_color.alpha - color.alpha) * t + color.alpha;
+					color.red = (next_color.red - color.red) * t + color.red;
+					color.green = (next_color.green - color.green) * t + color.green;
+					color.blue = (next_color.blue - color.blue) * t + color.blue;
+				}
+				if (change_color)
+				{
+					color.red *= change_color->red;
+					color.green *= change_color->green;
+					color.blue *= change_color->blue;
+				}
+				const real32 half_width = width * 0.5f;
+
+				real_point3d side0, side1;
+				real_vector3d orientation = { 0.f, 0.f, 1.f };
+				const s_h1_contrail_point* a = previous ? previous : &point;
+				const s_h1_contrail_point* b = previous ? &point : next;
+				switch (definition->render_type)
+				{
+				case _h1_contrail_render_type_vertical:
+				{
+					side0 = { point.position.x, point.position.y, point.position.z - half_width };
+					side1 = { point.position.x, point.position.y, point.position.z + half_width };
+					orientation = { a->position.y - b->position.y, b->position.x - a->position.x, 0.f };
+					h1_normalize(&orientation);
+					break;
+				}
+				case _h1_contrail_render_type_horizontal:
+				case _h1_contrail_render_type_media:
+				{
+					real_vector3d perpendicular = { a->position.y - b->position.y, b->position.x - a->position.x, 0.f };
+					h1_normalize(&perpendicular);
+					side0 = { point.position.x - perpendicular.i * half_width, point.position.y - perpendicular.j * half_width, point.position.z };
+					side1 = { point.position.x + perpendicular.i * half_width, point.position.y + perpendicular.j * half_width, point.position.z };
+					break;
+				}
+				default:
+				{
+					// viewer facing: across the strip and the eye
+					const real_vector3d eye = { camera_point.x - a->position.x, camera_point.y - a->position.y, camera_point.z - a->position.z };
+					const real_vector3d tangent = { b->position.x - a->position.x, b->position.y - a->position.y, b->position.z - a->position.z };
+					real_vector3d facing_normal = { tangent.k * eye.j - tangent.j * eye.k, tangent.i * eye.k - tangent.k * eye.i, tangent.j * eye.i - tangent.i * eye.j };
+					h1_normalize(&facing_normal);
+					side0 = { point.position.x - facing_normal.i * half_width, point.position.y - facing_normal.j * half_width, point.position.z - facing_normal.k * half_width };
+					side1 = { point.position.x + facing_normal.i * half_width, point.position.y + facing_normal.j * half_width, point.position.z + facing_normal.k * half_width };
+					orientation = h1_cross(&facing_normal, &tangent);
+					orientation = { -orientation.i, -orientation.j, -orientation.k };
+					h1_normalize(&orientation);
+					break;
+				}
+				}
+
+				color.alpha = PIN(color.alpha * h1_contrail_fade(definition, shader->framebuffer_fade_mode, &point.position, &orientation), 0.f, 1.f);
+				s_h1_particle_vertex* vertex = &strip[point_index * 2];
+				const real_point3d* sides[2] = { &side0, &side1 };
+				for (int32 side = 0; side < 2; side++)
+				{
+					vertex[side].position[0] = sides[side]->x;
+					vertex[side].position[1] = sides[side]->y;
+					vertex[side].position[2] = sides[side]->z;
+					vertex[side].color[0] = PIN(color.red, 0.f, 1.f);
+					vertex[side].color[1] = PIN(color.green, 0.f, 1.f);
+					vertex[side].color[2] = PIN(color.blue, 0.f, 1.f);
+					vertex[side].texcoord[0] = texture_u;
+					vertex[side].texcoord[1] = side == 0 ? v_far : v_near;
+					vertex[side].alpha[0] = color.alpha;
+					vertex[side].alpha[1] = 0.f;
+				}
+				texture_u += u_step;
+			}
+
+			// the ends fade out unless they're unfaded
+			if (!TEST_BIT(definition->flags, _h1_contrail_first_point_unfaded_bit))
+			{
+				strip[0].alpha[0] = strip[1].alpha[0] = 0.f;
+			}
+			if (!TEST_BIT(definition->flags, _h1_contrail_last_point_unfaded_bit))
+			{
+				strip[strip.size() - 1].alpha[0] = strip[strip.size() - 2].alpha[0] = 0.f;
+			}
+			for (size_t segment = 0; segment + 1 < points.size() && g_h1_effects.sprites.size() < k_h1_maximum_sprites; segment++)
+			{
+				s_h1_sprite queued;
+				queued.shader = shader;
+				queued.bitmap_tag_index = definition->bitmap.index;
+				queued.bitmap_index = bitmap_index;
+				queued.vertices[0] = strip[2 * segment];
+				queued.vertices[1] = strip[2 * segment + 1];
+				queued.vertices[2] = strip[2 * segment + 2];
+				queued.vertices[3] = strip[2 * segment + 2];
+				queued.vertices[4] = strip[2 * segment + 1];
+				queued.vertices[5] = strip[2 * segment + 3];
+				g_h1_effects.sprites.push_back(queued);
+			}
+		}
+	}
+	return;
+}
+
+// random_math.c random_vector_in_cone3d: the axis turned about a random perpendicular by up to the angle
+static void h1_effects_random_vector_in_cone(const real_vector3d* axis, real32 angle, real_vector3d* result)
+{
+	real_vector3d direction = *axis;
+	const real32 length = h1_magnitude(&direction);
+	h1_normalize(&direction);
+	if (length == 0.f || angle <= 0.f)
+	{
+		*result = direction;
+		return;
+	}
+	real_vector3d perpendicular = h1_perpendicular(&direction);
+	h1_normalize(&perpendicular);
+	const real_vector3d other = h1_cross(&direction, &perpendicular);
+	const real32 around = h1_effects_random_range(0.f, 2.f * _pi);
+	const real32 tilt = h1_effects_random_range(0.f, angle);
+	const real_vector3d turn_axis =
+	{
+		perpendicular.i * cosf(around) + other.i * sinf(around),
+		perpendicular.j * cosf(around) + other.j * sinf(around),
+		perpendicular.k * cosf(around) + other.k * sinf(around)
+	};
+	// rotate the direction about the turn axis by the tilt
+	const real32 sine = sinf(tilt);
+	const real32 cosine = cosf(tilt);
+	const real_vector3d cross = h1_cross(&turn_axis, &direction);
+	const real32 along = h1_dot(&turn_axis, &direction) * (1.f - cosine);
+	*result =
+	{
+		direction.i * cosine + cross.i * sine + turn_axis.i * along,
+		direction.j * cosine + cross.j * sine + turn_axis.j * along,
+		direction.k * cosine + cross.k * sine + turn_axis.k * along
+	};
+	return;
+}
+
+// objects.c object_attachments_new for an object's contrail (its first one is a projectile's tracer, gone when it isn't one) or
+// particle system attachment
+static void h1_attachment_new_contrail_or_particle_system(datum object_index, const object_datum* object, const h1_proj* definition, int16 i)
+{
+	const h1_proj_attachments* attachment_definition = g_h1_cache_file->block_get(definition->attachments, i);
+	const uint32 group_tag = attachment_definition->type.group_tag;
+	const int16 primary_scale_function = attachment_definition->primary_scale > 0 ? (int16)(attachment_definition->primary_scale - 1) : (int16)NONE;
+	if (group_tag == 'cont')
+	{
+		bool first_contrail = true;
+		for (int16 j = 0; j < i; j++)
+		{
+			first_contrail &= g_h1_cache_file->block_get(definition->attachments, j)->type.group_tag != 'cont';
+		}
+		real32 tracer = -1.f;
+		if (!(first_contrail && h1_projectile_logic_function_value(object_index, 3, &tracer) && tracer == 0.f))
+		{
+			h1_contrail_new(attachment_definition->type.index, object_index, i, attachment_definition->marker, primary_scale_function,
+				attachment_definition->change_color > 0 ? (int16)(attachment_definition->change_color - 1) : (int16)NONE);
+		}
+	}
+	else if (group_tag == 'pctl')
+	{
+		object_marker marker;
+		real_point3d position = object->object.position;
+		if (h1_object_markers_get_third_person(object_index, attachment_definition->marker, &marker, 1) > 0)
+		{
+			position = marker.matrix.position;
+		}
+		const size_t system_count = g_h1_effects.particle_systems.size();
+		const real_vector3d velocity = { 0.f, 0.f, 0.f };
+		const real_argb_color tint = { 1.f, 1.f, 1.f, 1.f };
+		h1_particle_system_new(attachment_definition->type.index, &position, &velocity, &tint, 1.f);
+		if (g_h1_effects.particle_systems.size() > system_count)
+		{
+			g_h1_effects.particle_systems.back().attached_object_index = object_index;
+			g_h1_effects.particle_systems.back().attached_marker = attachment_definition->marker;
+		}
+	}
+	return;
+}
+
+void h1_effects_object_attachments_new(datum object_index)
+{
+	const object_datum* object = (const object_datum*)object_try_and_get(object_index);
+	const datum h1_definition_index = object ? h1_objects_h1_definition_get(object->definition_index) : NONE;
+	const h1_proj* definition = h1_definition_index != NONE ? (const h1_proj*)g_h1_cache_file->tag_get('obje', h1_definition_index) : NULL;
+	if (!definition)
+	{
+		return;
+	}
+	for (int16 i = 0; i < definition->attachments.count; i++)
+	{
+		const uint32 group_tag = g_h1_cache_file->block_get(definition->attachments, i)->type.group_tag;
+		if ((group_tag != 'cont' && group_tag != 'pctl') || g_h1_cache_file->block_get(definition->attachments, i)->type.index == NONE ||
+			g_h1_effects.attachments.size() >= k_h1_maximum_attachments)
+		{
+			continue;
+		}
+		h1_attachment_new_contrail_or_particle_system(object_index, object, definition, i);
+		s_h1_attachment created = {};
+		created.object_index = object_index;
+		created.attachment_index = i;
+		created.group_tag = group_tag;
+		created.seen = true;
+		g_h1_effects.attachments.push_back(std::move(created));
+	}
+	return;
 }
