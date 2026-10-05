@@ -8,6 +8,7 @@
 #include "h1_objects.h"
 #include "h1_projectiles.h"
 #include "h1_scenery.h"
+#include "h1_first_person.h"
 #include "h1_weapons.h"
 #include "h1_projectiles.h"
 #include "h1_runtime.h"
@@ -93,6 +94,7 @@ void h1_equipment_build(scenario* h2_scenario, const h1_scnr* h1_scenario)
 	h1_scenery_reset();
 	h1_projectiles_reset();
 	h1_weapons_reset();
+	h1_first_person_reset();
 
 	const int32 h1_item_count = h1_scenario->netgame_equipment.count;
 
@@ -204,6 +206,7 @@ void h1_equipment_build(scenario* h2_scenario, const h1_scnr* h1_scenario)
 
 	h1_grenades_build();
 	h1_weapons_build_multiplayer();
+	h1_first_person_hands_build();
 	h1_simulation_definition_table_extend(h2_scenario);
 	h1_log("equipment: %d netgame items and vehicles from %d halo 1 items and %d vehicles, %d starting equipment", count, h1_item_count, vehicle_count, starting_count);
 	return;

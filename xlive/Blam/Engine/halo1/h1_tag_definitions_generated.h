@@ -4912,4 +4912,245 @@ struct h1_pphy
 };
 ASSERT_STRUCT_SIZE(h1_pphy, 0x40);
 
+struct h1_antr_objects
+{
+	int16 animation_index; // 0x0
+	int16 function; // 0x2
+	int16 function_controls; // 0x4
+	int16 unknown; // 0x6
+	int8 pad_8[12];
+};
+ASSERT_STRUCT_SIZE(h1_antr_objects, 0x14);
+
+struct h1_antr_units_animations
+{
+	int16 animation_index; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_antr_units_animations, 0x2);
+
+struct h1_antr_units_ik_points
+{
+	char marker[32]; // 0x0
+	char attach_to_marker[32]; // 0x20
+};
+ASSERT_STRUCT_SIZE(h1_antr_units_ik_points, 0x40);
+
+struct h1_antr_units_weapons_animations
+{
+	int16 animation_index; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_antr_units_weapons_animations, 0x2);
+
+struct h1_antr_units_weapons_ik_points
+{
+	char marker[32]; // 0x0
+	char attach_to_marker[32]; // 0x20
+};
+ASSERT_STRUCT_SIZE(h1_antr_units_weapons_ik_points, 0x40);
+
+struct h1_antr_units_weapons_weapon_types_animations
+{
+	int16 animation_index; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_antr_units_weapons_weapon_types_animations, 0x2);
+
+struct h1_antr_units_weapons_weapon_types
+{
+	char label[32]; // 0x0
+	int8 pad_20[16];
+	h1_tag_block<h1_antr_units_weapons_weapon_types_animations> animations; // 0x30
+};
+ASSERT_STRUCT_SIZE(h1_antr_units_weapons_weapon_types, 0x3c);
+
+struct h1_antr_units_weapons
+{
+	char name[32]; // 0x0
+	char grip_marker[32]; // 0x20
+	char hand_marker[32]; // 0x40
+	real32 right_yaw_per_frame; // 0x60
+	real32 left_yaw_per_frame; // 0x64
+	int16 right_frame_count; // 0x68
+	int16 left_frame_count; // 0x6a
+	real32 down_pitch_per_frame; // 0x6c
+	real32 up_pitch_per_frame; // 0x70
+	int16 down_pitch_frame_count; // 0x74
+	int16 up_pitch_frame_count; // 0x76
+	int8 pad_78[32];
+	h1_tag_block<h1_antr_units_weapons_animations> animations; // 0x98
+	h1_tag_block<h1_antr_units_weapons_ik_points> ik_points; // 0xa4
+	h1_tag_block<h1_antr_units_weapons_weapon_types> weapon_types; // 0xb0
+};
+ASSERT_STRUCT_SIZE(h1_antr_units_weapons, 0xbc);
+
+struct h1_antr_units
+{
+	char label[32]; // 0x0
+	real32 right_yaw_per_frame; // 0x20
+	real32 left_yaw_per_frame; // 0x24
+	int16 right_frame_count; // 0x28
+	int16 left_frame_count; // 0x2a
+	real32 down_pitch_per_frame; // 0x2c
+	real32 up_pitch_per_frame; // 0x30
+	int16 down_pitch_frame_count; // 0x34
+	int16 up_pitch_frame_count; // 0x36
+	int8 pad_38[8];
+	h1_tag_block<h1_antr_units_animations> animations; // 0x40
+	h1_tag_block<h1_antr_units_ik_points> ik_points; // 0x4c
+	h1_tag_block<h1_antr_units_weapons> weapons; // 0x58
+};
+ASSERT_STRUCT_SIZE(h1_antr_units, 0x64);
+
+struct h1_antr_weapons_animations
+{
+	int16 animation_index; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_antr_weapons_animations, 0x2);
+
+struct h1_antr_weapons
+{
+	int8 pad_0[16];
+	h1_tag_block<h1_antr_weapons_animations> animations; // 0x10
+};
+ASSERT_STRUCT_SIZE(h1_antr_weapons, 0x1c);
+
+struct h1_antr_vehicles_animations
+{
+	int16 animation_index; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_antr_vehicles_animations, 0x2);
+
+struct h1_antr_vehicles_suspension_animations
+{
+	int16 mass_point_index; // 0x0
+	int16 animation_index; // 0x2
+	real32 full_extension_ground_depth; // 0x4
+	real32 full_compression_ground_depth; // 0x8
+	int8 pad_c[8];
+};
+ASSERT_STRUCT_SIZE(h1_antr_vehicles_suspension_animations, 0x14);
+
+struct h1_antr_vehicles
+{
+	real32 right_yaw_per_frame; // 0x0
+	real32 left_yaw_per_frame; // 0x4
+	int16 right_frame_count; // 0x8
+	int16 left_frame_count; // 0xa
+	real32 down_pitch_per_frame; // 0xc
+	real32 up_pitch_per_frame; // 0x10
+	int16 down_pitch_frame_count; // 0x14
+	int16 up_pitch_frame_count; // 0x16
+	int8 pad_18[68];
+	h1_tag_block<h1_antr_vehicles_animations> animations; // 0x5c
+	h1_tag_block<h1_antr_vehicles_suspension_animations> suspension_animations; // 0x68
+};
+ASSERT_STRUCT_SIZE(h1_antr_vehicles, 0x74);
+
+struct h1_antr_devices_animations
+{
+	int16 animation_index; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_antr_devices_animations, 0x2);
+
+struct h1_antr_devices
+{
+	int8 pad_0[84];
+	h1_tag_block<h1_antr_devices_animations> animations; // 0x54
+};
+ASSERT_STRUCT_SIZE(h1_antr_devices, 0x60);
+
+struct h1_antr_unit_damage
+{
+	int16 animation_index; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_antr_unit_damage, 0x2);
+
+struct h1_antr_first_person_weapons_animations
+{
+	int16 animation_index; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_antr_first_person_weapons_animations, 0x2);
+
+struct h1_antr_first_person_weapons
+{
+	int8 pad_0[16];
+	h1_tag_block<h1_antr_first_person_weapons_animations> animations; // 0x10
+};
+ASSERT_STRUCT_SIZE(h1_antr_first_person_weapons, 0x1c);
+
+struct h1_antr_sound_references
+{
+	h1_tag_reference sound; // 0x0
+	int8 pad_10[4];
+};
+ASSERT_STRUCT_SIZE(h1_antr_sound_references, 0x14);
+
+struct h1_antr_nodes
+{
+	char name[32]; // 0x0
+	int16 next_sibling_node_index; // 0x20
+	int16 first_child_node_index; // 0x22
+	int16 parent_node_index; // 0x24
+	int16 unknown; // 0x26
+	uint32 node_joint_flags; // 0x28
+	real_vector3d base_vector; // 0x2c
+	real32 vector_range; // 0x38
+	int8 pad_3c[4];
+};
+ASSERT_STRUCT_SIZE(h1_antr_nodes, 0x40);
+
+struct h1_antr_animations
+{
+	char name[32]; // 0x0
+	int16 type; // 0x20
+	int16 frame_count; // 0x22
+	int16 frame_size; // 0x24
+	int16 frame_info_type; // 0x26
+	int32 node_list_checksum; // 0x28
+	int16 node_count; // 0x2c
+	int16 loop_frame_index; // 0x2e
+	real32 weight; // 0x30
+	int16 key_frame_index; // 0x34
+	int16 second_key_frame_index; // 0x36
+	int16 next_animation_index; // 0x38
+	uint16 flags; // 0x3a
+	int16 sound_index; // 0x3c
+	int16 sound_frame_index; // 0x3e
+	int8 left_foot_frame_index; // 0x40
+	int8 right_foot_frame_index; // 0x41
+	int16 main_animation_index; // 0x42
+	real32 relative_weight; // 0x44
+	h1_tag_data frame_info; // 0x48
+	int32 node_transformation_flags_0; // 0x5c
+	int32 node_transformation_flags_1; // 0x60
+	int8 pad_64[8];
+	int32 node_rotation_flags_0; // 0x6c
+	int32 node_rotation_flags_1; // 0x70
+	int8 pad_74[8];
+	int32 node_scale_flags_0; // 0x7c
+	int32 node_scale_flags_1; // 0x80
+	int8 pad_84[4];
+	int32 offset_to_compressed_data; // 0x88
+	h1_tag_data default_data; // 0x8c
+	h1_tag_data frame_data; // 0xa0
+};
+ASSERT_STRUCT_SIZE(h1_antr_animations, 0xb4);
+
+struct h1_antr
+{
+	h1_tag_block<h1_antr_objects> objects; // 0x0
+	h1_tag_block<h1_antr_units> units; // 0xc
+	h1_tag_block<h1_antr_weapons> weapons; // 0x18
+	h1_tag_block<h1_antr_vehicles> vehicles; // 0x24
+	h1_tag_block<h1_antr_devices> devices; // 0x30
+	h1_tag_block<h1_antr_unit_damage> unit_damage; // 0x3c
+	h1_tag_block<h1_antr_first_person_weapons> first_person_weapons; // 0x48
+	h1_tag_block<h1_antr_sound_references> sound_references; // 0x54
+	real32 limp_body_node_radius; // 0x60
+	uint16 flags; // 0x64
+	int16 unknown; // 0x66
+	h1_tag_block<h1_antr_nodes> nodes; // 0x68
+	h1_tag_block<h1_antr_animations> animations; // 0x74
+};
+ASSERT_STRUCT_SIZE(h1_antr, 0x80);
+
 #pragma pack(pop)

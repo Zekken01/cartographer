@@ -18,6 +18,7 @@
 #include "saved_games/game_variant.h"
 #include "saved_games/cartographer_player_profile/cartographer_player_profile.h"
 #include "units/units.h"
+#include "halo1/h1_first_person.h"
 
 /* constants */
 
@@ -291,6 +292,9 @@ int32 __cdecl first_person_weapon_build_models(
 	}
 
 	ASSERT(model_count <= maximum_model_count);
+	// halo 1 first person models draw their halo 1 geometry with these nodes
+	// (and halo 2 draws none of them, they have no halo 2 geometry)
+	model_count = h1_first_person_models_submit(user_index, fp_model_data, model_count);
 	return model_count;
 }
 

@@ -2,7 +2,9 @@
 #include "h1_weapons.h"
 
 #include "h1_cache_file.h"
+#include "h1_animations.h"
 #include "h1_effects.h"
+#include "h1_first_person.h"
 #include "h1_items.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
@@ -432,6 +434,32 @@ datum h1_weapon_definition_build(datum h1_weapon_index)
 			h1_runtime_reference_set(&effect->firing_damage, firing_damage != NONE ? 'jpt!' : (tag_group)NONE, firing_damage);
 			h1_runtime_reference_set(&effect->misfire_damage, misfire_damage != NONE ? 'jpt!' : (tag_group)NONE, misfire_damage);
 			h1_runtime_reference_set(&effect->empty_damage, empty_damage != NONE ? 'jpt!' : (tag_group)NONE, empty_damage);
+		}
+	}
+
+	// first person: the halo 1 first person model's nodes and markers, the halo 1 first person animations (every character)
+	const h1_mode* h1_first_person_model = h1_weapon->first_person_model.index != NONE ? (const h1_mode*)g_h1_cache_file->tag_get('mode', h1_weapon->first_person_model.index) : NULL;
+	if (h1_first_person_model)
+	{
+		char first_person_name[256];
+		sprintf_s(first_person_name, "halo1\\%s", g_h1_cache_file->tag_name_get(h1_weapon->first_person_model.index));
+		datum first_person_model = h1_runtime_tag_find('mode', first_person_name);
+		if (first_person_model == NONE)
+		{
+			first_person_model = h1_object_render_model_build(h1_first_person_model, first_person_name);
+		}
+		char animations_name[256];
+		sprintf_s(animations_name, "halo1\\%s", h1_weapon->first_person_animations.index != NONE ? g_h1_cache_file->tag_name_get(h1_weapon->first_person_animations.index) : first_person_name);
+		const datum first_person_animations = h1_first_person_animation_graph_build(h1_weapon->first_person_animations.index, animations_name);
+		if (first_person_model != NONE && first_person_animations != NONE)
+		{
+			h1_first_person_model_register(first_person_model, h1_weapon->first_person_model.index);
+			h2x_weap_first_person* first_person = h1_runtime_block_new(&weapon->first_person, 2);
+			for (int32 i = 0; i < 2; i++)
+			{
+				h1_runtime_reference_set(&first_person[i].first_person_model, 'mode', first_person_model);
+				h1_runtime_reference_set(&first_person[i].first_person_animations, 'jmad', first_person_animations);
+			}
 		}
 	}
 

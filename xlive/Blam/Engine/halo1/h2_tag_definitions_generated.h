@@ -8183,4 +8183,336 @@ struct h2x_mulg
 };
 ASSERT_STRUCT_SIZE(h2x_mulg, 0x10);
 
+struct h2x_jmad_skeleton_nodes
+{
+	string_id name; // 0x0
+	int16 next_sibling_node_index; // 0x4
+	int16 first_child_node_index; // 0x6
+	int16 parent_node_index; // 0x8
+	uint8 model_flags; // 0xa
+	uint8 node_joint_flags; // 0xb
+	real_vector3d base_vector; // 0xc
+	real32 vector_range; // 0x18
+	real32 z_position; // 0x1c
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_skeleton_nodes, 0x20);
+
+struct h2x_jmad_sound_references
+{
+	tag_reference sound; // 0x0
+	uint16 flags; // 0x8
+	int16 unknown; // 0xa
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_sound_references, 0xc);
+
+struct h2x_jmad_effect_references
+{
+	tag_reference effect; // 0x0
+	uint16 flags; // 0x8
+	int16 unknown; // 0xa
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_effect_references, 0xc);
+
+struct h2x_jmad_blend_screens
+{
+	string_id label; // 0x0
+	real32 right_yaw_per_frame; // 0x4
+	real32 left_yaw_per_frame; // 0x8
+	int16 right_frame_count; // 0xc
+	int16 left_frame_count; // 0xe
+	real32 down_pitch_per_frame; // 0x10
+	real32 up_pitch_per_frame; // 0x14
+	int16 down_pitch_frame_count; // 0x18
+	int16 up_pitch_frame_count; // 0x1a
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_blend_screens, 0x1c);
+
+struct h2x_jmad_animations_frame_events
+{
+	int16 type; // 0x0
+	int16 frame; // 0x2
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_animations_frame_events, 0x4);
+
+struct h2x_jmad_animations_sound_events
+{
+	int16 sound_index; // 0x0
+	int16 frame; // 0x2
+	string_id marker_name; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_animations_sound_events, 0x8);
+
+struct h2x_jmad_animations_effect_events
+{
+	int16 effect_index; // 0x0
+	int16 frame; // 0x2
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_animations_effect_events, 0x4);
+
+struct h2x_jmad_animations_object_space_parent_nodes
+{
+	int16 node_index; // 0x0
+	uint16 component_flags; // 0x2
+	int16 rotation[4]; // 0x4
+	real_point3d default_translation; // 0xc
+	real32 default_scale; // 0x18
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_animations_object_space_parent_nodes, 0x1c);
+
+struct h2x_jmad_animations
+{
+	string_id name; // 0x0
+	int32 node_list_checksum; // 0x4
+	int32 production_checksum; // 0x8
+	int32 import_checksum; // 0xc
+	int8 type; // 0x10
+	int8 frame_info_type; // 0x11
+	int8 blend_screen_index; // 0x12
+	uint8 node_count; // 0x13
+	int16 frame_count; // 0x14
+	uint8 internal_flags; // 0x16
+	uint8 production_flags; // 0x17
+	uint16 playback_flags; // 0x18
+	int8 desired_compression; // 0x1a
+	int8 current_compression; // 0x1b
+	real32 weight; // 0x1c
+	int16 loop_frame_index; // 0x20
+	int16 parent_animation_index; // 0x22
+	int16 next_animation_index; // 0x24
+	int16 unknown; // 0x26
+	tag_data resource; // 0x28
+	int8 unknown_2; // 0x30
+	int8 unknown_3; // 0x31
+	int16 unknown_4; // 0x32
+	int16 unknown_5; // 0x34
+	int16 unknown_6; // 0x36
+	int32 unknown_7; // 0x38
+	int32 unknown_8; // 0x3c
+	tag_block<h2x_jmad_animations_frame_events> frame_events; // 0x40
+	tag_block<h2x_jmad_animations_sound_events> sound_events; // 0x48
+	tag_block<h2x_jmad_animations_effect_events> effect_events; // 0x50
+	tag_block<h2x_jmad_animations_object_space_parent_nodes> object_space_parent_nodes; // 0x58
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_animations, 0x60);
+
+struct h2x_jmad_modes_weapon_class_weapon_type_actions
+{
+	string_id label; // 0x0
+	int16 graph_index; // 0x4
+	int16 animation_index; // 0x6
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_modes_weapon_class_weapon_type_actions, 0x8);
+
+struct h2x_jmad_modes_weapon_class_weapon_type_overlays
+{
+	string_id label; // 0x0
+	int16 graph_index; // 0x4
+	int16 animation_index; // 0x6
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_modes_weapon_class_weapon_type_overlays, 0x8);
+
+struct h2x_jmad_modes_weapon_class_weapon_type_death_and_damage_directions_regions
+{
+	int16 graph_index; // 0x0
+	int16 animation_index; // 0x2
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_modes_weapon_class_weapon_type_death_and_damage_directions_regions, 0x4);
+
+struct h2x_jmad_modes_weapon_class_weapon_type_death_and_damage_directions
+{
+	tag_block<h2x_jmad_modes_weapon_class_weapon_type_death_and_damage_directions_regions> regions; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_modes_weapon_class_weapon_type_death_and_damage_directions, 0x8);
+
+struct h2x_jmad_modes_weapon_class_weapon_type_death_and_damage
+{
+	string_id label; // 0x0
+	tag_block<h2x_jmad_modes_weapon_class_weapon_type_death_and_damage_directions> directions; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_modes_weapon_class_weapon_type_death_and_damage, 0xc);
+
+struct h2x_jmad_modes_weapon_class_weapon_type_transitions_destinations
+{
+	string_id full_name; // 0x0
+	string_id mode_name; // 0x4
+	string_id state_name; // 0x8
+	int8 frame_event_link; // 0xc
+	int8 unknown; // 0xd
+	int8 index_a; // 0xe
+	int8 index_b; // 0xf
+	int16 graph_index; // 0x10
+	int16 animation_index; // 0x12
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_modes_weapon_class_weapon_type_transitions_destinations, 0x14);
+
+struct h2x_jmad_modes_weapon_class_weapon_type_transitions
+{
+	string_id full_name; // 0x0
+	string_id state_name; // 0x4
+	int16 unknown; // 0x8
+	int8 index_a; // 0xa
+	int8 index_b; // 0xb
+	tag_block<h2x_jmad_modes_weapon_class_weapon_type_transitions_destinations> destinations; // 0xc
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_modes_weapon_class_weapon_type_transitions, 0x14);
+
+struct h2x_jmad_modes_weapon_class_weapon_type_high_precache
+{
+	int32 cache_block_index; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_modes_weapon_class_weapon_type_high_precache, 0x4);
+
+struct h2x_jmad_modes_weapon_class_weapon_type_low_precache
+{
+	int32 cache_block_index; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_modes_weapon_class_weapon_type_low_precache, 0x4);
+
+struct h2x_jmad_modes_weapon_class_weapon_type
+{
+	string_id label; // 0x0
+	tag_block<h2x_jmad_modes_weapon_class_weapon_type_actions> actions; // 0x4
+	tag_block<h2x_jmad_modes_weapon_class_weapon_type_overlays> overlays; // 0xc
+	tag_block<h2x_jmad_modes_weapon_class_weapon_type_death_and_damage> death_and_damage; // 0x14
+	tag_block<h2x_jmad_modes_weapon_class_weapon_type_transitions> transitions; // 0x1c
+	tag_block<h2x_jmad_modes_weapon_class_weapon_type_high_precache> high_precache; // 0x24
+	tag_block<h2x_jmad_modes_weapon_class_weapon_type_low_precache> low_precache; // 0x2c
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_modes_weapon_class_weapon_type, 0x34);
+
+struct h2x_jmad_modes_weapon_class_weapon_ik
+{
+	string_id marker; // 0x0
+	string_id attach_to_marker; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_modes_weapon_class_weapon_ik, 0x8);
+
+struct h2x_jmad_modes_weapon_class
+{
+	string_id label; // 0x0
+	tag_block<h2x_jmad_modes_weapon_class_weapon_type> weapon_type; // 0x4
+	tag_block<h2x_jmad_modes_weapon_class_weapon_ik> weapon_ik; // 0xc
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_modes_weapon_class, 0x14);
+
+struct h2x_jmad_modes_mode_ik
+{
+	string_id marker; // 0x0
+	string_id attach_to_marker; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_modes_mode_ik, 0x8);
+
+struct h2x_jmad_modes
+{
+	string_id label; // 0x0
+	tag_block<h2x_jmad_modes_weapon_class> weapon_class; // 0x4
+	tag_block<h2x_jmad_modes_mode_ik> mode_ik; // 0xc
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_modes, 0x14);
+
+struct h2x_jmad_vehicle_suspension
+{
+	string_id label; // 0x0
+	int16 graph_index; // 0x4
+	int16 animation_index; // 0x6
+	string_id marker_name; // 0x8
+	real32 mass_point_offset; // 0xc
+	real32 full_extension_ground_depth; // 0x10
+	real32 full_compression_ground_depth; // 0x14
+	string_id destroyed_region_name; // 0x18
+	real32 destroyed_mass_point_offset; // 0x1c
+	real32 destroyed_full_extension_ground_depth; // 0x20
+	real32 destroyed_full_compression_ground_depth; // 0x24
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_vehicle_suspension, 0x28);
+
+struct h2x_jmad_object_overlays
+{
+	string_id label; // 0x0
+	int16 graph_index; // 0x4
+	int16 animation_index; // 0x6
+	int16 unknown; // 0x8
+	int16 function_controls; // 0xa
+	string_id function; // 0xc
+	int8 pad_10[4];
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_object_overlays, 0x14);
+
+struct h2x_jmad_inheritance_list_node_map
+{
+	int16 local_node; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_inheritance_list_node_map, 0x2);
+
+struct h2x_jmad_inheritance_list_node_map_flags
+{
+	uint32 local_node_flags; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_inheritance_list_node_map_flags, 0x4);
+
+struct h2x_jmad_inheritance_list
+{
+	tag_reference inherited_graph; // 0x0
+	tag_block<h2x_jmad_inheritance_list_node_map> node_map; // 0x8
+	tag_block<h2x_jmad_inheritance_list_node_map_flags> node_map_flags; // 0x10
+	real32 root_z_offset; // 0x18
+	uint32 inheritance_flags; // 0x1c
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_inheritance_list, 0x20);
+
+struct h2x_jmad_weapon_list
+{
+	string_id weapon_name; // 0x0
+	string_id weapon_class; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_weapon_list, 0x8);
+
+struct h2x_jmad_additional_node_data
+{
+	string_id node_name; // 0x0
+	real_quaternion default_rotation; // 0x4
+	real_point3d default_translation; // 0x14
+	real32 default_scale; // 0x20
+	real_point3d minimum_bounds; // 0x24
+	real_point3d maximum_bounds; // 0x30
+};
+ASSERT_STRUCT_SIZE(h2x_jmad_additional_node_data, 0x3c);
+
+struct h2x_jmad
+{
+	tag_reference parent_animation_graph; // 0x0
+	uint8 inheritance_flags; // 0x8
+	uint8 private_flags; // 0x9
+	int16 animation_codec_pack; // 0xa
+	tag_block<h2x_jmad_skeleton_nodes> skeleton_nodes; // 0xc
+	tag_block<h2x_jmad_sound_references> sound_references; // 0x14
+	tag_block<h2x_jmad_effect_references> effect_references; // 0x1c
+	tag_block<h2x_jmad_blend_screens> blend_screens; // 0x24
+	tag_block<h2x_jmad_animations> animations; // 0x2c
+	tag_block<h2x_jmad_modes> modes; // 0x34
+	tag_block<h2x_jmad_vehicle_suspension> vehicle_suspension; // 0x3c
+	tag_block<h2x_jmad_object_overlays> object_overlays; // 0x44
+	tag_block<h2x_jmad_inheritance_list> inheritance_list; // 0x4c
+	tag_block<h2x_jmad_weapon_list> weapon_list; // 0x54
+	uint32 left_arm_nodes_nodes_1; // 0x5c
+	uint32 left_arm_nodes_2; // 0x60
+	uint32 left_arm_nodes_3; // 0x64
+	uint32 left_arm_nodes_4; // 0x68
+	uint32 left_arm_nodes_5; // 0x6c
+	uint32 left_arm_nodes_6; // 0x70
+	uint32 left_arm_nodes_7; // 0x74
+	uint32 left_arm_nodes_8; // 0x78
+	uint32 right_arm_nodes_1; // 0x7c
+	uint32 right_arm_nodes_2; // 0x80
+	uint32 right_arm_nodes_3; // 0x84
+	uint32 right_arm_nodes_4; // 0x88
+	uint32 right_arm_nodes_5; // 0x8c
+	uint32 right_arm_nodes_6; // 0x90
+	uint32 right_arm_nodes_7; // 0x94
+	uint32 right_arm_nodes_8; // 0x98
+	tag_data last_import_results; // 0x9c
+	tag_block<h2x_jmad_additional_node_data> additional_node_data; // 0xa4
+};
+ASSERT_STRUCT_SIZE(h2x_jmad, 0xac);
+
 #pragma pack(pop)

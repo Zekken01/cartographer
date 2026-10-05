@@ -11,6 +11,7 @@
 #include "h1_render_shaders.h"
 #include "h1_objects.h"
 #include "h1_scenery.h"
+#include "h1_first_person.h"
 #include "h1_weapons.h"
 #include "h1_runtime.h"
 #include "h1_sound.h"
@@ -172,6 +173,7 @@ void h1_render_structure_transparent(void)
 	}
 	h1_objects_render(_h1_render_pass_transparent, game_time);
 	h1_effects_render();
+	h1_first_person_render(game_time);
 
 	h1_render_end();
 	return;
