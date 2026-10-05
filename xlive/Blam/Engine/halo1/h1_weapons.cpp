@@ -395,6 +395,9 @@ datum h1_weapon_definition_build(datum h1_weapon_index)
 		if (semi_automatic)
 		{
 			barrel->rounds_per_second = { 0.f, 0.f };
+			// don't clear fire bit after recovering (halo 2's own semi-automatic barrels): else the held fire bit fires again
+			// when the recovery ends
+			barrel->flags |= FLAG(11);
 		}
 		barrel->shots_per_fire = semi_automatic ? short_bounds{ 1, 1 } : short_bounds{ 0, 0 };
 		barrel->fire_recovery_time = !semi_automatic ? 0.f : no_rate ? (i == 0 ? 0.05f : 0.1f) : 1.f / h1_trigger->rounds_per_second.upper;
@@ -594,8 +597,6 @@ void h1_weapons_update(void)
 					MIN((int32)barrel->firing_effect_index, trigger->firing_effects.count - 1)) : NULL;
 			if (barrel->fire_count != state->fire_counts[i])
 			{
-				h1_log("DEV fire %08x barrel %d count %d -> %d tick %d effect %s", object_index, i, state->fire_counts[i], barrel->fire_count, game_time_get(),
-					firing_effect && firing_effect->firing_effect.index != NONE ? g_h1_cache_file->tag_name_get(firing_effect->firing_effect.index) : "none");
 				if (firing_effect)
 				{
 					h1_weapon_effect_at_marker(object_index, marker, &firing_effect->firing_effect);
