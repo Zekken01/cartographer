@@ -2,6 +2,7 @@
 #include "h1_objects.h"
 
 #include "h1_cache_file.h"
+#include "h1_effects.h"
 #include "h1_log.h"
 #include "h1_render.h"
 #include "h1_render_models.h"
@@ -29,15 +30,23 @@ struct s_h1_object_binding
 	datum h1_model_index;
 };
 
+struct s_h1_object_change_colors
+{
+	real_rgb_color colors[4];
+};
+
 /* globals */
 
 static std::unordered_map<datum, s_h1_object_binding> g_h1_object_bindings;
+// the change colors each object was given when it was first drawn (where it was created)
+static std::unordered_map<datum, s_h1_object_change_colors> g_h1_object_change_colors;
 
 /* public code */
 
 void h1_objects_reset(void)
 {
 	g_h1_object_bindings.clear();
+	g_h1_object_change_colors.clear();
 	return;
 }
 
@@ -64,6 +73,36 @@ int32 h1_objects_bound_definitions(datum* out_definitions, int32 maximum_count)
 		}
 	}
 	return count;
+}
+
+void h1_object_change_colors_choose(datum h1_definition_index, const real_point3d* position, real_rgb_color out_colors[4])
+{
+	// every halo 1 object definition starts with the object fields, the change colors are at 0x164
+	const h1_scen* definition = h1_definition_index != NONE ? (const h1_scen*)g_h1_cache_file->tag_get('obje', h1_definition_index) : NULL;
+	for (int32 i = 0; i < 4; i++)
+	{
+		// the placement's color, white
+		out_colors[i] = { 1.f, 1.f, 1.f };
+		if (!definition || i >= definition->change_colors.count)
+		{
+			continue;
+		}
+		const h1_scen_change_colors* change_color = g_h1_cache_file->block_get(definition->change_colors, i);
+		const real32 weight = fmodf(fabsf(position->x * 315.89313f + position->y * 587.12946f + position->z * 744.12415f + (real32)i * 431.12894f), 1.f);
+		for (int32 j = 0; j < change_color->permutations.count; j++)
+		{
+			const h1_scen_change_colors_permutations* permutation = g_h1_cache_file->block_get(change_color->permutations, j);
+			if (weight <= permutation->weight)
+			{
+				h1_rgb_colors_interpolate(&out_colors[i], 1, &permutation->color_lower_bound, &permutation->color_upper_bound, fmodf(fabsf(position->y) + (real32)i * 0.71211f, 1.f));
+				break;
+			}
+		}
+		out_colors[i].red = PIN(out_colors[i].red, 0.f, 1.f);
+		out_colors[i].green = PIN(out_colors[i].green, 0.f, 1.f);
+		out_colors[i].blue = PIN(out_colors[i].blue, 0.f, 1.f);
+	}
+	return;
 }
 
 datum h1_objects_h1_definition_get(datum h2_definition_index)
@@ -133,7 +172,14 @@ void h1_objects_render(e_h1_render_pass pass, real32 game_time)
 
 		s_h1_render_lighting lighting;
 		h1_render_lighting_at(&node_matrices[0].position, &lighting);
-		h1_render_model_draw_skinned(binding->h1_model_index, 0, skinning_matrices, node_count, &lighting, pass, game_time);
+		auto colors = g_h1_object_change_colors.find(object_index);
+		if (colors == g_h1_object_change_colors.end())
+		{
+			s_h1_object_change_colors chosen;
+			h1_object_change_colors_choose(binding->h1_definition_index, &object->object.position, chosen.colors);
+			colors = g_h1_object_change_colors.insert({ object_index, chosen }).first;
+		}
+		h1_render_model_draw_skinned(binding->h1_model_index, 0, skinning_matrices, node_count, &lighting, pass, game_time, colors->second.colors);
 	}
 	return;
 }

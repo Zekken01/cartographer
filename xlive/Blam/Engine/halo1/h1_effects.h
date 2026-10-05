@@ -28,5 +28,8 @@ void h1_effects_apply_patches(void);
 // a halo 1 effect at a point, its "gravity" marker pointing down; markers it names that don't exist use the point
 void h1_effect_new_unattached(datum h1_effect_index, const real_point3d* point, const real_vector3d* forward);
 
+// bitmap_utilities.c rgb_colors_interpolate: flags 1 interpolate in hsv, 2 the long way around the hue
+void h1_rgb_colors_interpolate(real_rgb_color* result, uint32 flags, const real_rgb_color* lower, const real_rgb_color* upper, real32 t);
+
 // the empty halo 2 effect a halo 2 tag refers to where a halo 1 effect plays instead (built on first use)
 datum h1_effects_stub_effect_get(void);

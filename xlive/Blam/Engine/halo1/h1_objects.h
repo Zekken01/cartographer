@@ -27,5 +27,8 @@ bool h1_objects_definition_bound(datum definition_index);
 // true when the object draws its halo 1 model instead of a halo 2 render model
 bool h1_objects_render_replaced(datum object_index);
 
+// objects.c object_choose_random_change_colors: the four change colors of a halo 1 object created at a position
+void h1_object_change_colors_choose(datum h1_definition_index, const real_point3d* position, real_rgb_color out_colors[4]);
+
 // draws the halo 1 models of every bound object
 void h1_objects_render(e_h1_render_pass pass, real32 game_time);

@@ -541,7 +541,6 @@ static real32 h1_dot(const real_vector3d* a, const real_vector3d* b);
 static real32 h1_magnitude(const real_vector3d* v);
 static void h1_normalize(real_vector3d* v);
 static real_vector3d h1_perpendicular(const real_vector3d* v);
-static void h1_rgb_colors_interpolate(real_rgb_color* result, uint32 flags, const real_rgb_color* lower, const real_rgb_color* upper, real32 t);
 
 static void h1_effect_set_event(s_h1_effect* effect, int16 event_index);
 static bool h1_effect_update(s_h1_effect* effect, real32 dt);
@@ -870,7 +869,7 @@ static void h1_hsv_to_rgb(real32 hue, real32 saturation, real32 value, real_rgb_
 }
 
 // bitmap_utilities.c rgb_colors_interpolate: flags 1 interpolate in hsv, 2 the long way around the hue
-static void h1_rgb_colors_interpolate(real_rgb_color* result, uint32 flags, const real_rgb_color* lower, const real_rgb_color* upper, real32 t)
+void h1_rgb_colors_interpolate(real_rgb_color* result, uint32 flags, const real_rgb_color* lower, const real_rgb_color* upper, real32 t)
 {
 	if (TEST_BIT(flags, 0))
 	{

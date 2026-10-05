@@ -234,6 +234,25 @@ bool h1_structure_bsp_build(int32 h1_bsp_index, datum h2_structure_bsp_index, da
 		{
 			cluster_indices[j] = indices[j];
 		}
+
+		// collision rays (bullets, projectiles) find the cluster's instances through a mopp keyed by instance index
+		// (c_cluster_instanced_geometry_shape over the cluster's collision mopp code)
+		if (!indices.empty())
+		{
+			std::vector<s_h1_mopp_item> items;
+			for (uint16 j : indices)
+			{
+				items.push_back({ (uint32)j, instance_bounds[j] });
+			}
+			uint8* mopp = NULL;
+			uint32 mopp_size = 0;
+			real_point3d mopp_min, mopp_max;
+			if (h1_mopp_build(items, &mopp, &mopp_size, &mopp_min, &mopp_max))
+			{
+				h1_runtime_data_set(&cluster->collision_mopp_code, mopp, mopp_size);
+				h1_mopp_free(mopp);
+			}
+		}
 	}
 
 	// havok queries the structure through a mopp tree over the collision surfaces and instances
@@ -667,6 +686,15 @@ static int32 h1_instanced_geometry_build(structure_bsp* bsp, const structure_bsp
 		real_rectangle3d bounds;
 		h1_mopp_collision_bsp_bounds(&definitions[definition_index].collision_info, &placement->matrix, &bounds);
 		out_instance_bounds.push_back(bounds);
+
+		// the world bounding sphere the collision ray tests check first (0x3C center, 0x48 radius)
+		const real_point3d& center = definitions[definition_index].bounding_sphere_center;
+		const real_matrix4x3& m = placement->matrix;
+		real_point3d* world_center = (real_point3d*)((uint8*)instance + 0x3C);
+		world_center->x = center.x * m.n[0][0] + center.y * m.n[1][0] + center.z * m.n[2][0] + m.n[3][0];
+		world_center->y = center.x * m.n[0][1] + center.y * m.n[1][1] + center.z * m.n[2][1] + m.n[3][1];
+		world_center->z = center.x * m.n[0][2] + center.y * m.n[1][2] + center.z * m.n[2][2] + m.n[3][2];
+		*(real32*)((uint8*)instance + 0x48) = definitions[definition_index].bounding_sphere_radius;
 	}
 
 	return definition_count;
