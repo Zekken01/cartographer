@@ -6,6 +6,7 @@
 #include "h1_first_person_weapon.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
+#include "h1_objects.h"
 #include "h1_projectile_logic.h"
 #include "h1_projectiles.h"
 #include "h1_sound.h"
@@ -19,7 +20,10 @@
 #include "objects/object_types.h"
 #include "objects/objects.h"
 #include "tag_files/tag_groups.h"
+#include "physics/collisions.h"
+#include "units/bipeds.h"
 #include "units/units.h"
+#include "units/unit_control.h"
 
 #include <unordered_map>
 #include <vector>
@@ -33,7 +37,12 @@ enum
 	k_h1_maximum_magazines = 2,
 	k_h1_maximum_trigger_markers = 8,
 	k_h1_maximum_queued_messages = 16,
+	k_h1_first_person_animation_melee = 13,
+	k_h1_weapon_prevents_melee_attack_bit = 9,
 };
+
+// halo 2's projectile collision test (FUN_005464ca): structure, media, instanced geometry, objects and its own
+static const uint32 k_h2_projectile_collision_flags = 0x2480000F;
 
 // weapons.h
 enum
@@ -258,12 +267,28 @@ struct s_h1_weapon_logic_context
 	s_h1_weapon_logic_state* state;
 };
 
+// bipeds.h biped player_melee_ticks and player_melee_attack_tick, with the melee press kept for the next halo 1 tick
+struct s_h1_player_melee
+{
+	bool pressed;
+	int16 ticks;
+	int16 attack_tick;
+};
+
 typedef bool(__cdecl* t_h2_magazine_update)(datum weapon_index, int32 magazine_index);
 
 /* globals */
 
 static std::unordered_map<datum, s_h1_weapon_logic_state> g_h1_weapon_logic;
 static object_update_t g_h2_weapon_update = NULL;
+static object_update_t g_h2_unit_update = NULL;
+static std::unordered_map<datum, s_h1_player_melee> g_h1_player_melee;
+
+// halo 2's unit_control (FUN_00538b75): the controls a unit takes for the tick
+typedef void(__cdecl* t_unit_control)(datum unit_index, const unit_control_data* control_data);
+static t_unit_control p_unit_control = NULL;
+static void __cdecl h1_unit_control_hook(datum unit_index, const unit_control_data* control_data);
+static bool h1_unit_update_hook(datum unit_index);
 static uint32 g_h1_weapon_random_seed = 0x1234567u;
 
 /* prototypes */
@@ -308,6 +333,8 @@ static void h1_weapon_trigger_release_charge(s_h1_weapon_logic_context* context,
 static void h1_weapon_trigger_overcharged(s_h1_weapon_logic_context* context, int16 trigger_index);
 static void h1_weapon_trigger_create_projectiles(s_h1_weapon_logic_context* context, int16 trigger_index);
 static void h1_weapon_damage_owner(datum owner_object_index, datum h1_damage_effect_index);
+static void h1_player_melee_tick(s_h1_weapon_logic_context* context, datum unit_index);
+static void h1_unit_cause_player_melee_damage(s_h1_weapon_logic_context* context, datum unit_index);
 
 static real32 h1_weapon_random_real(void);
 static int32 h1_weapon_random_range(int32 lower, int32 upper);
@@ -331,14 +358,61 @@ void h1_weapon_logic_apply_patches(void)
 			break;
 		}
 	}
+	// the unit part of the biped object type: a player's melee presses are taken before halo 2's unit update reads them
+	object_type_definition* biped_type = object_type_definition_get(_object_type_biped);
+	for (int32 i = 0; i < k_max_object_type_inheritence; i++)
+	{
+		object_type_definition* part = biped_type->part_definitions[i];
+		if (part && part->group_tag == 'unit' && part->object_update)
+		{
+			g_h2_unit_update = part->object_update;
+			part->object_update = h1_unit_update_hook;
+			break;
+		}
+	}
 	// weapon_update's magazine update (FUN_00561592)
 	PatchCall(Memory::GetAddress(0x161E93), h1_weapon_magazine_update_hook);
+	DETOUR_ATTACH(p_unit_control, Memory::GetAddress<t_unit_control>(0x138B75), h1_unit_control_hook);
 	return;
+}
+
+// halo 2's melee presses (unit control bits 6 and 7) are bipeds.c's player melee on a halo 1 map: halo 2's unit never melees, the
+// press waits for the player's next halo 1 tick (h1_player_melee_tick)
+static void __cdecl h1_unit_control_hook(datum unit_index, const unit_control_data* control_data)
+{
+	const unit_datum* unit = h1_maps_active() ? (const unit_datum*)object_try_and_get_and_verify_type(unit_index, _object_mask_unit) : NULL;
+	if (unit && unit->unit.player_index != NONE && (control_data->control_flags & 0xC0))
+	{
+		g_h1_player_melee[unit_index].pressed = true;
+		unit_control_data filtered = *control_data;
+		filtered.control_flags &= ~0xC0LL;
+		p_unit_control(unit_index, &filtered);
+		return;
+	}
+	p_unit_control(unit_index, control_data);
+	return;
+}
+
+// (halo 2 sets the unit's control flags elsewhere too, the melee bits are cleared on the unit itself)
+static bool h1_unit_update_hook(datum unit_index)
+{
+	unit_datum* unit = h1_maps_active() ? (unit_datum*)object_try_and_get_and_verify_type(unit_index, _object_mask_unit) : NULL;
+	if (unit && unit->unit.player_index != NONE)
+	{
+		uint32* control_flags = (uint32*)&unit->unit.control_flags;
+		if (*control_flags & 0xC0)
+		{
+			g_h1_player_melee[unit_index].pressed = true;
+			*control_flags &= ~0xC0u;
+		}
+	}
+	return g_h2_unit_update(unit_index);
 }
 
 void h1_weapon_logic_reset(void)
 {
 	g_h1_weapon_logic.clear();
+	g_h1_player_melee.clear();
 	return;
 }
 
@@ -478,6 +552,11 @@ static bool h1_weapon_update_hook(datum weapon_index)
 			state->primary_pressed = false;
 		}
 		state->primary_trigger = primary_trigger;
+		// biped_update's player melee comes before the weapon's update
+		if (in_hands)
+		{
+			h1_player_melee_tick(&context, weapon->object.parent_object_index);
+		}
 		h1_weapon_tick(&context);
 		if (!object_try_and_get(weapon_index))
 		{
@@ -1985,5 +2064,199 @@ static void h1_weapon_damage_owner(datum owner_object_index, datum h1_damage_eff
 	damage.epicenter = unit->object.center;
 	damage.origin = damage.epicenter;
 	object_cause_damage(&damage, owner_object_index, NONE, NONE, NONE, NULL);
+	return;
+}
+
+// bipeds.c biped_update: a player's melee, its damage at the first person melee animation's key frame, both a quarter sooner
+static void h1_player_melee_tick(s_h1_weapon_logic_context* context, datum unit_index)
+{
+	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(unit_index, _object_mask_unit);
+	if (!unit || unit->unit.player_index == NONE)
+	{
+		return;
+	}
+	s_h1_player_melee* melee = &g_h1_player_melee[unit_index];
+	const bool pressed = melee->pressed;
+	melee->pressed = false;
+	if (melee->ticks == 0)
+	{
+		// weapons.c weapon_prevents_melee_attack: the definition's flag, or the trigger charging or charged
+		const int8 trigger_state = context->state->triggers[0].state;
+		const bool prevented = TEST_BIT(context->definition->flags_3, k_h1_weapon_prevents_melee_attack_bit) ||
+			trigger_state == _h1_trigger_charging || trigger_state == _h1_trigger_charged;
+		if (pressed && !prevented && unit->unit.current_zoom_level < 0)
+		{
+			// weapon_stop_reload
+			h1_weapon_reset(context);
+			h1_first_person_weapon_message(context, _h1_first_person_weapon_message_melee);
+			melee->ticks = h1_weapon_first_person_animation_time(context, false, k_h1_first_person_animation_melee, NONE);
+			melee->attack_tick = melee->ticks - h1_weapon_first_person_animation_time(context, true, k_h1_first_person_animation_melee, NONE);
+			const int16 speedup_ticks = melee->ticks >> 2;
+			melee->ticks -= speedup_ticks;
+			melee->attack_tick -= speedup_ticks;
+		}
+	}
+	else
+	{
+		if (melee->ticks == melee->attack_tick)
+		{
+			h1_unit_cause_player_melee_damage(context, unit_index);
+		}
+		melee->ticks--;
+	}
+	return;
+}
+
+// units.c unit_cause_player_melee_damage: 25 rays from the head along the aiming vector, the nearest biped hit (else whatever was hit)
+// takes the weapon's melee damage, a vehicle hit is pushed, the material hit sounds and the weapon's melee response hits the player
+static void h1_unit_cause_player_melee_damage(s_h1_weapon_logic_context* context, datum unit_index)
+{
+	typedef void(__cdecl* t_damage_data_new)(s_damage_data* damage, datum definition_index);
+	typedef void(__cdecl* t_damage_owner_from_object)(datum object_index, s_damage_owner* owner);
+	typedef void(__cdecl* t_object_set_velocities)(datum object_index, const real_vector3d* translational_velocity, const real_vector3d* angular_velocity);
+
+	const unit_datum* unit = (const unit_datum*)object_get(unit_index);
+	datum best_object_index = NONE;
+	int16 best_object_type = NONE;
+	real32 best_object_fraction = 0.f;
+	int16 hit_material_type = NONE;
+
+	real_point3d ray_origin = unit->object.center;
+	object_marker marker;
+	if (object_get_markers_by_string_id(unit_index, string_id_find_or_add("head"), &marker, 1) == 1)
+	{
+		ray_origin = marker.matrix.position;
+	}
+
+	const real_vector3d facing = unit->unit.aiming_vector;
+	// perpendicular3d
+	real_vector3d perpendicular = fabsf(facing.i) < fabsf(facing.j) ?
+		real_vector3d{ 0.f, facing.k, -facing.j } : real_vector3d{ -facing.k, 0.f, facing.i };
+	normalize3d(&perpendicular);
+	real_vector3d cross;
+	cross_product3d(&facing, &perpendicular, &cross);
+	for (int32 outer_index = -2; outer_index <= 2; outer_index++)
+	{
+		for (int32 inner_index = -2; inner_index <= 2; inner_index++)
+		{
+			const real_vector3d ray =
+			{
+				facing.i * 0.8f + (cross.i * inner_index + perpendicular.i * outer_index) * 0.1f,
+				facing.j * 0.8f + (cross.j * inner_index + perpendicular.j * outer_index) * 0.1f,
+				facing.k * 0.8f + (cross.k * inner_index + perpendicular.k * outer_index) * 0.1f
+			};
+			collision_result collision;
+			csmemset(&collision, 0, sizeof(collision));
+			if (!collision_test_vector(k_h2_projectile_collision_flags, &ray_origin, &ray, unit_index, NONE, &collision))
+			{
+				continue;
+			}
+			// (halo 2's collision results: 1 structure, 4 object)
+			if (collision.type == 1)
+			{
+				if (best_object_index == NONE)
+				{
+					hit_material_type = h1_projectile_logic_collision_material_type(&collision);
+				}
+			}
+			else if (collision.type == 4)
+			{
+				datum hit_object_index = collision.object_index;
+				const object_datum* hit_object = (const object_datum*)object_try_and_get(hit_object_index);
+				if (!hit_object)
+				{
+					continue;
+				}
+				if (hit_object->object.object_identifier.get_type() != _object_type_weapon && hit_object->object.parent_object_index != NONE)
+				{
+					hit_object_index = hit_object->object.parent_object_index;
+					hit_object = (const object_datum*)object_get(hit_object_index);
+				}
+				const int16 hit_object_type = (int16)hit_object->object.object_identifier.get_type();
+				if (best_object_index == NONE ||
+					(hit_object_type == _object_type_biped && best_object_type == _object_type_biped && best_object_fraction > collision.t) ||
+					(hit_object_type == _object_type_biped && best_object_type != _object_type_biped))
+				{
+					best_object_index = hit_object_index;
+					best_object_type = hit_object_type;
+					hit_material_type = h1_projectile_logic_collision_material_type(&collision);
+					best_object_fraction = collision.t;
+				}
+			}
+		}
+	}
+
+	const datum melee_damage_effect_index = context->definition->player_melee_damage.index;
+	const datum melee_response_effect_index = context->definition->player_melee_response.index;
+	const datum h1_globals_index = g_h1_cache_file->tag_find('matg', "globals\\globals");
+	const h1_matg* globals = h1_globals_index != NONE ? (const h1_matg*)g_h1_cache_file->tag_get('matg', h1_globals_index) : NULL;
+
+	// vehicle_accelerate: the vehicle's acceleration scale (halo 1's velocities are a tick's, halo 2's a second's)
+	if (best_object_index != NONE && best_object_type == _object_type_vehicle)
+	{
+		const datum h1_vehicle_index = h1_objects_h1_definition_get(object_get(best_object_index)->definition_index);
+		const h1_vehi* vehicle_definition = h1_vehicle_index != NONE ? (const h1_vehi*)g_h1_cache_file->tag_get('vehi', h1_vehicle_index) : NULL;
+		if (vehicle_definition)
+		{
+			const real32 scale = vehicle_definition->acceleration_scale * 0.035f * k_h1_ticks_per_second;
+			real_vector3d translational_velocity, angular_velocity;
+			object_get_velocities(best_object_index, &translational_velocity, &angular_velocity);
+			translational_velocity.i += facing.i * scale;
+			translational_velocity.j += facing.j * scale;
+			translational_velocity.k += facing.k * scale;
+			Memory::GetAddress<t_object_set_velocities>(0x135123)(best_object_index, &translational_velocity, &angular_velocity);
+		}
+	}
+
+	// only a biped takes the blow
+	const datum damage_definition_index = melee_damage_effect_index != NONE ? h1_damage_effect_build(melee_damage_effect_index) : NONE;
+	if (damage_definition_index != NONE && best_object_index != NONE && best_object_type == _object_type_biped)
+	{
+		s_damage_data damage;
+		Memory::GetAddress<t_damage_data_new>(0x175BAC)(&damage, damage_definition_index);
+		damage.flags = (e_damage_data_flags)(damage.flags | FLAG(_damage_area_of_effect_bit));
+		Memory::GetAddress<t_damage_owner_from_object>(0x175C14)(unit_index, &damage.owner);
+		damage.origin = ray_origin;
+		damage.epicenter = unit->object.center;
+		damage.direction = facing;
+		damage.material_type = NONE;
+		// the player's forward speed against the globals' run speed (halo 2's velocity is a second's), a long fall's a full and a half
+		const h1_matg_player_information* player_information = globals && globals->player_information.count > 0 ?
+			g_h1_cache_file->block_get(globals->player_information, 0) : NULL;
+		if (player_information && player_information->run_forward > 0.f)
+		{
+			const real_vector3d& velocity = unit->object.translational_velocity;
+			const real_vector3d& forward = unit->object.forward;
+			damage.scale = PIN((velocity.i * forward.i + velocity.j * forward.j + velocity.k * forward.k) / player_information->run_forward, 0.f, 1.f);
+		}
+		const biped_datum* biped = (const biped_datum*)object_try_and_get_and_verify_type(unit_index, _object_mask_biped);
+		if (biped && biped->biped.airborne_ticks * game_tick_length() * k_h1_ticks_per_second > 15.f)
+		{
+			damage.scale = 1.5f;
+		}
+		object_cause_damage(&damage, best_object_index, NONE, NONE, NONE, NULL);
+	}
+
+	// unit_melee_sound and the melee response
+	if (hit_material_type != NONE)
+	{
+		if (globals && VALID_INDEX(hit_material_type, globals->materials.count))
+		{
+			const h1_matg_materials* material = g_h1_cache_file->block_get(globals->materials, hit_material_type);
+			if (material->melee_hit_sound.index != NONE)
+			{
+				h1_sound_impulse(material->melee_hit_sound.index, &unit->object.center, 1.f);
+			}
+		}
+		const h1_jpt* damage_effect = melee_damage_effect_index != NONE ? (const h1_jpt*)g_h1_cache_file->tag_get('jpt!', melee_damage_effect_index) : NULL;
+		if (damage_effect && damage_effect->sound.index != NONE)
+		{
+			h1_sound_impulse(damage_effect->sound.index, &unit->object.center, 1.f);
+		}
+		if (melee_response_effect_index != NONE)
+		{
+			h1_weapon_damage_owner(unit_index, melee_response_effect_index);
+		}
+	}
 	return;
 }

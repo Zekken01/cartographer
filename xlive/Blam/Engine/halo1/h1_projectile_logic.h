@@ -1,4 +1,6 @@
 #pragma once
+
+struct collision_result;
 /*
 * projectiles.c on Halo 1 maps: the Halo 1 projectile logic (flight, guidance, deceleration, gravity, collisions and their material
 * responses, attaching, arming, timers and detonations) run on the Halo 1 projectile tags. Halo 2's projectile object stays as the
@@ -17,3 +19,5 @@ void h1_projectile_logic_area_damage(datum h1_damage_effect_index, datum owner_o
 	real32 scale);
 // projectiles.c projectile_export_function_values: false when the object isn't a halo 1 projectile or the input isn't one of its
 bool h1_projectile_logic_function_value(datum object_index, int16 function_input, real32* value);
+// the halo 1 material type of a halo 2 collision: its global material's, else the halo 1 collision model's material of the object hit
+int16 h1_projectile_logic_collision_material_type(const collision_result* result);

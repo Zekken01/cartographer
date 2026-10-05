@@ -198,6 +198,7 @@ static const h1_proj_material_responses* h1_projectile_material_response(const h
 static void h1_object_move(datum object_index, const real_point3d* position, const real_vector3d* forward, const real_vector3d* up);
 static void h1_object_set_velocities(datum object_index, const s_h1_projectile* projectile);
 static int16 h1_global_material_to_material_type(int16 global_material_index);
+static int16 h1_object_material_type(datum object_index, int16 material_index);
 static datum h1_object_owner_get(datum object_index);
 static real32 h1_projectile_random(void);
 static real32 h1_projectile_random_range(real32 lower, real32 upper);
@@ -280,6 +281,16 @@ void h1_projectile_logic_area_damage(datum h1_damage_effect_index, datum owner_o
 	scenario_location_from_point(&damage.location, &location_point);
 	Memory::GetAddress<t_area_of_effect_cause_damage>(0x17868D)(&damage, NONE);
 	return;
+}
+
+int16 h1_projectile_logic_collision_material_type(const collision_result* result)
+{
+	int16 material_type = h1_global_material_to_material_type(result->global_material_index);
+	if (material_type == NONE && result->type == _h2_collision_result_object)
+	{
+		material_type = h1_object_material_type(result->object_index, result->field_5A);
+	}
+	return material_type;
 }
 
 bool h1_projectile_logic_function_value(datum object_index, int16 function_input, real32* value)
@@ -784,6 +795,11 @@ static bool h1_projectile_collision_test_line(datum projectile_index, const s_h1
 		collision->region_index = result.field_44;
 		collision->material_index = result.field_5A;
 		collision->location = result.locations[0];
+		// an object's surface: its halo 1 collision model's material (halo 2 gives the model's material index)
+		if (collision->object_index != NONE && collision->material_type == NONE)
+		{
+			collision->material_type = h1_object_material_type(collision->object_index, collision->material_index);
+		}
 		return true;
 	};
 	if (test(&object->object.position, new_position))
@@ -1238,6 +1254,22 @@ static int16 h1_global_material_to_material_type(int16 global_material_index)
 		}
 	}
 	return NONE;
+}
+
+// the halo 1 material type of a material of a halo 1 object's collision model, NONE for other objects
+static int16 h1_object_material_type(datum object_index, int16 material_index)
+{
+	const object_datum* object = (const object_datum*)object_try_and_get(object_index);
+	const datum h1_definition_index = object ? h1_objects_h1_definition_get(object->definition_index) : NONE;
+	const h1_proj* definition = h1_definition_index != NONE ? (const h1_proj*)g_h1_cache_file->tag_get('obje', h1_definition_index) : NULL;
+	const h1_coll* collision_model = definition && definition->collision_model.index != NONE ?
+		(const h1_coll*)g_h1_cache_file->tag_get('coll', definition->collision_model.index) : NULL;
+	if (!collision_model || collision_model->materials.count <= 0)
+	{
+		return NONE;
+	}
+	const h1_coll_materials* material = g_h1_cache_file->block_get(collision_model->materials, VALID_INDEX(material_index, collision_model->materials.count) ? material_index : 0);
+	return material->material_type;
 }
 
 // the object that fired the projectile (its damage owner)
