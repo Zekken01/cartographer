@@ -153,10 +153,10 @@ bool h1_maps_custom_map_entry_fill(s_custom_map_entry* entry)
 		return false;
 	}
 
-	// only multiplayer maps are playable for now
-	if (header.type != 1)
+	// solo (0) and multiplayer (1) scenarios; the user interface's (2) isn't a level
+	if (header.type != 0 && header.type != 1)
 	{
-		h1_log("maps: skipping %ws (%s), scenario type %d is not multiplayer", entry->file_path, header.name, header.type);
+		h1_log("maps: skipping %ws (%s), scenario type %d isn't a level", entry->file_path, header.name, header.type);
 		return false;
 	}
 
@@ -165,13 +165,13 @@ bool h1_maps_custom_map_entry_fill(s_custom_map_entry* entry)
 	wchar_t display_name[k_custom_map_name_length];
 	if (description)
 	{
-		swprintf_s(display_name, L"%s (CE)", description->display_name);
+		_snwprintf_s(display_name, _TRUNCATE, L"%s (CE)", description->display_name);
 	}
 	else
 	{
 		wchar_t name[32];
 		utf8_string_to_wchar_string(header.name, name, NUMBEROF(name));
-		swprintf_s(display_name, L"%s (CE)", name);
+		_snwprintf_s(display_name, _TRUNCATE, L"%s (CE)", name);
 	}
 	wcsncpy_s(entry->map_name, display_name, _TRUNCATE);
 

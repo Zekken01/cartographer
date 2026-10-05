@@ -93,6 +93,11 @@ static void h1_scenario_build_player_starting_locations(scenario* h2_scenario, c
 		player->game_type_2 = h1_game_type_convert(source->type_1);
 		player->game_type_3 = h1_game_type_convert(source->type_2);
 		player->game_type_4 = h1_game_type_convert(source->type_3);
+		// a solo scenario's starting locations are for any game (campaign maps hosted as multiplayer games)
+		if (g_h1_cache_file->header()->type == 0)
+		{
+			player->game_type_1 = item_spawn_game_type_all_game_types;
+		}
 		player->spawn_type_0 = spawn_type_both;
 		player->spawn_type_1 = spawn_type_both;
 		player->spawn_type_2 = spawn_type_both;

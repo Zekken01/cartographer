@@ -131,7 +131,7 @@ private:
 			out.push_back(b);
 			out.push_back((uint8)left.size());
 		}
-		else
+		else if (left.size() < 0x10000)
 		{
 			const uint32 second_jump = (uint32)left.size();
 			out.push_back((uint8)(0x23 + axis));
@@ -139,6 +139,23 @@ private:
 			out.push_back(b);
 			out.push_back(0);
 			out.push_back(0);
+			out.push_back((uint8)((second_jump >> 8) & 0xFF));
+			out.push_back((uint8)(second_jump & 0xFF));
+		}
+		else
+		{
+			// the 16 bit jumps can't pass the first child: the second child's jump lands on a 24 bit jump (0x07) over it, the
+			// first child's skips that
+			const uint32 second_jump = (uint32)left.size();
+			out.push_back((uint8)(0x23 + axis));
+			out.push_back(a);
+			out.push_back(b);
+			out.push_back(0);
+			out.push_back(4);
+			out.push_back(0);
+			out.push_back(0);
+			out.push_back(0x07);
+			out.push_back((uint8)((second_jump >> 16) & 0xFF));
 			out.push_back((uint8)((second_jump >> 8) & 0xFF));
 			out.push_back((uint8)(second_jump & 0xFF));
 		}
