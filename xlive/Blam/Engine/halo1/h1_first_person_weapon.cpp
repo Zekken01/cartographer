@@ -262,15 +262,12 @@ void h1_first_person_weapon_tick(void)
 			h1_fp_message(messages[i]);
 		}
 	}
-	// first_person_weapon_message_from_unit: halo 2's unit melees, throws grenades and lowers the weapon, its first person action says so
+	// first_person_weapon_message_from_unit: halo 2's unit throws grenades and lowers the weapon, its first person action says so
 	const string_id action = first_person_weapon_action_get(0);
 	if (action != g_h1_fp.last_h2_action)
 	{
-		if (action == string_id_find_or_add("melee_strike_1"))
-		{
-			h1_fp_message(_h1_first_person_weapon_message_melee);
-		}
-		else if (action == string_id_find_or_add("throw_grenade"))
+		// (its melee comes from h1_weapon_logic, for every strike)
+		if (action == string_id_find_or_add("throw_grenade"))
 		{
 			h1_fp_message(_h1_first_person_weapon_message_throw_grenade);
 		}

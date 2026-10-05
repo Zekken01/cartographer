@@ -19,8 +19,6 @@
 #include "objects/object_types.h"
 #include "objects/objects.h"
 #include "tag_files/tag_groups.h"
-#include "interface/first_person_weapons.h"
-#include "units/unit_control.h"
 #include "units/units.h"
 
 #include <unordered_map>
@@ -266,14 +264,12 @@ typedef bool(__cdecl* t_h2_magazine_update)(datum weapon_index, int32 magazine_i
 
 static std::unordered_map<datum, s_h1_weapon_logic_state> g_h1_weapon_logic;
 static object_update_t g_h2_weapon_update = NULL;
-static object_update_t g_h2_unit_update = NULL;
 
-// a player's melee: the press halo 2 took and whether its first person melee has begun
+// a player's melee: when halo 2's biped began it and whether its first person melee has begun
 struct s_h1_unit_melee
 {
-	int32 press_time;
+	int32 begin_time;
 	bool waiting_for_animation;
-	bool press_taken;
 };
 static std::unordered_map<datum, s_h1_unit_melee> g_h1_unit_melee;
 static uint32 g_h1_weapon_random_seed = 0x1234567u;
@@ -281,10 +277,10 @@ static uint32 g_h1_weapon_random_seed = 0x1234567u;
 /* prototypes */
 
 static bool h1_weapon_update_hook(datum weapon_index);
-static bool h1_unit_update_hook(datum unit_index);
-typedef void(__cdecl* t_unit_control)(datum unit_index, const unit_control_data* control_data);
-static t_unit_control p_unit_control = NULL;
-static void __cdecl h1_unit_control_hook(datum unit_index, const unit_control_data* control_data);
+// halo 2's biped melee begin (FUN_00567ecb): starts the melee (or the combo's next strike) the biped asks for
+typedef bool(__cdecl* t_biped_melee_begin)(datum biped_index, void* melee_request);
+static t_biped_melee_begin p_biped_melee_begin = NULL;
+static bool __cdecl h1_biped_melee_begin_hook(datum biped_index, void* melee_request);
 static bool __cdecl h1_weapon_magazine_update_hook(datum weapon_index, int32 magazine_index);
 static bool h1_weapon_context_get(datum weapon_index, s_h1_weapon_logic_context* context);
 static void h1_weapon_new(s_h1_weapon_logic_context* context);
@@ -347,102 +343,47 @@ void h1_weapon_logic_apply_patches(void)
 			break;
 		}
 	}
-	// the unit part of the biped object type: a player's melee presses wait for the melee animation before halo 2's unit update
-	object_type_definition* biped_type = object_type_definition_get(_object_type_biped);
-	for (int32 i = 0; i < k_max_object_type_inheritence; i++)
-	{
-		object_type_definition* part = biped_type->part_definitions[i];
-		if (part && part->group_tag == 'unit' && part->object_update)
-		{
-			g_h2_unit_update = part->object_update;
-			part->object_update = h1_unit_update_hook;
-			break;
-		}
-	}
 	// weapon_update's magazine update (FUN_00561592)
 	PatchCall(Memory::GetAddress(0x161E93), h1_weapon_magazine_update_hook);
-	// halo 2's unit_control (FUN_00538b75): the controls a unit takes for the tick
-	DETOUR_ATTACH(p_unit_control, Memory::GetAddress<t_unit_control>(0x138B75), h1_unit_control_hook);
+	DETOUR_ATTACH(p_biped_melee_begin, Memory::GetAddress<t_biped_melee_begin>(0x167ECB), h1_biped_melee_begin_hook);
 	return;
 }
 
-// halo 2's melee on a halo 1 map: no melee press (unit control bits 6 and 7) until the melee is over, its first person animation and
-// halo 2's melee action (longer, the next strike of its combo would start in it), so no strike starts during a melee
-static bool h1_unit_melee_press_allowed(datum unit_index)
+// halo 2's melee on a halo 1 map: a player's biped starts no melee (no strike of halo 2's combo either) until the halo 1 first person
+// melee animation of the last one is over
+static bool __cdecl h1_biped_melee_begin_hook(datum biped_index, void* melee_request)
 {
-	s_h1_unit_melee* melee = &g_h1_unit_melee[unit_index];
+	const unit_datum* unit = h1_maps_active() ? (const unit_datum*)object_try_and_get_and_verify_type(biped_index, _object_mask_unit) : NULL;
+	if (!unit || unit->unit.player_index == NONE)
+	{
+		return p_biped_melee_begin(biped_index, melee_request);
+	}
+	s_h1_unit_melee* melee = &g_h1_unit_melee[biped_index];
 	const int32 time = (int32)game_time_get();
-	bool meleeing = h1_first_person_weapon_meleeing(unit_index);
-	if (unit_index == h1_first_person_weapon_unit_get())
-	{
-		const string_id action = first_person_weapon_action_get(0);
-		const char* action_name = action != 0 && action != (string_id)-1 ? string_id_get_string_const(action) : NULL;
-		meleeing = meleeing || (action_name && strncmp(action_name, "melee", 5) == 0);
-	}
-	if (meleeing)
+	const bool meleeing = h1_first_person_weapon_meleeing(biped_index);
+	// (a second at most for the first person melee to begin)
+	if (meleeing || time < melee->begin_time || time - melee->begin_time > (int32)(1.f / game_tick_length()))
 	{
 		melee->waiting_for_animation = false;
 	}
-	// (a second at most for the melee to begin)
-	else if (melee->waiting_for_animation && (time < melee->press_time || time - melee->press_time > (int32)(1.f / game_tick_length())))
+	if (meleeing || melee->waiting_for_animation)
 	{
-		melee->waiting_for_animation = false;
+		return false;
 	}
-	return !meleeing && !melee->waiting_for_animation;
-}
-
-static void h1_unit_melee_press_accepted(datum unit_index)
-{
-	s_h1_unit_melee* melee = &g_h1_unit_melee[unit_index];
-	melee->press_time = (int32)game_time_get();
-	melee->waiting_for_animation = true;
-	melee->press_taken = true;
-	return;
-}
-
-static void __cdecl h1_unit_control_hook(datum unit_index, const unit_control_data* control_data)
-{
-	const unit_datum* unit = h1_maps_active() ? (const unit_datum*)object_try_and_get_and_verify_type(unit_index, _object_mask_unit) : NULL;
-	if (unit && unit->unit.player_index != NONE && (control_data->control_flags & 0xC0))
+	const bool result = p_biped_melee_begin(biped_index, melee_request);
+	if (result)
 	{
-		if (!h1_unit_melee_press_allowed(unit_index))
+		melee->begin_time = time;
+		melee->waiting_for_animation = true;
+		// first_person_weapon_message_from_unit: the first person melee for every strike halo 2 begins
+		const datum weapon_index = unit->unit.weapon_indices[0] != NONE ? unit_inventory_get_weapon(biped_index, unit->unit.weapon_indices[0]) : NONE;
+		s_h1_weapon_logic_context context;
+		if (weapon_index != NONE && h1_weapon_context_get(weapon_index, &context))
 		{
-			unit_control_data filtered = *control_data;
-			filtered.control_flags &= ~0xC0LL;
-			p_unit_control(unit_index, &filtered);
-			return;
-		}
-		h1_unit_melee_press_accepted(unit_index);
-	}
-	p_unit_control(unit_index, control_data);
-	return;
-}
-
-// (and on the unit itself before its update, halo 2 sets its control flags from more than one place)
-static bool h1_unit_update_hook(datum unit_index)
-{
-	unit_datum* unit = h1_maps_active() ? (unit_datum*)object_try_and_get_and_verify_type(unit_index, _object_mask_unit) : NULL;
-	if (unit && unit->unit.player_index != NONE)
-	{
-		uint32* control_flags = (uint32*)&unit->unit.control_flags;
-		s_h1_unit_melee* melee = &g_h1_unit_melee[unit_index];
-		// (the press unit_control took for this update)
-		const bool press_taken = melee->press_taken;
-		melee->press_taken = false;
-		if ((*control_flags & 0xC0) && !press_taken)
-		{
-			if (h1_unit_melee_press_allowed(unit_index))
-			{
-				h1_unit_melee_press_accepted(unit_index);
-				melee->press_taken = false;
-			}
-			else
-			{
-				*control_flags &= ~0xC0u;
-			}
+			h1_first_person_weapon_message(&context, _h1_first_person_weapon_message_melee);
 		}
 	}
-	return g_h2_unit_update(unit_index);
+	return result;
 }
 
 void h1_weapon_logic_reset(void)
