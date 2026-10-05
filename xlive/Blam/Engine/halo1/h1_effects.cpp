@@ -240,6 +240,10 @@ struct s_h1_effect_location
 	real_vector3d forward;
 	real_vector3d up;
 	bool first_person;	// at the local player's first person weapon (_effect_location_first_person_bit)
+	// the object marker it is at (the attached particles follow it), NONE for a point
+	datum object_index;
+	const char* marker_name;
+	int16 marker_ordinal;
 };
 
 struct s_h1_effect
@@ -283,6 +287,15 @@ struct s_h1_particle
 	real32 angular_velocity;
 	real32 radius;
 	real_argb_color color;
+	// particles.c particle_datum object_index and node_index: an attached particle (_effect_particle_attached_bit) moves with
+	// the marker it was made at, the local player's first person weapon's for the first person ones
+	datum attached_object_index;
+	const char* attached_marker_name;
+	int16 attached_marker_ordinal;
+	bool attached_first_person;
+	real_point3d marker_position;
+	real_vector3d marker_forward;
+	real_vector3d marker_up;
 };
 
 struct s_h1_new_particle
@@ -295,6 +308,7 @@ struct s_h1_new_particle
 	real32 angular_velocity;
 	real32 radius;
 	real_argb_color color;
+	const s_h1_effect_location* attached_location;	// the marker an attached particle follows, NULL for none
 };
 
 // the vertex layout of the halo 1 renderer: the particle color rides in the normal, its alpha in the lightmap coordinates
@@ -584,6 +598,9 @@ static real32 h1_effect_distribution_integral(int16 function, real32 fraction);
 
 static void h1_particle_new(const s_h1_new_particle* data);
 static bool h1_particle_update(s_h1_particle* particle, real32 dt);
+static bool h1_particle_follow_marker(s_h1_particle* particle);
+static bool h1_effect_location_marker_get(datum object_index, const char* marker_name, int16 marker_ordinal, bool first_person, real_point3d* position,
+	real_vector3d* forward, real_vector3d* up);
 static void h1_particle_spawn_effect(const s_h1_particle* particle, const h1_tag_reference* reference, real32 scale);
 static bool h1_particle_next_sequence(s_h1_particle* particle);
 static bool h1_particle_next_frame(s_h1_particle* particle);
@@ -687,6 +704,7 @@ void h1_effect_new_unattached(datum h1_effect_index, const real_point3d* point, 
 			}
 		}
 		s_h1_effect_location instance = {};
+		instance.object_index = NONE;
 		instance.position = *point;
 		instance.forward = marker_forwards[marker_index];
 		instance.up = h1_perpendicular(&instance.forward);
@@ -734,6 +752,7 @@ void h1_effect_new_from_markers(datum h1_effect_index, datum owner_object_index,
 			}
 		}
 		s_h1_effect_location instance = {};
+		instance.object_index = NONE;
 		instance.position = marker_points[marker_index];
 		instance.forward = marker_forwards[marker_index];
 		h1_normalize(&instance.forward);
@@ -816,7 +835,7 @@ void h1_effects_update(void)
 	g_h1_effects.particle_leftover_ticks -= (real32)g_h1_effects.particle_update_ticks;
 	for (size_t i = 0; i < g_h1_effects.particles.size();)
 	{
-		if (!h1_particle_update(&g_h1_effects.particles[i], dt))
+		if (!h1_particle_follow_marker(&g_h1_effects.particles[i]) || !h1_particle_update(&g_h1_effects.particles[i], dt))
 		{
 			g_h1_effects.particles[i] = g_h1_effects.particles.back();
 			g_h1_effects.particles.pop_back();
@@ -1241,9 +1260,13 @@ static void h1_effect_generate_particles(s_h1_effect* effect)
 					particles->velocity.lower, particles->velocity.upper, particles->velocity_cone_angle, particles->a_scales_values, particles->b_scales_values);
 				data.direction = transform_vector(&direction);
 				data.velocity = transform_vector(&velocity);
-				data.velocity.i += effect->velocity.i * k_h1_ticks_per_second;
-				data.velocity.j += effect->velocity.j * k_h1_ticks_per_second;
-				data.velocity.k += effect->velocity.k * k_h1_ticks_per_second;
+				data.attached_location = TEST_BIT(particles->flags, _h1_effect_particle_attached_bit) && instance.object_index != NONE ? &instance : NULL;
+				if (!data.attached_location)
+				{
+					data.velocity.i += effect->velocity.i * k_h1_ticks_per_second;
+					data.velocity.j += effect->velocity.j * k_h1_ticks_per_second;
+					data.velocity.k += effect->velocity.k * k_h1_ticks_per_second;
+				}
 
 				data.definition_index = particles->particle_type.index;
 				data.radius = h1_effect_random_range(effect, particles->radius.lower, particles->radius.upper,
@@ -1373,6 +1396,17 @@ static void h1_particle_new(const s_h1_new_particle* data)
 	particle.color = data->color;
 	particle.velocity = data->velocity;
 	particle.angular_velocity = data->angular_velocity;
+	particle.attached_object_index = NONE;
+	if (data->attached_location)
+	{
+		particle.attached_object_index = data->attached_location->object_index;
+		particle.attached_marker_name = data->attached_location->marker_name;
+		particle.attached_marker_ordinal = data->attached_location->marker_ordinal;
+		particle.attached_first_person = data->attached_location->first_person;
+		particle.marker_position = data->attached_location->position;
+		particle.marker_forward = data->attached_location->forward;
+		particle.marker_up = data->attached_location->up;
+	}
 
 	// lit by the surface below it unless it lights itself
 	if (!TEST_BIT(definition->flags, _h1_particle_definition_self_illuminated_bit))
@@ -2733,17 +2767,17 @@ static void h1_attachment_effect_build_locations(s_h1_effect* effect, datum obje
 		const int16 marker_count = h1_object_markers_get_third_person(object_index, marker_name, markers, k_h1_maximum_attachment_markers);
 		for (int16 j = 0; j < marker_count; j++)
 		{
-			instances.push_back({ markers[j].matrix.position, markers[j].matrix.vectors.forward, markers[j].matrix.vectors.up, false });
+			instances.push_back({ markers[j].matrix.position, markers[j].matrix.vectors.forward, markers[j].matrix.vectors.up, false, object_index, marker_name, j });
 		}
 		if (instances.empty())
 		{
-			instances.push_back({ object->object.position, object->object.forward, object->object.up, false });
+			instances.push_back({ object->object.position, object->object.forward, object->object.up, false, object_index, "", 0 });
 		}
 		// the local player's weapon also has its first person model's marker
 		real_matrix4x3 first_person_marker;
 		if (marker_name && marker_name[0] && h1_first_person_marker_get(object_index, marker_name, &first_person_marker))
 		{
-			instances.push_back({ first_person_marker.position, first_person_marker.vectors.forward, first_person_marker.vectors.up, true });
+			instances.push_back({ first_person_marker.position, first_person_marker.vectors.forward, first_person_marker.vectors.up, true, object_index, marker_name, 0 });
 			effect->first_person = true;
 		}
 	}
@@ -3718,4 +3752,81 @@ static void h1_lens_flares_render(void)
 		}
 	}
 	return;
+}
+
+// particles.c: an attached particle is kept in its marker's frame, carried along as the marker moves (false when the marker is gone)
+static bool h1_particle_follow_marker(s_h1_particle* particle)
+{
+	if (particle->attached_object_index == NONE)
+	{
+		return true;
+	}
+	real_point3d position;
+	real_vector3d forward, up;
+	if (!h1_effect_location_marker_get(particle->attached_object_index, particle->attached_marker_name, particle->attached_marker_ordinal,
+		particle->attached_first_person, &position, &forward, &up))
+	{
+		return false;
+	}
+	const real_vector3d old_left = h1_cross(&particle->marker_up, &particle->marker_forward);
+	const real_vector3d new_left = h1_cross(&up, &forward);
+	auto carry_vector = [&](const real_vector3d* v) -> real_vector3d
+	{
+		const real32 x = h1_dot(v, &particle->marker_forward);
+		const real32 y = h1_dot(v, &old_left);
+		const real32 z = h1_dot(v, &particle->marker_up);
+		return { forward.i * x + new_left.i * y + up.i * z, forward.j * x + new_left.j * y + up.j * z, forward.k * x + new_left.k * y + up.k * z };
+	};
+	const real_vector3d offset =
+	{
+		particle->position.x - particle->marker_position.x,
+		particle->position.y - particle->marker_position.y,
+		particle->position.z - particle->marker_position.z
+	};
+	const real_vector3d carried = carry_vector(&offset);
+	particle->position = { position.x + carried.i, position.y + carried.j, position.z + carried.k };
+	particle->direction = carry_vector(&particle->direction);
+	particle->velocity = carry_vector(&particle->velocity);
+	particle->marker_position = position;
+	particle->marker_forward = forward;
+	particle->marker_up = up;
+	return true;
+}
+
+// the frame of an object's marker now: the first person weapon's for first person locations
+static bool h1_effect_location_marker_get(datum object_index, const char* marker_name, int16 marker_ordinal, bool first_person, real_point3d* position,
+	real_vector3d* forward, real_vector3d* up)
+{
+	const object_datum* object = (const object_datum*)object_try_and_get(object_index);
+	if (!object)
+	{
+		return false;
+	}
+	if (first_person)
+	{
+		real_matrix4x3 matrix;
+		if (!marker_name || !marker_name[0] || !h1_first_person_marker_get(object_index, marker_name, &matrix))
+		{
+			return false;
+		}
+		*position = matrix.position;
+		*forward = matrix.vectors.forward;
+		*up = matrix.vectors.up;
+		return true;
+	}
+	object_marker markers[k_h1_maximum_attachment_markers];
+	const int16 marker_count = marker_name && marker_name[0] ? h1_object_markers_get_third_person(object_index, marker_name, markers, k_h1_maximum_attachment_markers) : 0;
+	if (VALID_INDEX(marker_ordinal, marker_count))
+	{
+		*position = markers[marker_ordinal].matrix.position;
+		*forward = markers[marker_ordinal].matrix.vectors.forward;
+		*up = markers[marker_ordinal].matrix.vectors.up;
+	}
+	else
+	{
+		*position = object->object.position;
+		*forward = object->object.forward;
+		*up = object->object.up;
+	}
+	return true;
 }
