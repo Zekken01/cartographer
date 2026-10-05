@@ -97,6 +97,15 @@ enum
 	_h1_pctl_type_rotation_rate_scales_bit,
 };
 
+// effects.c effect camera modes (the create field of effect particles)
+enum
+{
+	_h1_effect_camera_mode_independent = 0,
+	_h1_effect_camera_mode_first_person_only,
+	_h1_effect_camera_mode_third_person_only,
+	_h1_effect_camera_mode_both,
+};
+
 // effects.c
 enum
 {
@@ -229,6 +238,7 @@ struct s_h1_effect_location
 	real_point3d position;
 	real_vector3d forward;
 	real_vector3d up;
+	bool first_person;	// at the local player's first person weapon (_effect_location_first_person_bit)
 };
 
 struct s_h1_effect
@@ -247,6 +257,7 @@ struct s_h1_effect
 	std::vector<std::vector<s_h1_effect_location>> locations;
 	bool loop;		// an object's attached effect: it stops after the last event and starts again
 	bool stopped;
+	bool first_person;	// on the local player's first person weapon: it has first person instances
 };
 
 struct s_h1_particle
@@ -472,8 +483,19 @@ struct s_h1_light
 	real_rgb_color color;
 	real32 radius;
 	real32 intensity;
-	// how much of the lens flare's occlusion point the camera sees
+	// how much of the lens flare's occlusion point the camera sees (the last occlusion query that finished)
 	real32 occlusion_fraction;
+	uint32 id;				// matches the occlusion queries to the light
+	bool first_person;		// at the local player's first person weapon: tested in the first person depth range
+};
+
+// the occlusion queries of a lens flare (the occlusion point depth tested, and all its pixels)
+struct s_h1_flare_query
+{
+	IDirect3DQuery9* visible;
+	IDirect3DQuery9* total;
+	uint32 light_id;
+	bool pending;
 };
 
 // an effect or a light of a halo 1 object definition's attachments, kept while the object lives (objects.c object_attachments_new)
@@ -517,12 +539,14 @@ struct s_h1_effects_globals
 	std::vector<s_h1_decal> decals;
 	real32 attachment_leftover_ticks;
 	real32 frame_dt;
+	uint32 next_light_id;
+	std::vector<s_h1_flare_query> flare_queries;
 	real32 light_constants[2 * k_h1_maximum_shader_lights][4];
 };
 
 /* globals */
 
-static s_h1_effects_globals g_h1_effects = { {}, {}, 0x1234567u, 0, 0.f, {}, NONE, {}, {}, {}, {}, {}, {}, 0.f, 0.f, {} };
+static s_h1_effects_globals g_h1_effects = { {}, {}, 0x1234567u, 0, 0.f, {}, NONE, {}, {}, {}, {}, {}, {}, 0.f, 0.f, 0, {}, {} };
 
 typedef void(__cdecl* t_projectile_detonation_effect_new)(datum definition_index, const real_point3d* point, const real_vector3d* forward, void* owner, bool super_detonation, bool airborne);
 static t_projectile_detonation_effect_new p_projectile_detonation_effect_new = NULL;
@@ -573,12 +597,14 @@ static bool h1_particle_system_update(s_h1_particle_system* system, real32 dt);
 static int32 h1_particle_system_particle_count(void);
 
 static void h1_light_new_unattached(datum definition_index, const real_point3d* position, const real_vector3d* forward, real32 scale);
+static void h1_attachment_effect_build_locations(s_h1_effect* effect, datum object_index, const object_datum* object, const char* attachment_marker);
 static real32 h1_transition_function(int16 function, real32 t);
 static void h1_lights_update(real32 dt);
 static void h1_attachments_update(real32 dt);
 static void h1_decal_new(datum definition_index, const real_point3d* origin, const real_vector3d* velocity, real32 radius_modifier);
 static void h1_decals_update(real32 dt);
 static void h1_lens_flares_render(void);
+static void h1_lens_flare_occlusion_test(s_h1_light* light, const real_point3d* point, real32 radius);
 
 /* public code */
 
@@ -597,6 +623,12 @@ void h1_effects_reset(void)
 	g_h1_effects.lights.clear();
 	g_h1_effects.attachments.clear();
 	g_h1_effects.decals.clear();
+	for (s_h1_flare_query& query : g_h1_effects.flare_queries)
+	{
+		if (query.visible) query.visible->Release();
+		if (query.total) query.total->Release();
+	}
+	g_h1_effects.flare_queries.clear();
 	g_h1_effects.attachment_leftover_ticks = 0.f;
 	memset(g_h1_effects.light_constants, 0, sizeof(g_h1_effects.light_constants));
 	g_h1_effects.particle_leftover_ticks = 0.f;
@@ -649,7 +681,7 @@ void h1_effect_new_unattached(datum h1_effect_index, const real_point3d* point, 
 				}
 			}
 		}
-		s_h1_effect_location instance;
+		s_h1_effect_location instance = {};
 		instance.position = *point;
 		instance.forward = marker_forwards[marker_index];
 		instance.up = h1_perpendicular(&instance.forward);
@@ -728,7 +760,6 @@ void h1_effects_render(void)
 		h1_particle_systems_build_sprites();
 		h1_sprites_draw();
 	}
-	h1_lens_flares_render();
 	return;
 }
 
@@ -999,6 +1030,10 @@ static void h1_effect_generate_parts(s_h1_effect* effect)
 
 		for (const s_h1_effect_location& instance : effect->locations[part->location_index])
 		{
+			if (instance.first_person)
+			{
+				continue;
+			}
 			real_point3d point = instance.position;
 			real_vector3d forward = instance.forward;
 			if (TEST_BIT(part->flags, _h1_effect_part_world_down_bit))
@@ -1069,8 +1104,22 @@ static void h1_effect_generate_particles(s_h1_effect* effect)
 			continue;
 		}
 
+		// effects.c effect_location_get_next_instance: first person only particles (and both, for the local player's effect)
+		// come from the first person instances, the rest from the third person ones; the particles only third person views
+		// draw (and only first person views draw) aren't seen by the local player looking through the weapon (and the others)
+		const bool first_person_instances = particles->create == _h1_effect_camera_mode_first_person_only ||
+			(particles->create == _h1_effect_camera_mode_both && effect->first_person);
+		if ((particles->create == _h1_effect_camera_mode_third_person_only && effect->first_person) ||
+			(particles->create == _h1_effect_camera_mode_first_person_only && !effect->first_person))
+		{
+			continue;
+		}
 		for (const s_h1_effect_location& instance : effect->locations[particles->location_index])
 		{
+			if (instance.first_person != first_person_instances)
+			{
+				continue;
+			}
 			// the instance's frame: forward, left, up
 			const real_vector3d left = h1_cross(&instance.up, &instance.forward);
 			auto transform_vector = [&](const real_vector3d* v) -> real_vector3d
@@ -2410,7 +2459,8 @@ static void h1_light_new_unattached(datum definition_index, const real_point3d* 
 	h1_normalize(&light.forward);
 	light.up = h1_perpendicular(&light.forward);
 	h1_normalize(&light.up);
-	light.occlusion_fraction = -1.f;
+	light.occlusion_fraction = 0.f;
+	light.id = ++g_h1_effects.next_light_id;
 	g_h1_effects.lights.push_back(light);
 	return;
 }
@@ -2522,6 +2572,24 @@ void h1_effects_set_light_constants(void)
 }
 
 // the halo 2 object's markers of a halo 1 marker name (halo 2 names them with underscores)
+static int16 h1_object_markers_get_third_person(datum object_index, const char* name, object_marker* markers, int16 maximum_count)
+{
+	if (!name || !name[0])
+	{
+		return 0;
+	}
+	char marker_name[32];
+	strncpy_s(marker_name, name, _TRUNCATE);
+	for (char* c = marker_name; *c; c++)
+	{
+		if (*c == ' ')
+		{
+			*c = '_';
+		}
+	}
+	return object_get_markers_by_string_id(object_index, string_id_find_or_add(marker_name), markers, maximum_count);
+}
+
 static int16 h1_object_markers_get(datum object_index, const char* name, object_marker* markers, int16 maximum_count)
 {
 	if (!name || !name[0])
@@ -2568,15 +2636,51 @@ static void h1_attachment_effect_build_locations(s_h1_effect* effect, datum obje
 
 		object_marker markers[k_h1_maximum_attachment_markers];
 		const char* marker_name = location->marker_name[0] ? location->marker_name : attachment_marker;
-		const int16 marker_count = h1_object_markers_get(object_index, marker_name, markers, k_h1_maximum_attachment_markers);
+		const int16 marker_count = h1_object_markers_get_third_person(object_index, marker_name, markers, k_h1_maximum_attachment_markers);
 		for (int16 j = 0; j < marker_count; j++)
 		{
-			instances.push_back({ markers[j].matrix.position, markers[j].matrix.vectors.forward, markers[j].matrix.vectors.up });
+			instances.push_back({ markers[j].matrix.position, markers[j].matrix.vectors.forward, markers[j].matrix.vectors.up, false });
 		}
 		if (instances.empty())
 		{
-			instances.push_back({ object->object.position, object->object.forward, object->object.up });
+			instances.push_back({ object->object.position, object->object.forward, object->object.up, false });
 		}
+		// the local player's weapon also has its first person model's marker
+		real_matrix4x3 first_person_marker;
+		if (marker_name && marker_name[0] && h1_first_person_marker_get(object_index, marker_name, &first_person_marker))
+		{
+			instances.push_back({ first_person_marker.position, first_person_marker.vectors.forward, first_person_marker.vectors.up, true });
+			effect->first_person = true;
+		}
+	}
+	return;
+}
+
+void h1_effect_new_on_object(datum h1_effect_index, datum object_index)
+{
+	const h1_effe* definition = h1_effect_index != NONE ? (const h1_effe*)g_h1_cache_file->tag_get('effe', h1_effect_index) : NULL;
+	const object_datum* object = (const object_datum*)object_try_and_get(object_index);
+	if (!definition || !object || definition->events.count <= 0 || g_h1_effects.effects.size() >= k_h1_maximum_effects)
+	{
+		return;
+	}
+	s_h1_effect effect = {};
+	effect.definition_index = h1_effect_index;
+	// halo 2 velocities are per second, halo 1's per tick
+	effect.velocity =
+	{
+		object->object.translational_velocity.i / k_h1_ticks_per_second,
+		object->object.translational_velocity.j / k_h1_ticks_per_second,
+		object->object.translational_velocity.k / k_h1_ticks_per_second
+	};
+	effect.scale_a = 1.f;
+	effect.scale_b = 1.f;
+	effect.color = { 1.f, 1.f, 1.f };
+	h1_attachment_effect_build_locations(&effect, object_index, object, "");
+	h1_effect_set_event(&effect, 0);
+	if (h1_effect_update(&effect, 0.f))
+	{
+		g_h1_effects.effects.push_back(std::move(effect));
 	}
 	return;
 }
@@ -2662,7 +2766,8 @@ static void h1_attachments_update(real32 dt)
 					created.light.definition_index = attachment_definition->type.index;
 					created.light.attached = true;
 					created.light.intensity_scale = 1.f;
-					created.light.occlusion_fraction = -1.f;
+					created.light.occlusion_fraction = 0.f;
+					created.light.id = ++g_h1_effects.next_light_id;
 				}
 				g_h1_effects.attachments.push_back(std::move(created));
 				attachment = &g_h1_effects.attachments.back();
@@ -2702,6 +2807,8 @@ static void h1_attachments_update(real32 dt)
 			else
 			{
 				attachment->light.intensity_scale = function_value;
+				real_matrix4x3 first_person_marker;
+				attachment->light.first_person = h1_first_person_marker_get(object_index, attachment_definition->marker, &first_person_marker);
 				object_marker marker;
 				if (h1_object_markers_get(object_index, attachment_definition->marker, &marker, 1) > 0)
 				{
@@ -3199,19 +3306,7 @@ static void h1_lens_flare_render(s_h1_light* light)
 	default:
 		break;
 	}
-	const real_vector3d to_occlusion = { occlusion_point.x - camera->point.x, occlusion_point.y - camera->point.y, occlusion_point.z - camera->point.z };
-	collision_result collision;
-	const bool occluded = collision_test_vector(FLAG(_collision_test_structure_bit), &camera->point, &to_occlusion, NONE, NONE, &collision) && collision.t < 0.999f;
-	const real32 target = occluded ? 0.f : 1.f;
-	if (light->occlusion_fraction < 0.f)
-	{
-		light->occlusion_fraction = target;
-	}
-	else
-	{
-		const real32 step = g_h1_effects.frame_dt * k_h1_lens_flare_occlusion_rate;
-		light->occlusion_fraction = target > light->occlusion_fraction ? MIN(light->occlusion_fraction + step, target) : MAX(light->occlusion_fraction - step, target);
-	}
+	h1_lens_flare_occlusion_test(light, &occlusion_point, lens->occlusion_radius);
 	const real32 occlusion_fraction = light->occlusion_fraction;
 	if (occlusion_fraction <= 0.f)
 	{
@@ -3351,8 +3446,120 @@ static void h1_lens_flare_render(s_h1_light* light)
 	return;
 }
 
+// rasterizer_widget_submit_occlusion_test: a camera facing square of the occlusion radius drawn twice, depth tested and not, into
+// occlusion queries; their pixel counts become the light's occlusion fraction when they finish (a frame or so later)
+static void h1_lens_flare_occlusion_test(s_h1_light* light, const real_point3d* point, real32 radius)
+{
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	s_h1_flare_query* query = NULL;
+	for (s_h1_flare_query& candidate : g_h1_effects.flare_queries)
+	{
+		if (!candidate.pending)
+		{
+			query = &candidate;
+			break;
+		}
+	}
+	if (!query)
+	{
+		if (g_h1_effects.flare_queries.size() >= 256)
+		{
+			return;
+		}
+		s_h1_flare_query created = {};
+		if (FAILED(device->CreateQuery(D3DQUERYTYPE_OCCLUSION, &created.visible)) || FAILED(device->CreateQuery(D3DQUERYTYPE_OCCLUSION, &created.total)))
+		{
+			if (created.visible) created.visible->Release();
+			return;
+		}
+		g_h1_effects.flare_queries.push_back(created);
+		query = &g_h1_effects.flare_queries.back();
+	}
+
+	const render_camera* camera = &global_window_parameters_get()->camera;
+	const real_vector3d camera_left = h1_cross(&camera->up, &camera->forward);
+	// at least a pixel or so across
+	const real_vector3d to_point = { point->x - camera->point.x, point->y - camera->point.y, point->z - camera->point.z };
+	const real32 pixel = h1_dot(&to_point, &camera->forward) * 2.f * tanf(camera->vertical_field_of_view * 0.5f) /
+		(real32)MAX(camera->viewport_bounds.bottom - camera->viewport_bounds.top, 1);
+	radius = MAX(radius, pixel * 1.5f);
+	static const real32 k_corners[4][2] = { { -1.f, -1.f }, { 1.f, -1.f }, { 1.f, 1.f }, { -1.f, 1.f } };
+	s_h1_particle_vertex quad[4] = {};
+	for (int32 k = 0; k < 4; k++)
+	{
+		quad[k].position[0] = point->x - camera_left.i * k_corners[k][0] * radius + camera->up.i * k_corners[k][1] * radius;
+		quad[k].position[1] = point->y - camera_left.j * k_corners[k][0] * radius + camera->up.j * k_corners[k][1] * radius;
+		quad[k].position[2] = point->z - camera_left.k * k_corners[k][0] * radius + camera->up.k * k_corners[k][1] * radius;
+	}
+	const s_h1_particle_vertex triangles[6] = { quad[0], quad[1], quad[2], quad[0], quad[2], quad[3] };
+
+	D3DVIEWPORT9 viewport;
+	device->GetViewport(&viewport);
+	if (light->first_person)
+	{
+		D3DVIEWPORT9 first_person_viewport = viewport;
+		first_person_viewport.MinZ = 0.f;
+		first_person_viewport.MaxZ = k_h1_first_person_depth_range;
+		device->SetViewport(&first_person_viewport);
+	}
+	device->SetRenderState(D3DRS_COLORWRITEENABLE, 0);
+	device->SetRenderState(D3DRS_COLORWRITEENABLE1, 0);
+	device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+	device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+	device->SetRenderState(D3DRS_ZENABLE, D3DZB_TRUE);
+	device->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+	query->visible->Issue(D3DISSUE_BEGIN);
+	device->DrawPrimitiveUP(D3DPT_TRIANGLELIST, 2, triangles, sizeof(s_h1_particle_vertex));
+	query->visible->Issue(D3DISSUE_END);
+	device->SetRenderState(D3DRS_ZFUNC, D3DCMP_ALWAYS);
+	query->total->Issue(D3DISSUE_BEGIN);
+	device->DrawPrimitiveUP(D3DPT_TRIANGLELIST, 2, triangles, sizeof(s_h1_particle_vertex));
+	query->total->Issue(D3DISSUE_END);
+	device->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+	device->SetRenderState(D3DRS_COLORWRITEENABLE, D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
+	device->SetViewport(&viewport);
+	query->light_id = light->id;
+	query->pending = true;
+	return;
+}
+
+// the occlusion queries that finished set their light's occlusion fraction
+static void h1_lens_flare_occlusion_results(void)
+{
+	for (s_h1_flare_query& query : g_h1_effects.flare_queries)
+	{
+		if (!query.pending)
+		{
+			continue;
+		}
+		DWORD visible = 0, total = 0;
+		if (query.visible->GetData(&visible, sizeof(visible), 0) != S_OK || query.total->GetData(&total, sizeof(total), 0) != S_OK)
+		{
+			continue;
+		}
+		query.pending = false;
+		const real32 fraction = total > 0 ? PIN((real32)visible / (real32)total, 0.f, 1.f) : 0.f;
+		for (s_h1_light& light : g_h1_effects.lights)
+		{
+			if (light.id == query.light_id) light.occlusion_fraction = fraction;
+		}
+		for (s_h1_attachment& attachment : g_h1_effects.attachments)
+		{
+			if (attachment.group_tag == 'ligh' && attachment.light.id == query.light_id) attachment.light.occlusion_fraction = fraction;
+		}
+	}
+	return;
+}
+
+void h1_effects_render_lens_flares(void)
+{
+	h1_lens_flares_render();
+	return;
+}
+
 static void h1_lens_flares_render(void)
 {
+	h1_lens_flare_occlusion_results();
 	bool any = false;
 	for (const s_h1_light& light : g_h1_effects.lights)
 	{

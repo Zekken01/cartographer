@@ -28,8 +28,6 @@ enum
 	k_h1_maximum_first_person_nodes = 64,
 };
 
-// first person geometry is drawn into the nearest part of the depth range so the world never covers it
-static const real32 k_h1_first_person_depth_range = 0.02f;
 
 /* structures */
 

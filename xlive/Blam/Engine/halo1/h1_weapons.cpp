@@ -17,6 +17,7 @@
 #include "h2_tag_definitions_generated.h"
 
 #include "cache/cache_files.h"
+#include "game/game_time.h"
 #include "items/weapons.h"
 #include "objects/objects.h"
 #include "tag_files/tag_groups.h"
@@ -386,10 +387,17 @@ datum h1_weapon_definition_build(datum h1_weapon_index)
 		barrel->deceleration_time = h1_trigger->deceleration_time;
 		barrel->barrel_spin_scale = 1.f;
 		barrel->blurred_rate_of_fire = h1_trigger->blurred_rate_of_fire;
-		const bool semi_automatic = h1_trigger->rounds_per_second.upper <= 0.f;
+		// halo 2 fires semi-automatic barrels (a halo 1 rate of fire of 0, or a trigger that doesn't repeat) one shot per pull with
+		// no rate of fire, the halo 1 rate becoming the recovery between shots
+		const bool no_rate = h1_trigger->rounds_per_second.upper <= 0.f;
+		const bool semi_automatic = no_rate || TEST_BIT(h1_trigger->flags, _h1_trigger_does_not_repeat_automatically_bit);
+		if (semi_automatic)
+		{
+			barrel->rounds_per_second = { 0.f, 0.f };
+		}
 		barrel->shots_per_fire = semi_automatic ? short_bounds{ 1, 1 } : short_bounds{ 0, 0 };
-		barrel->fire_recovery_time = semi_automatic ? (i == 0 ? 0.05f : 0.1f) : 0.f;
-		barrel->soft_recovery_fraction = semi_automatic && i == 0 ? 1.f : 0.f;
+		barrel->fire_recovery_time = !semi_automatic ? 0.f : no_rate ? (i == 0 ? 0.05f : 0.1f) : 1.f / h1_trigger->rounds_per_second.upper;
+		barrel->soft_recovery_fraction = no_rate && i == 0 ? 1.f : 0.f;
 		// energy weapons (the plasma pistol) keep an empty halo 1 magazine that holds no rounds: no magazine for halo 2
 		const h1_weap_magazines* trigger_magazine = VALID_INDEX(h1_trigger->magazine_index, h1_weapon->magazines.count) ?
 			g_h1_cache_file->block_get(h1_weapon->magazines, h1_trigger->magazine_index) : NULL;
@@ -585,6 +593,8 @@ void h1_weapons_update(void)
 					MIN((int32)barrel->firing_effect_index, trigger->firing_effects.count - 1)) : NULL;
 			if (barrel->fire_count != state->fire_counts[i])
 			{
+				h1_log("DEV fire %08x barrel %d count %d -> %d tick %d effect %s", object_index, i, state->fire_counts[i], barrel->fire_count, game_time_get(),
+					firing_effect && firing_effect->firing_effect.index != NONE ? g_h1_cache_file->tag_name_get(firing_effect->firing_effect.index) : "none");
 				if (firing_effect)
 				{
 					h1_weapon_effect_at_marker(object_index, marker, &firing_effect->firing_effect);
@@ -692,7 +702,8 @@ static void h1_weapon_effect_at_marker(datum object_index, const char* marker_na
 	}
 	else if (effect->group_tag == 'effe')
 	{
-		h1_effect_new_unattached(effect->index, &point, &forward);
+		// weapons.c: the effect is created on the weapon's markers (each location at its own marker)
+		h1_effect_new_on_object(effect->index, object_index);
 	}
 	return;
 }

@@ -16,6 +16,9 @@ void h1_effects_update(void);
 // draws the particles and lens flares (transparent pass)
 void h1_effects_render(void);
 
+// draws the lens flares after everything (the first person weapon too), their occlusion tests against it
+void h1_effects_render_lens_flares(void);
+
 // draws the decals (after the opaque structure)
 void h1_effects_render_decals(void);
 
@@ -33,6 +36,10 @@ void h1_rgb_colors_interpolate(real_rgb_color* result, uint32 flags, const real_
 
 // periodic_functions.c transition_function_evaluate
 real32 h1_transition_function_evaluate(int16 function, real32 t);
+
+// a halo 1 effect at the markers of an object (each location at its marker), with the first person markers of the local player's
+// weapon for its first person particles
+void h1_effect_new_on_object(datum h1_effect_index, datum object_index);
 
 // the empty halo 2 effect a halo 2 tag refers to where a halo 1 effect plays instead (built on first use)
 datum h1_effects_stub_effect_get(void);

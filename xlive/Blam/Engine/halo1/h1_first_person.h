@@ -8,6 +8,9 @@
 
 struct s_first_person_model_data;
 
+// first person geometry is drawn into the nearest part of the depth range so the world never covers it
+static const real32 k_h1_first_person_depth_range = 0.02f;
+
 // forgets the first person models (a new map is being built)
 void h1_first_person_reset(void);
 

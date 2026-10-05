@@ -368,40 +368,112 @@ PS_OUTPUT main(PS_INPUT input)
 // shader_model: base map, detail map, multipurpose map (self illumination in green), object lighting
 static const char k_h1_model_pixel_shader[] = H1_PIXEL_SHADER_COMMON R"(
 sampler2D base_map : register(s0);
-sampler2D multipurpose_map : register(s1);
+sampler2D multipurpose_map : register(s1);	// red reflection mask, green self-illumination mask, alpha change color mask
 sampler2D detail_map : register(s2);
+samplerCUBE reflection_map : register(s4);
 
 float4 map_scale : register(c0);		// base u, base v, detail u, detail v
-float4 modes : register(c1);			// detail function, alpha tested, has multipurpose, self illumination
+float4 modes : register(c1);			// detail function, alpha tested, detail mask, detail after reflection
 float4 ambient : register(c2);
 float4 light0_direction : register(c3);
 float4 light0_color : register(c4);
 float4 light1_direction : register(c5);
 float4 light1_color : register(c6);
+float4 self_illumination_color : register(c7);
+float4 change_color : register(c8);
+float4 perpendicular : register(c9);	// reflection tint, w: brightness (with the reflection falloff)
+float4 parallel : register(c10);
+float4 model_settings : register(c11);	// x: has a reflection cube map, yz: base map offset
+float4 camera_world : register(c12);
+
+float3 detail_combine(float3 color, float3 detail, float function)
+{
+	if (function < 0.5f)
+		return 2.0f * color * detail;	// double/biased multiply
+	if (function < 1.5f)
+		return color * detail;			// multiply
+	return color + 2.0f * detail - 1.0f;	// double/biased add
+}
 
 PS_OUTPUT main(PS_INPUT input)
 {
-	float2 texcoord = input.texcoord * map_scale.xy;
+	float2 texcoord = input.texcoord * map_scale.xy + model_settings.yz;
 	float4 base = tex2D(base_map, texcoord);
 	float4 multipurpose = tex2D(multipurpose_map, texcoord);
-	float4 detail = tex2D(detail_map, texcoord * map_scale.zw);
+	float4 detail = tex2D(detail_map, input.texcoord * map_scale.zw);
 
 	if (modes.y > 0.5f)
 		clip(base.a - 0.5f);
 
-	float3 color = apply_detail(base.rgb, detail.rgb, modes.x);
+	// combiner 3: the detail map fades to neutral outside its mask
+	float mask = 1.0f;
+	float detail_mask = modes.z;
+	if (detail_mask > 0.5f && detail_mask < 1.5f) mask = 1.0f - multipurpose.r;
+	else if (detail_mask > 1.5f && detail_mask < 2.5f) mask = multipurpose.r;
+	else if (detail_mask > 2.5f) mask = fmod(detail_mask, 2.0f) > 0.5f ? 1.0f - multipurpose.a : multipurpose.a;
+	float neutral = modes.x > 0.5f && modes.x < 1.5f ? 1.0f : 0.5f;
+	float3 masked_detail = lerp(float3(neutral, neutral, neutral), detail.rgb, mask);
 
+	// the vertex lighting plus the self-illumination, tinted by the change color
 	float3 normal = normalize(input.world_normal);
 	float3 light = ambient.rgb +
 		saturate(dot(normal, -light0_direction.xyz)) * light0_color.rgb +
 		saturate(dot(normal, -light1_direction.xyz)) * light1_color.rgb +
 		dynamic_light(input.world, normal);
+	light = saturate(saturate(light) + multipurpose.g * self_illumination_color.rgb);
+	light *= lerp(float3(1.0f, 1.0f, 1.0f), change_color.rgb, multipurpose.a);
 
-	float self_illumination = modes.z > 0.5f ? multipurpose.g * modes.w : 0.0f;
+	// the reflection: the cube map tinted between the parallel and perpendicular colors by the view angle, masked
+	float3 view = normalize(camera_world.xyz - input.world);
+	float facing = saturate(dot(normal, view));
+	float4 tint = lerp(parallel, perpendicular, facing);
+	float3 reflection = model_settings.x > 0.5f ? texCUBE(reflection_map, reflect(-view, normal)).rgb * tint.rgb : float3(0.0f, 0.0f, 0.0f);
+	float specular = multipurpose.r * tint.a;
+
+	float3 color;
+	if (modes.w > 0.5f)
+		color = detail_combine(saturate(base.rgb * light + reflection * specular), masked_detail, modes.x);
+	else
+		color = saturate(detail_combine(base.rgb, masked_detail, modes.x)) * light + reflection * specular;
 
 	PS_OUTPUT output;
-	output.color = float4(fog_model(color * saturate(light + self_illumination), input.world), base.a);
+	output.color = float4(fog_model(saturate(color), input.world), base.a);
 	output.depth = pack_depth(input.depth);
+	return output;
+}
+)";
+
+// shader_transparent_meter (rasterizer_xbox_transparent_geometry.c): the map's blue against the meter value picks the meter
+// (the gradient between its colors by the map's blue, plus the flash past the flash extension) or the background, times the map's
+// alpha; the frame buffer keeps its color tinted (tint mode 2: by the meter's alpha) and the meter adds at its brightness
+static const char k_h1_meter_pixel_shader[] = H1_PIXEL_SHADER_COMMON R"(
+sampler2D meter_map : register(s0);
+
+float4 flash : register(c0);				// flash color times flash brightness, w: flash extension
+float4 gradient_minimum : register(c1);		// w: meter value
+float4 gradient_maximum : register(c2);		// w: flash alpha
+float4 background : register(c3);			// w: background alpha
+float4 meter_settings : register(c4);		// x: flash color is negative, y: source scale (brightness, or 1 in tint mode 2)
+
+PS_OUTPUT main(PS_INPUT input)
+{
+	float4 t0 = tex2D(meter_map, input.texcoord);
+	// combiner 0
+	float flash_mask = clamp(4.0f * 2.0f * gradient_maximum.w * t0.b, -1.0f, 1.0f);
+	float flash_distance = clamp(4.0f * (flash.w - t0.b), -1.0f, 1.0f);
+	// combiner 1
+	float flash_fraction = clamp(1.0f - 2.0f * flash_distance, -1.0f, 1.0f);
+	float3 color = clamp((1.0f - flash_mask) * gradient_minimum.rgb + flash_mask * gradient_maximum.rgb, -1.0f, 1.0f);
+	// combiner 2
+	float empty = clamp(t0.b + 0.5f - gradient_minimum.w, -1.0f, 1.0f);
+	color = clamp(color + flash_fraction * (meter_settings.x > 0.5f ? -flash.rgb : flash.rgb), -1.0f, 1.0f);
+	// combiner 3 (mux): past the meter value is the background
+	float alpha = empty >= 0.5f ? background.w : 1.0f;
+	color = empty >= 0.5f ? background.rgb : color;
+
+	PS_OUTPUT output;
+	output.color = float4(saturate(color * t0.a) * meter_settings.y, saturate(alpha));
+	output.depth = float4(0.0f, 0.0f, 0.0f, 0.0f);
 	return output;
 }
 )";
@@ -697,6 +769,7 @@ static IDirect3DPixelShader9* g_h1_model_shader = NULL;
 static std::unordered_map<datum, IDirect3DPixelShader9*> g_h1_generic_shaders;
 static IDirect3DPixelShader9* g_h1_chicago_shader = NULL;
 static IDirect3DPixelShader9* g_h1_water_shader = NULL;
+static IDirect3DPixelShader9* g_h1_meter_shader = NULL;
 static IDirect3DPixelShader9* g_h1_glass_shader = NULL;
 static IDirect3DPixelShader9* g_h1_environment_fog_shader = NULL;
 static IDirect3DPixelShader9* g_h1_particle_shader = NULL;
@@ -748,6 +821,7 @@ bool h1_render_shaders_initialize(void)
 	g_h1_model_shader = h1_compile_pixel_shader(k_h1_model_pixel_shader, "model");
 	g_h1_chicago_shader = h1_compile_pixel_shader(k_h1_chicago_pixel_shader, "transparent chicago");
 	g_h1_water_shader = h1_compile_pixel_shader(k_h1_water_pixel_shader, "transparent water");
+	g_h1_meter_shader = h1_compile_pixel_shader(k_h1_meter_pixel_shader, "transparent meter");
 	g_h1_glass_shader = h1_compile_pixel_shader(k_h1_glass_pixel_shader, "transparent glass");
 	g_h1_environment_fog_shader = h1_compile_pixel_shader(k_h1_environment_fog_pixel_shader, "environment fog");
 	g_h1_particle_shader = h1_compile_pixel_shader(k_h1_particle_pixel_shader, "particle");
@@ -764,7 +838,7 @@ void h1_render_shaders_dispose(void)
 {
 	IUnknown* resources[] =
 	{
-		g_h1_vertex_declaration, g_h1_vertex_shader, g_h1_environment_shader, g_h1_model_shader, g_h1_chicago_shader, g_h1_water_shader, g_h1_glass_shader,
+		g_h1_vertex_declaration, g_h1_vertex_shader, g_h1_environment_shader, g_h1_model_shader, g_h1_chicago_shader, g_h1_water_shader, g_h1_glass_shader, g_h1_meter_shader,
 		g_h1_default_textures[0], g_h1_default_textures[1], g_h1_default_textures[2], g_h1_default_textures[3],
 	};
 	for (int32 i = 0; i < NUMBEROF(resources); i++)
@@ -789,6 +863,7 @@ void h1_render_shaders_dispose(void)
 	g_h1_chicago_shader = NULL;
 	g_h1_water_shader = NULL;
 	g_h1_glass_shader = NULL;
+	g_h1_meter_shader = NULL;
 	csmemset(g_h1_default_textures, 0, sizeof(g_h1_default_textures));
 	return;
 }
@@ -1201,9 +1276,18 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 		const h1_soso* shader = (const h1_soso*)definition;
 		device->SetPixelShader(g_h1_model_shader);
 		device->SetTexture(0, h1_texture_or_default(shader->base_map, 0));
+		// missing maps are the default 2d bitmaps of their usage: multipurpose white, detail gray, reflection black
 		IDirect3DBaseTexture9* multipurpose = h1_bitmap_texture_get(shader->multipurpose_map);
-		device->SetTexture(1, multipurpose ? multipurpose : g_h1_default_textures[2]);
-		device->SetTexture(2, h1_texture_or_default(shader->detail_map, shader->detail_function == 1 ? 0 : 1));
+		device->SetTexture(1, multipurpose ? multipurpose : g_h1_default_textures[0]);
+		device->SetTexture(2, h1_texture_or_default(shader->detail_map, 1));
+		IDirect3DBaseTexture9* reflection = h1_bitmap_texture_get(shader->reflection_cube_map);
+		device->SetTexture(4, reflection);
+		device->SetSamplerState(4, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+		device->SetSamplerState(4, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+		device->SetSamplerState(4, D3DSAMP_ADDRESSW, D3DTADDRESS_CLAMP);
+		device->SetSamplerState(4, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+		device->SetSamplerState(4, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+		device->SetSamplerState(4, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR);
 		for (DWORD stage = 0; stage < 3; stage++)
 		{
 			h1_set_sampler_addressing(stage, false, false, false);
@@ -1223,8 +1307,8 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 		{
 			(real32)shader->detail_function,
 			TEST_BIT(shader->flags_3, 2) ? 0.f : 1.f,
-			multipurpose ? 1.f : 0.f,
-			shader->power > 0.f ? 1.f : 0.f,
+			(real32)shader->detail_mask,
+			TEST_BIT(shader->flags_3, 0) ? 1.f : 0.f,	// detail after reflection
 		};
 		s_h1_render_lighting default_lighting = { { 0.4f, 0.4f, 0.4f }, { -0.577f, -0.577f, -0.577f }, { 0.8f, 0.8f, 0.8f }, { 0.f, 0.f, 1.f }, { 0.2f, 0.2f, 0.25f } };
 		const s_h1_render_lighting* light = lighting ? lighting : &default_lighting;
@@ -1239,6 +1323,46 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 		device->SetPixelShaderConstantF(0, map_scale, 1);
 		device->SetPixelShaderConstantF(1, modes, 1);
 		device->SetPixelShaderConstantF(2, &constants[0][0], 5);
+
+		// self-illumination: the animation color (no random phase), scaled by its color source
+		const real32 animation = shader->animation_period != 0.f ? h1_periodic_function(shader->animation_function, game_time / shader->animation_period) : 0.f;
+		real_rgb_color self_illumination =
+		{
+			shader->animation_color_lower_bound.red + (shader->animation_color_upper_bound.red - shader->animation_color_lower_bound.red) * animation,
+			shader->animation_color_lower_bound.green + (shader->animation_color_upper_bound.green - shader->animation_color_lower_bound.green) * animation,
+			shader->animation_color_lower_bound.blue + (shader->animation_color_upper_bound.blue - shader->animation_color_lower_bound.blue) * animation,
+		};
+		if (shader->color_source > 0 && shader->color_source <= 4 && g_h1_object_change_colors)
+		{
+			const real_rgb_color* external = &g_h1_object_change_colors[shader->color_source - 1];
+			self_illumination.red *= external->red;
+			self_illumination.green *= external->green;
+			self_illumination.blue *= external->blue;
+		}
+		const real_rgb_color change = shader->change_color_source > 0 && shader->change_color_source <= 4 && g_h1_object_change_colors ?
+			g_h1_object_change_colors[shader->change_color_source - 1] : real_rgb_color{ 1.f, 1.f, 1.f };
+
+		// the reflection fades out past its cutoff distance from the camera
+		real32 reflection_fraction = 1.f;
+		if (shader->reflection_cutoff_distance != 0.f && g_h1_fog_context_has_centroid)
+		{
+			const s_frame* frame = global_window_parameters_get();
+			const real_vector3d to_model = { g_h1_fog_context_centroid.x - frame->camera.point.x, g_h1_fog_context_centroid.y - frame->camera.point.y, g_h1_fog_context_centroid.z - frame->camera.point.z };
+			const real32 distance = to_model.i * frame->camera.forward.i + to_model.j * frame->camera.forward.j + to_model.k * frame->camera.forward.k;
+			const real32 range = shader->reflection_falloff_distance - shader->reflection_cutoff_distance;
+			reflection_fraction = range != 0.f ? PIN((distance - shader->reflection_cutoff_distance) / range, 0.f, 1.f) : 1.f;
+		}
+		const real_point3d camera_point = global_window_parameters_get()->camera.point;
+		const real32 model_constants[6][4] =
+		{
+			{ self_illumination.red, self_illumination.green, self_illumination.blue, 0.f },
+			{ change.red, change.green, change.blue, 0.f },
+			{ shader->perpendicular_tint_color.red, shader->perpendicular_tint_color.green, shader->perpendicular_tint_color.blue, shader->perpendicular_brightness * reflection_fraction },
+			{ shader->parallel_tint_color.red, shader->parallel_tint_color.green, shader->parallel_tint_color.blue, shader->parallel_brightness * reflection_fraction },
+			{ reflection ? 1.f : 0.f, 0.f, 0.f, 0.f },
+			{ camera_point.x, camera_point.y, camera_point.z, 1.f },
+		};
+		device->SetPixelShaderConstantF(7, &model_constants[0][0], 6);
 		device->SetRenderState(D3DRS_CULLMODE, two_sided ? D3DCULL_NONE : D3DCULL_CCW);
 		return true;
 	}
@@ -1408,6 +1532,53 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 		device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
 		device->SetRenderState(D3DRS_COLORWRITEENABLE1, 0);
 		device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+		return true;
+	}
+	case 'smet':
+	{
+		const h1_smet* shader = (const h1_smet*)definition;
+		if (!g_h1_meter_shader)
+		{
+			return false;
+		}
+		// the meter's inputs are the object's function values (1 to 4: a to d), 1 without them
+		auto source_value = [](int16 source) -> real32
+		{
+			return source >= 1 && source <= 4 && g_h1_object_function_values ? g_h1_object_function_values[source - 1] : 1.f;
+		};
+		const real32 meter_brightness = source_value(shader->meter_brightness_source);
+		const real32 flash_brightness = source_value(shader->flash_brightness_source);
+		const real32 meter_value = source_value(shader->value_source);
+		const real32 gradient_value = source_value(shader->gradient_source);
+		const real32 flash_extension = source_value(shader->flash_extension_source);
+		const real32 flash_alpha = 1.f / MAX(gradient_value * 8.f, 1.f);
+		// flags: decal, two sided, flash color is negative, tint mode 2, unfiltered
+		const bool tint_mode_2 = TEST_BIT(shader->flags_3, 3);
+		const real32 constants[5][4] =
+		{
+			{ flash_brightness * shader->flash_color.red, flash_brightness * shader->flash_color.green, flash_brightness * shader->flash_color.blue, flash_extension },
+			{ shader->gradient_minimum_color.red, shader->gradient_minimum_color.green, shader->gradient_minimum_color.blue, meter_value },
+			{ shader->gradient_maximum_color.red, shader->gradient_maximum_color.green, shader->gradient_maximum_color.blue, flash_alpha },
+			{ shader->background_color.red, shader->background_color.green, shader->background_color.blue, tint_mode_2 ? shader->background_transparency : 0.f },
+			{ TEST_BIT(shader->flags_3, 2) ? 1.f : 0.f, tint_mode_2 ? 1.f : meter_brightness, 0.f, 0.f },
+		};
+		device->SetPixelShader(g_h1_meter_shader);
+		device->SetPixelShaderConstantF(0, &constants[0][0], 5);
+		device->SetTexture(0, h1_texture_or_default(shader->map, 0));
+		h1_set_sampler_addressing(0, false, false, TEST_BIT(shader->flags_3, 4));
+		device->SetRenderState(D3DRS_CULLMODE, TEST_BIT(shader->flags_3, 1) ? D3DCULL_NONE : D3DCULL_CCW);
+		device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+		device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+		device->SetRenderState(D3DRS_COLORWRITEENABLE, D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
+		device->SetRenderState(D3DRS_COLORWRITEENABLE1, 0);
+		device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+		// the frame buffer is tinted: by the tint color, or (tint mode 2) by the meter's alpha with the tint on the meter
+		const real32 tint_scale = tint_mode_2 ? meter_brightness : 1.f;
+		const D3DCOLOR tint = D3DCOLOR_COLORVALUE(PIN(shader->tint_color_2.red * tint_scale, 0.f, 1.f), PIN(shader->tint_color_2.green * tint_scale, 0.f, 1.f),
+			PIN(shader->tint_color_2.blue * tint_scale, 0.f, 1.f), 1.f);
+		device->SetRenderState(D3DRS_BLENDFACTOR, tint);
+		device->SetRenderState(D3DRS_SRCBLEND, tint_mode_2 ? D3DBLEND_BLENDFACTOR : D3DBLEND_ONE);
+		device->SetRenderState(D3DRS_DESTBLEND, tint_mode_2 ? D3DBLEND_SRCALPHA : D3DBLEND_BLENDFACTOR);
 		return true;
 	}
 	case 'swat':

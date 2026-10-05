@@ -174,6 +174,7 @@ void h1_render_structure_transparent(void)
 	h1_objects_render(_h1_render_pass_transparent, game_time);
 	h1_effects_render();
 	h1_first_person_render(game_time);
+	h1_effects_render_lens_flares();
 
 	h1_render_end();
 	return;
