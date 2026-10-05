@@ -606,6 +606,54 @@ struct s_h1_particle_system
 	const char* attached_marker;
 };
 
+// light_volumes.h struct light_volume_frame
+struct s_h1_light_volume_frame
+{
+	int32 unknown0[4];
+	real32 offset_from_marker;
+	real32 offset_exponent;
+	real32 length;
+	int32 unknown1[8];
+	real32 radius_hither;
+	real32 radius_yon;
+	real32 radius_exponent;
+	int32 unknown48[8];
+	real_argb_color color_hither;
+	real_argb_color color_yon;
+	real32 color_exponent;
+	real32 brightness_exponent;
+	int32 unknown90[8];
+};
+static_assert(sizeof(s_h1_light_volume_frame) == 0xB0);
+
+// light_volumes.h struct light_volume_definition ('mgs2')
+struct s_h1_light_volume_definition
+{
+	char attachment_marker[32];
+	int16 type;
+	uint16 flags;
+	int32 unknown24[4];
+	real32 near_fade_distance;
+	real32 far_fade_distance;
+	real32 perpendicular_brightness_scale;
+	real32 parallel_brightness_scale;
+	int16 brightness_scale_source;
+	uint16 pad46;
+	int32 unknown48[5];
+	h1_tag_reference map;
+	int16 sequence_index;
+	int16 count;
+	int32 unknown70[18];
+	int16 frame_animation_source;
+	uint16 padBA;
+	int32 unknownBC[9];
+	int32 unknownE0[16];
+	h1_tag_block<s_h1_light_volume_frame> frames;
+	int32 unknown12C[8];
+};
+static_assert(sizeof(s_h1_light_volume_definition) == 0x14C);
+static_assert(offsetof(s_h1_light_volume_definition, frames) == 0x120);
+
 // a sprite queued for drawing (render_sprite.c build_sprite), drawn in batches of one shader and bitmap
 struct s_h1_sprite
 {
@@ -751,6 +799,8 @@ static void h1_sprite_build_rotational(const s_h1_shader_effect* shader, datum b
 static void h1_particles_build_sprites(void);
 static void h1_particle_systems_build_sprites(void);
 static void h1_sprites_draw(void);
+static void h1_light_volumes_render(void);
+static void h1_light_volume_render(datum object_index, const object_datum* object, datum definition_index);
 static void h1_particle_system_new(datum definition_index, const real_point3d* position, const real_vector3d* velocity, const real_argb_color* color, real32 scale);
 static bool h1_particle_system_update(s_h1_particle_system* system, real32 dt);
 static int32 h1_particle_system_particle_count(void);
@@ -1025,6 +1075,7 @@ void h1_effects_render(void)
 		h1_contrails_build_sprites();
 		h1_sprites_draw();
 	}
+	h1_light_volumes_render();
 	return;
 }
 
@@ -4661,5 +4712,174 @@ void h1_effects_object_attachments_new(datum object_index)
 		created.seen = true;
 		g_h1_effects.attachments.push_back(std::move(created));
 	}
+	return;
+}
+
+/* light volumes */
+
+// widgets.c widgets_render and light_volumes.c light_volume_submit: the light volume widgets of the halo 1 objects (a plasma bolt, a
+// rocket's glow, a flashlight)
+static void h1_light_volumes_render(void)
+{
+	object_iterator iterator;
+	object_iterator_new(&iterator, _object_mask_all, 0);
+	while (const object_datum* object = (const object_datum*)object_iterator_next(&iterator))
+	{
+		const datum h1_definition_index = h1_objects_h1_definition_get(object->definition_index);
+		// every halo 1 object definition starts with the object fields, the widgets are at 0x14C
+		const h1_proj* definition = h1_definition_index != NONE ? (const h1_proj*)g_h1_cache_file->tag_get('obje', h1_definition_index) : NULL;
+		if (!definition || definition->widgets.count <= 0)
+		{
+			continue;
+		}
+		for (int32 i = 0; i < definition->widgets.count; i++)
+		{
+			const h1_proj_widgets* widget = g_h1_cache_file->block_get(definition->widgets, i);
+			if (widget->reference.group_tag == 'mgs2' && widget->reference.index != NONE)
+			{
+				h1_light_volume_render(iterator.index, object, widget->reference.index);
+			}
+		}
+	}
+	return;
+}
+
+// x to the exponent (light_volumes.c pow1)
+static real32 h1_light_volume_pow1(real32 value, real32 exponent)
+{
+	return exponent != 1.f ? powf(value, exponent) : value;
+}
+
+// light_volumes.c light_volume_render: a line of glow sprites along the marker's forward, their radius, color and brightness from
+// the hither end to the yon end (rasterizer_widget_draw_sprite3d: camera facing squares, texture times tint, added by its alpha)
+static void h1_light_volume_render(datum object_index, const object_datum* object, datum definition_index)
+{
+	const s_h1_light_volume_definition* definition = (const s_h1_light_volume_definition*)g_h1_cache_file->tag_get('mgs2', definition_index);
+	if (!definition || definition->count <= 0 || definition->frames.count <= 0)
+	{
+		return;
+	}
+	// light_volume_interpolate_frames: halo 1 blends the first frame with itself
+	const s_h1_light_volume_frame* frame = g_h1_cache_file->block_get(definition->frames, 0);
+
+	// the marker, the object's origin when it has none of the name
+	real_point3d marker_position = object->object.position;
+	real_vector3d marker_forward = object->object.forward;
+	object_marker marker;
+	if (definition->attachment_marker[0] && h1_object_markers_get(object_index, definition->attachment_marker, &marker, 1) == 1)
+	{
+		marker_position = marker.matrix.position;
+		marker_forward = marker.matrix.vectors.forward;
+	}
+
+	const s_frame* window = global_window_parameters_get();
+	const render_camera* camera = &window->camera;
+	const real_vector3d eye_to_marker = { marker_position.x - camera->point.x, marker_position.y - camera->point.y, marker_position.z - camera->point.z };
+	const real32 distance = h1_dot(&camera->forward, &eye_to_marker);
+	// light_volume_submit
+	if (definition->far_fade_distance != 0.f && distance >= definition->far_fade_distance)
+	{
+		return;
+	}
+	real32 brightness = 1.f;
+	if (definition->far_fade_distance > 0.f)
+	{
+		brightness *= PIN((distance - definition->far_fade_distance) / (definition->near_fade_distance - definition->far_fade_distance), 0.f, 1.f);
+	}
+	const real32 parallel_factor = fabsf(h1_dot(&camera->forward, &marker_forward));
+	brightness *= PIN((1.f - parallel_factor) * definition->perpendicular_brightness_scale + parallel_factor * definition->parallel_brightness_scale, 0.f, 1.f);
+	real32 external_scale = 1.f;
+	if (definition->brightness_scale_source > 0 && h1_object_function_value_get(object_index, definition->brightness_scale_source - 1, &external_scale))
+	{
+		brightness *= external_scale;
+	}
+	if (brightness <= 0.f || (frame->color_hither.alpha <= 0.f && frame->color_yon.alpha <= 0.f) || (frame->radius_hither <= 0.f && frame->radius_yon <= 0.f))
+	{
+		return;
+	}
+
+	// rasterizer_widget_set_texture: the definition's bitmap, else the globals' glow
+	datum bitmap_tag_index = definition->map.index;
+	if (bitmap_tag_index == NONE)
+	{
+		const datum globals_index = g_h1_cache_file->tag_find('matg', "globals\\globals");
+		const h1_matg* globals = globals_index != NONE ? (const h1_matg*)g_h1_cache_file->tag_get('matg', globals_index) : NULL;
+		const h1_matg_rasterizer_data* rasterizer_data = globals && globals->rasterizer_data.count > 0 ? g_h1_cache_file->block_get(globals->rasterizer_data, 0) : NULL;
+		bitmap_tag_index = rasterizer_data ? rasterizer_data->glow.index : NONE;
+	}
+	IDirect3DBaseTexture9* texture = bitmap_tag_index != NONE ? h1_bitmap_texture_get(bitmap_tag_index, definition->sequence_index) : NULL;
+	if (!texture)
+	{
+		return;
+	}
+
+	const real_vector3d camera_left = h1_cross(&camera->up, &camera->forward);
+	static const real32 k_corners[4][2] = { { -1.f, 1.f }, { 1.f, 1.f }, { 1.f, -1.f }, { -1.f, -1.f } };
+	g_h1_effects.vertices.clear();
+	const int16 count = definition->count;
+	for (int16 sprite_index = 0; sprite_index < count; sprite_index++)
+	{
+		const real32 offset_fraction = h1_light_volume_pow1(count > 1 ? (real32)sprite_index / (real32)(count - 1) : 0.f, frame->offset_exponent);
+		const real32 radius_fraction = h1_light_volume_pow1(offset_fraction, frame->radius_exponent);
+		const real32 radius = (1.f - radius_fraction) * frame->radius_hither + frame->radius_yon * radius_fraction;
+		const real32 color_fraction = h1_light_volume_pow1(offset_fraction, frame->color_exponent);
+		const real32 brightness_fraction = h1_light_volume_pow1(offset_fraction, frame->brightness_exponent);
+		if (radius <= 0.f)
+		{
+			continue;
+		}
+		const real32 along = offset_fraction * frame->length + frame->offset_from_marker;
+		const real_point3d position =
+		{
+			marker_position.x + marker_forward.i * along,
+			marker_position.y + marker_forward.j * along,
+			marker_position.z + marker_forward.k * along
+		};
+		// rgb_colors_interpolate (linearly, as every halo 1 light volume does)
+		const real_rgb_color color =
+		{
+			(1.f - color_fraction) * frame->color_hither.red + frame->color_yon.red * color_fraction,
+			(1.f - color_fraction) * frame->color_hither.green + frame->color_yon.green * color_fraction,
+			(1.f - color_fraction) * frame->color_hither.blue + frame->color_yon.blue * color_fraction
+		};
+		const real32 alpha = ((1.f - brightness_fraction) * frame->color_hither.alpha + frame->color_yon.alpha * brightness_fraction) * brightness;
+		s_h1_particle_vertex quad[4];
+		for (int32 k = 0; k < 4; k++)
+		{
+			const real32 right = k_corners[k][0] * radius;
+			const real32 up = k_corners[k][1] * radius;
+			s_h1_particle_vertex* out = &quad[k];
+			out->position[0] = position.x - camera_left.i * right + camera->up.i * up;
+			out->position[1] = position.y - camera_left.j * right + camera->up.j * up;
+			out->position[2] = position.z - camera_left.k * right + camera->up.k * up;
+			out->color[0] = color.red;
+			out->color[1] = color.green;
+			out->color[2] = color.blue;
+			out->texcoord[0] = (k_corners[k][0] + 1.f) * 0.5f;
+			out->texcoord[1] = (1.f - k_corners[k][1]) * 0.5f;
+			out->alpha[0] = PIN(alpha, 0.f, 1.f);
+			out->alpha[1] = 0.f;
+		}
+		const s_h1_particle_vertex triangles[6] = { quad[0], quad[1], quad[2], quad[0], quad[2], quad[3] };
+		g_h1_effects.vertices.insert(g_h1_effects.vertices.end(), triangles, triangles + 6);
+	}
+	if (g_h1_effects.vertices.empty())
+	{
+		return;
+	}
+
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	h1_render_set_camera_constants(NULL, false);
+	device->SetVertexDeclaration(h1_render_vertex_declaration());
+	device->SetVertexShader(h1_render_vertex_shader());
+	if (h1_render_particle_shader_bind(0, false, 0, texture, NULL, 0, _h1_particle_shader_mode_lens_flare))
+	{
+		// (depth tested, not written)
+		device->SetRenderState(D3DRS_ZENABLE, D3DZB_TRUE);
+		device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+		device->DrawPrimitiveUP(D3DPT_TRIANGLELIST, (UINT)(g_h1_effects.vertices.size() / 3), g_h1_effects.vertices.data(), sizeof(s_h1_particle_vertex));
+		h1_render_shader_unbind();
+	}
+	g_h1_effects.vertices.clear();
 	return;
 }
