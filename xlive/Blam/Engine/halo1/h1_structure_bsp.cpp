@@ -182,8 +182,9 @@ bool h1_structure_bsp_build(int32 h1_bsp_index, datum h2_structure_bsp_index, da
 	{
 		const h1_sbsp_cluster_portals* h1_portal = g_h1_cache_file->block_get(source->cluster_portals, i);
 		cluster_portal* portal = &portals[i];
-		portal->back_cluster = h1_portal->back_cluster;
-		portal->front_cluster = h1_portal->front_cluster;
+		// the halo 2 portal keeps the halo 1 field order (first cluster first), whatever the names say
+		portal->back_cluster = h1_portal->front_cluster;
+		portal->front_cluster = h1_portal->back_cluster;
 		portal->plane_index = h1_portal->plane_index;
 		portal->centroid = h1_portal->centroid;
 		portal->bounding_radius = h1_portal->bounding_radius;

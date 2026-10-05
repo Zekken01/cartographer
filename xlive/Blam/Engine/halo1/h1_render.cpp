@@ -118,6 +118,7 @@ void h1_render_structure_opaque(void)
 		h1_render_structure_pass(_h1_render_pass_opaque);
 	}
 
+
 	const real32 game_time = h1_render_game_time();
 	for (const s_h1_scenery_instance& instance : g_h1_render.scenery)
 	{
