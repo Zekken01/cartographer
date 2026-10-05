@@ -7,7 +7,7 @@
 */
 
 // writes the new tag data into the given (existing) sbsp and ltmp tag instances
-bool h1_structure_bsp_build(int32 h1_bsp_index, datum h2_structure_bsp_index, datum h2_lightmap_index);
+bool h1_structure_bsp_build(int32 h1_bsp_index, datum h2_structure_bsp_index, datum h2_lightmap_index, datum host_structure_bsp_index, datum host_lightmap_index);
 
 // Halo 2 global material index for a Halo 1 material type
 int16 h1_material_type_to_global_material(int16 h1_material_type);

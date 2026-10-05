@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_fog.h"
+#include "h1_map_loader.h"
 
 #include "h1_bitmaps.h"
 #include "h1_cache_file.h"
@@ -95,7 +96,7 @@ void h1_fog_update(void)
 	g_h1_fog_camera_forward = camera->forward;
 
 	// the camera's cluster and the sky it sees (structure_visibility.c structure_visibility_find_camera)
-	const h1_sbsp* bsp = (const h1_sbsp*)g_h1_cache_file->tag_get('sbsp', g_h1_cache_file->structure_bsp_tag_get(0));
+	const h1_sbsp* bsp = (const h1_sbsp*)g_h1_cache_file->tag_get('sbsp', g_h1_cache_file->structure_bsp_tag_get(h1_maps_structure_bsp_index()));
 	const int16 cluster_index = bsp && VALID_INDEX(render->cluster_index, bsp->clusters.count) ? (int16)render->cluster_index : NONE;
 	const h1_sbsp_clusters* cluster = cluster_index != NONE ? g_h1_cache_file->block_get(bsp->clusters, cluster_index) : NULL;
 	const int16 visible_sky_index = cluster ? cluster->sky : NONE;
@@ -323,7 +324,7 @@ static void h1_fog_planar_get(int16 cluster_index)
 	g_h1_fog.planar_mode = _h1_planar_fog_mode_off;
 	g_h1_fog.fog_definition_flags = 0;
 
-	const h1_sbsp* bsp = (const h1_sbsp*)g_h1_cache_file->tag_get('sbsp', g_h1_cache_file->structure_bsp_tag_get(0));
+	const h1_sbsp* bsp = (const h1_sbsp*)g_h1_cache_file->tag_get('sbsp', g_h1_cache_file->structure_bsp_tag_get(h1_maps_structure_bsp_index()));
 	const h1_sbsp_clusters* cluster = bsp && cluster_index != NONE ? g_h1_cache_file->block_get(bsp->clusters, cluster_index) : NULL;
 	if (!cluster || cluster->fog == NONE)
 	{

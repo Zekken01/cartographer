@@ -17,6 +17,10 @@
 #include "game/game.h"
 #include "game/game_time.h"
 #include "game/game_options.h"
+#include "game/players.h"
+#include "main/main.h"
+#include "objects/objects.h"
+#include "structures/structure_bsp_definitions.h"
 #include "main/main_game.h"
 #include "main/map_repository.h"
 #include "multithreading/synchronization.h"
@@ -233,8 +237,97 @@ bool h1_maps_scenario_tags_loaded(bool custom_map)
 	return result;
 }
 
+int16 h1_maps_structure_bsp_index(void)
+{
+	const int16 bsp_index = get_global_structure_bsp_index();
+	return g_h1_cache_file && VALID_INDEX(bsp_index, g_h1_cache_file->structure_bsp_count()) ? bsp_index : 0;
+}
+
+// the cluster of a halo 1 structure bsp a point is in (its collision bsp's leaf), NONE outside its open space
+static int32 h1_maps_structure_bsp_cluster_get(int32 bsp_index, const real_point3d* point)
+{
+	const h1_sbsp* bsp = (const h1_sbsp*)g_h1_cache_file->tag_get('sbsp', g_h1_cache_file->structure_bsp_tag_get(bsp_index));
+	const h1_sbsp_collision_bsp* collision = bsp ? g_h1_cache_file->block_get(bsp->collision_bsp, 0) : NULL;
+	if (!collision || collision->bsp3d_nodes.count <= 0 ||
+		point->x < bsp->world_bounds_x.lower || point->x > bsp->world_bounds_x.upper ||
+		point->y < bsp->world_bounds_y.lower || point->y > bsp->world_bounds_y.upper ||
+		point->z < bsp->world_bounds_z.lower || point->z > bsp->world_bounds_z.upper)
+	{
+		return NONE;
+	}
+	int32 node_index = 0;
+	for (int32 guard = 0; node_index >= 0 && guard < collision->bsp3d_nodes.count; guard++)
+	{
+		const h1_sbsp_collision_bsp_bsp3d_nodes* node = g_h1_cache_file->block_get(collision->bsp3d_nodes, node_index);
+		const h1_sbsp_collision_bsp_planes* plane = node ? g_h1_cache_file->block_get(collision->planes, node->plane) : NULL;
+		if (!plane)
+		{
+			return NONE;
+		}
+		const real32 side = plane->plane.n.i * point->x + plane->plane.n.j * point->y + plane->plane.n.k * point->z - plane->plane.d;
+		node_index = side >= 0.f ? node->front_child : node->back_child;
+	}
+	if (node_index == NONE || node_index >= 0)
+	{
+		return NONE;
+	}
+	const h1_sbsp_leaves* leaf = g_h1_cache_file->block_get(bsp->leaves, node_index & 0x7FFFFFFF);
+	return leaf ? leaf->cluster : NONE;
+}
+
+// until halo 1's scripts switch the structure bsps (switch_bsp), the player's leaving the current one for another switches to it
+static void h1_maps_structure_bsp_follow_player(void)
+{
+	if (!h1_maps_active() || !g_h1_cache_file || g_h1_cache_file->structure_bsp_count() < 2 || !game_in_progress())
+	{
+		return;
+	}
+	const datum player_index = player_index_from_user_index(0);
+	const player_datum* player = player_index != NONE ? player_get(player_index) : NULL;
+	if (!player || player->unit_index == NONE || !object_try_and_get(player->unit_index))
+	{
+		return;
+	}
+	real_point3d position;
+	object_get_origin(player->unit_index, &position, false);
+	position.z += 0.3f;
+	const int16 current = h1_maps_structure_bsp_index();
+	if (h1_maps_structure_bsp_cluster_get(current, &position) != NONE)
+	{
+		return;
+	}
+	for (int16 bsp_index = 0; bsp_index < g_h1_cache_file->structure_bsp_count(); bsp_index++)
+	{
+		if (bsp_index != current && h1_maps_structure_bsp_cluster_get(bsp_index, &position) != NONE)
+		{
+			h1_log("maps: the player left structure bsp %d for %d", current, bsp_index);
+			main_switch_structure_bsp_request(bsp_index);
+			break;
+		}
+	}
+	// (the current structure bsp's addresses again)
+	g_h1_cache_file->tag_get('sbsp', g_h1_cache_file->structure_bsp_tag_get(current));
+	return;
+}
+
 void h1_maps_update(void)
 {
+	// the structure bsp's sounds (its background sounds and clusters) when it switches
+	static int16 s_sound_bsp_index = NONE;
+	if (h1_maps_active() && g_h1_cache_file)
+	{
+		const int16 bsp_index = h1_maps_structure_bsp_index();
+		if (s_sound_bsp_index != NONE && s_sound_bsp_index != bsp_index)
+		{
+			h1_sound_begin();
+		}
+		s_sound_bsp_index = bsp_index;
+	}
+	else
+	{
+		s_sound_bsp_index = NONE;
+	}
+	h1_maps_structure_bsp_follow_player();
 	h1_sound_update();
 
 	// a halo 2 campaign game starts faded to black for its scripts to fade in; until halo 1's scripts run, the level fades in once

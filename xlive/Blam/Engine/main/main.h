@@ -17,6 +17,8 @@ void main_revert_map_scripting(void);
 void main_save_and_exit(void);
 
 void __cdecl main_switch_structure_bsp(void);
+// switch_bsp: the main loop switches to the structure bsp at its next iteration
+void main_switch_structure_bsp_request(int16 bsp_index);
 
 void __cdecl main_loop_pregame(int32 a1, int32 a2);
 

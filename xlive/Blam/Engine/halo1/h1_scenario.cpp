@@ -217,16 +217,36 @@ static bool h1_scenario_build_structure_bsps(scenario* h2_scenario, const h1_scn
 		return false;
 	}
 
-	// multiplayer maps have a single structure bsp, it replaces the host's
-	scenario_structure_bsp_reference* reference = TAG_BLOCK_GET_ELEMENT(&h2_scenario->structure_bsp_references, 0, scenario_structure_bsp_reference);
-	h2_scenario->structure_bsp_references.count = 1;
-	if (!h1_structure_bsp_build(0, reference->structure_bsp.index, reference->structure_lightmap.index))
+	// every halo 1 structure bsp: the first replaces the host's, the others are new structure bsp and lightmap tags built from the
+	// host's (multiplayer maps have one, campaign maps several)
+	const scenario_structure_bsp_reference host_reference = *TAG_BLOCK_GET_ELEMENT(&h2_scenario->structure_bsp_references, 0, scenario_structure_bsp_reference);
+	const datum host_structure_bsp_index = host_reference.structure_bsp.index;
+	const datum host_lightmap_index = host_reference.structure_lightmap.index;
+	const int32 bsp_count = MIN(g_h1_cache_file->structure_bsp_count(), (int32)k_h1_maximum_structure_bsps);
+	scenario_structure_bsp_reference* references = h1_runtime_block_new<scenario_structure_bsp_reference>(&h2_scenario->structure_bsp_references, bsp_count);
+	for (int32 bsp_index = 0; bsp_index < bsp_count; bsp_index++)
 	{
-		return false;
+		scenario_structure_bsp_reference* reference = &references[bsp_index];
+		*reference = host_reference;
+		if (bsp_index > 0)
+		{
+			char name[256];
+			sprintf_s(name, "halo1\\%s", g_h1_cache_file->tag_name_get(g_h1_cache_file->structure_bsp_tag_get(bsp_index)));
+			void* data;
+			reference->structure_bsp.index = h1_runtime_tag_new('sbsp', name, 16, &data);
+			reference->structure_lightmap.index = h1_runtime_tag_new('ltmp', name, 16, &data);
+			if (reference->structure_bsp.index == NONE || reference->structure_lightmap.index == NONE)
+			{
+				h1_log("scenario: no tag slots for structure bsp %d", bsp_index);
+				return false;
+			}
+		}
+		if (!h1_structure_bsp_build(bsp_index, reference->structure_bsp.index, reference->structure_lightmap.index, host_structure_bsp_index, host_lightmap_index))
+		{
+			return false;
+		}
 	}
-
-	structure_bsp* bsp = (structure_bsp*)tag_get('sbsp', reference->structure_bsp.index);
-	const int32 cluster_count = bsp->clusters.count;
+	h1_log("scenario: %d structure bsps", bsp_count);
 
 	// halo 1 sky fog becomes halo 2 atmospheric fog: the outdoor fog for clusters that see a sky, the indoor fog for the rest
 	bool outdoor_fog = false;
@@ -253,15 +273,19 @@ static bool h1_scenario_build_structure_bsps(scenario* h2_scenario, const h1_scn
 		}
 		outdoor_fog = true;
 
-		const h1_sbsp* h1_bsp = (const h1_sbsp*)g_h1_cache_file->tag_get('sbsp', g_h1_cache_file->structure_bsp_tag_get(0));
-		for (int32 i = 0; i < cluster_count; i++)
+		for (int32 bsp_index = 0; bsp_index < bsp_count; bsp_index++)
 		{
-			const h1_sbsp_clusters* h1_cluster = g_h1_cache_file->block_get(h1_bsp->clusters, i);
-			structure_cluster* cluster = (structure_cluster*)tag_block_get_element_with_size(&bsp->clusters, i, sizeof(structure_cluster));
-			const bool sees_sky = h1_cluster && h1_cluster->sky != NONE;
-			if (sees_sky ? has_outdoor_fog : has_indoor_fog)
+			structure_bsp* bsp = (structure_bsp*)tag_get('sbsp', references[bsp_index].structure_bsp.index);
+			const h1_sbsp* h1_bsp = (const h1_sbsp*)g_h1_cache_file->tag_get('sbsp', g_h1_cache_file->structure_bsp_tag_get(bsp_index));
+			for (int32 i = 0; i < bsp->clusters.count; i++)
 			{
-				cluster->scenario_atmospheric_fog_index = sees_sky ? 0 : 1;
+				const h1_sbsp_clusters* h1_cluster = g_h1_cache_file->block_get(h1_bsp->clusters, i);
+				structure_cluster* cluster = (structure_cluster*)tag_block_get_element_with_size(&bsp->clusters, i, sizeof(structure_cluster));
+				const bool sees_sky = h1_cluster && h1_cluster->sky != NONE;
+				if (sees_sky ? has_outdoor_fog : has_indoor_fog)
+				{
+					cluster->scenario_atmospheric_fog_index = sees_sky ? 0 : 1;
+				}
 			}
 		}
 	}
@@ -269,8 +293,15 @@ static bool h1_scenario_build_structure_bsps(scenario* h2_scenario, const h1_scn
 	// per cluster scenario data
 	if (h2_scenario->scenario_cluster_data.count > 0)
 	{
-		h2_scenario->scenario_cluster_data.count = 1;
-		h2x_scnr_scenario_cluster_data* cluster_data = TAG_BLOCK_GET_ELEMENT(&h2_scenario->scenario_cluster_data, 0, h2x_scnr_scenario_cluster_data);
+		const h2x_scnr_scenario_cluster_data host_cluster_data = *TAG_BLOCK_GET_ELEMENT(&h2_scenario->scenario_cluster_data, 0, h2x_scnr_scenario_cluster_data);
+		h2x_scnr_scenario_cluster_data* all_cluster_data = h1_runtime_block_new<h2x_scnr_scenario_cluster_data>(&h2_scenario->scenario_cluster_data, bsp_count);
+		for (int32 bsp_index = 0; bsp_index < bsp_count; bsp_index++)
+		{
+		h2x_scnr_scenario_cluster_data* cluster_data = &all_cluster_data[bsp_index];
+		*cluster_data = host_cluster_data;
+		cluster_data->bsp = references[bsp_index].structure_bsp;
+		const structure_bsp* bsp = (const structure_bsp*)tag_get('sbsp', references[bsp_index].structure_bsp.index);
+		const int32 cluster_count = bsp->clusters.count;
 		h2x_scnr_scenario_cluster_data_background_sounds* sounds = h1_runtime_block_new(&cluster_data->background_sounds, cluster_count);
 		h2x_scnr_scenario_cluster_data_sound_environments* environments = h1_runtime_block_new(&cluster_data->sound_environments, cluster_count);
 		h2x_scnr_scenario_cluster_data_cluster_centroids* centroids = h1_runtime_block_new(&cluster_data->cluster_centroids, cluster_count);
@@ -286,6 +317,7 @@ static bool h1_scenario_build_structure_bsps(scenario* h2_scenario, const h1_scn
 			centroids[i].centroid.x = (cluster->bounds.x0 + cluster->bounds.x1) * 0.5f;
 			centroids[i].centroid.y = (cluster->bounds.y0 + cluster->bounds.y1) * 0.5f;
 			centroids[i].centroid.z = (cluster->bounds.z0 + cluster->bounds.z1) * 0.5f;
+		}
 		}
 	}
 

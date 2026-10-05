@@ -44,7 +44,8 @@ c_h1_cache_file::c_h1_cache_file(void) :
 	m_regions{},
 	m_region_count(0),
 	m_structure_bsp_tags{},
-	m_structure_bsp_count(0)
+	m_structure_bsp_count(0),
+	m_active_structure_bsp_region(NONE)
 {
 	return;
 }
@@ -195,6 +196,7 @@ bool c_h1_cache_file::open(const wchar_t* path)
 		{
 			instance->base_address = bsp_header->base_address;
 		}
+		m_structure_bsp_regions[m_structure_bsp_count] = m_region_count - 1;
 		m_structure_bsp_tags[m_structure_bsp_count++] = reference->structure_bsp.index;
 	}
 
@@ -220,12 +222,32 @@ void c_h1_cache_file::close(void)
 
 void* c_h1_cache_file::address_get(uint32 address, uint32 size) const
 {
-	for (int32 i = 0; i < m_region_count; i++)
+	// the tags, the active structure bsp, then the others
+	auto resolve = [&](int32 region_index) -> void*
 	{
-		const s_region* region = &m_regions[i];
-		if (address >= region->base_address && address - region->base_address + size <= region->size)
+		const s_region* region = &m_regions[region_index];
+		return address >= region->base_address && address - region->base_address + size <= region->size ?
+			(void*)(m_data + region->file_offset + (address - region->base_address)) : NULL;
+	};
+	if (m_region_count > 0)
+	{
+		if (void* result = resolve(0))
 		{
-			return m_data + region->file_offset + (address - region->base_address);
+			return result;
+		}
+	}
+	if (VALID_INDEX(m_active_structure_bsp_region, m_region_count))
+	{
+		if (void* result = resolve(m_active_structure_bsp_region))
+		{
+			return result;
+		}
+	}
+	for (int32 i = 1; i < m_region_count; i++)
+	{
+		if (void* result = resolve(i))
+		{
+			return result;
 		}
 	}
 	return NULL;
@@ -293,6 +315,18 @@ void* c_h1_cache_file::tag_get(uint32 group_tag, datum tag_index) const
 		return NULL;
 	}
 
+	// a structure bsp becomes the active one
+	if (instance->group_tag == 'sbsp')
+	{
+		for (int32 i = 0; i < m_structure_bsp_count; i++)
+		{
+			if (m_structure_bsp_tags[i] == tag_index)
+			{
+				m_active_structure_bsp_region = m_structure_bsp_regions[i];
+				break;
+			}
+		}
+	}
 	return address_get(instance->base_address);
 }
 

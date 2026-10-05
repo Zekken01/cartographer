@@ -198,7 +198,7 @@ void h1_sound_begin(void)
 	g_h1_sound.listener_valid = false;
 	QueryPerformanceCounter(&g_h1_sound.last_update);
 
-	const datum bsp_index = g_h1_cache_file->structure_bsp_tag_get(0);
+	const datum bsp_index = g_h1_cache_file->structure_bsp_tag_get(h1_maps_structure_bsp_index());
 	g_h1_sound.structure_bsp = bsp_index != NONE ? (const h1_sbsp*)g_h1_cache_file->tag_get('sbsp', bsp_index) : NULL;
 	if (!g_h1_sound.structure_bsp)
 	{

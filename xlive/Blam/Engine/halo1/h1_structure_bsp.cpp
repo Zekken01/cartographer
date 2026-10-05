@@ -72,7 +72,7 @@ int16 h1_material_type_to_global_material(int16 h1_material_type)
 		0;
 }
 
-bool h1_structure_bsp_build(int32 h1_bsp_index, datum h2_structure_bsp_index, datum h2_lightmap_index)
+bool h1_structure_bsp_build(int32 h1_bsp_index, datum h2_structure_bsp_index, datum h2_lightmap_index, datum host_structure_bsp_index, datum host_lightmap_index)
 {
 	const h1_sbsp* source = (const h1_sbsp*)g_h1_cache_file->tag_get('sbsp', g_h1_cache_file->structure_bsp_tag_get(h1_bsp_index));
 	if (!source)
@@ -82,7 +82,8 @@ bool h1_structure_bsp_build(int32 h1_bsp_index, datum h2_structure_bsp_index, da
 	}
 
 	cache_file_tag_instance* bsp_instance = cache_get_tag_instance(h2_structure_bsp_index);
-	const structure_bsp* host_bsp = (const structure_bsp*)tag_get('sbsp', h2_structure_bsp_index);
+	// the host map's structure bsp and lightmap are the templates of the blocks halo 1 has nothing for
+	const structure_bsp* host_bsp = (const structure_bsp*)tag_get('sbsp', host_structure_bsp_index);
 
 	uint32 bsp_offset;
 	structure_bsp* bsp = (structure_bsp*)h1_runtime_allocate(sizeof(structure_bsp), &bsp_offset);
@@ -321,7 +322,7 @@ bool h1_structure_bsp_build(int32 h1_bsp_index, datum h2_structure_bsp_index, da
 	// structure lightmap: a single lightmap group without geometry
 	{
 		cache_file_tag_instance* lightmap_instance = cache_get_tag_instance(h2_lightmap_index);
-		const h2x_ltmp* host_lightmap = (const h2x_ltmp*)tag_get('ltmp', h2_lightmap_index);
+		const h2x_ltmp* host_lightmap = (const h2x_ltmp*)tag_get('ltmp', host_lightmap_index);
 
 		uint32 lightmap_offset;
 		h2x_ltmp* lightmap = (h2x_ltmp*)h1_runtime_allocate(sizeof(h2x_ltmp), &lightmap_offset);

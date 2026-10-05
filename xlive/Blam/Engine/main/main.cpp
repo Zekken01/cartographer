@@ -191,6 +191,14 @@ void main_save_and_exit(
 	return;
 }
 
+void main_switch_structure_bsp_request(int16 bsp_index)
+{
+	s_main_globals* main_globals = main_globals_get();
+	main_globals->current_bsp_index = bsp_index;
+	main_globals->prepare_to_switch_bsp = true;
+	return;
+}
+
 void __cdecl main_switch_structure_bsp(void)
 {
 	INVOKE(0x39639, 0x0, main_switch_structure_bsp);

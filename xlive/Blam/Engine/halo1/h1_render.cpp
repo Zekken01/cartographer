@@ -84,6 +84,7 @@ struct s_h1_render_globals
 {
 	bool initialized;
 	bool failed;
+	int16 structure_bsp_index;		// the halo 1 structure bsp the structure draws were built for
 	datum lightmap_bitmap_tag;
 	datum sky_model_index;
 	real_rgb_color sky_fog_color;
@@ -330,6 +331,25 @@ static bool h1_render_begin(void)
 		return false;
 	}
 
+	// a switched structure bsp: its draws and lighting
+	if (g_h1_render.structure_bsp_index != h1_maps_structure_bsp_index())
+	{
+		if (g_h1_render.vertex_buffer) g_h1_render.vertex_buffer->Release();
+		if (g_h1_render.index_buffer) g_h1_render.index_buffer->Release();
+		g_h1_render.vertex_buffer = NULL;
+		g_h1_render.index_buffer = NULL;
+		g_h1_render.draws.clear();
+		g_h1_render.lighting_triangles.clear();
+		g_h1_render.lighting_materials.clear();
+		h1_fog_reset();
+		if (!h1_render_structure_initialize())
+		{
+			g_h1_render.failed = true;
+			g_h1_render.initialized = false;
+			return false;
+		}
+	}
+
 	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
 	g_h1_render.state_block->Capture();
 
@@ -438,7 +458,8 @@ static bool h1_render_structure_initialize(void)
 	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
 	const D3DPOOL pool = rasterizer_globals_get()->use_d3d9_ex ? D3DPOOL_DEFAULT : D3DPOOL_MANAGED;
 
-	const h1_sbsp* bsp = (const h1_sbsp*)g_h1_cache_file->tag_get('sbsp', g_h1_cache_file->structure_bsp_tag_get(0));
+	g_h1_render.structure_bsp_index = h1_maps_structure_bsp_index();
+	const h1_sbsp* bsp = (const h1_sbsp*)g_h1_cache_file->tag_get('sbsp', g_h1_cache_file->structure_bsp_tag_get(g_h1_render.structure_bsp_index));
 	if (!bsp)
 	{
 		h1_log("render: no structure bsp");

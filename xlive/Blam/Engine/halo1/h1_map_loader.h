@@ -37,3 +37,6 @@ bool h1_maps_scenario_tags_loaded(bool custom_map);
 
 // called every main loop iteration
 void h1_maps_update(void);
+
+// the halo 1 structure bsp of halo 2's current structure bsp (they're built in the same order), 0 without one
+int16 h1_maps_structure_bsp_index(void);

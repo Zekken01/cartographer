@@ -139,7 +139,11 @@ private:
 	int32 m_region_count;
 
 	datum m_structure_bsp_tags[k_h1_maximum_structure_bsps];
+	int32 m_structure_bsp_regions[k_h1_maximum_structure_bsps];
 	int32 m_structure_bsp_count;
+	// halo 1 loads one structure bsp at a time at addresses the others share: the region of the structure bsp last looked up
+	// resolves them
+	mutable int32 m_active_structure_bsp_region;
 };
 
 /* prototypes */
