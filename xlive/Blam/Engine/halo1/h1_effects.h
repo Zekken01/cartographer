@@ -40,6 +40,11 @@ real32 h1_transition_function_evaluate(int16 function, real32 t);
 // a halo 1 effect at the markers of an object (each location at its marker), with the first person markers of the local player's
 // weapon for its first person particles
 void h1_effect_new_on_object(datum h1_effect_index, datum object_index);
+// effects.c effect_new_from_object with the effect's a and b scales, or effect_new_looping (the effect follows the object and
+// starts again until stopped): a handle for h1_effect_stop, 0 when none was made
+int32 h1_effect_new_on_object_ex(datum h1_effect_index, datum object_index, real32 scale_a, real32 scale_b, bool looping);
+// effects.c effect_stop: the effect makes no more events
+void h1_effect_stop(int32 id);
 
 // the empty halo 2 effect a halo 2 tag refers to where a halo 1 effect plays instead (built on first use)
 datum h1_effects_stub_effect_get(void);

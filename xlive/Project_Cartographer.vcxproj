@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="debug_llvm|Win32">
@@ -1177,6 +1177,7 @@
     <ClCompile Include="Blam\Engine\halo1\h1_fog.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_scenery.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_weapons.cpp" />
+    <ClCompile Include="Blam\Engine\halo1\h1_weapon_logic.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_animations.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_first_person.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_projectiles.cpp" />
@@ -2161,6 +2162,7 @@
     <ClInclude Include="Blam\Engine\halo1\h1_fog.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_scenery.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_weapons.h" />
+    <ClInclude Include="Blam\Engine\halo1\h1_weapon_logic.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_animations.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_first_person.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_projectiles.h" />

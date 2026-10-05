@@ -113,35 +113,21 @@ static const s_h1_multiplayer_weapon k_h1_multiplayer_weapons[] =
 	{ "brute_shot", "ft" },
 };
 
-/* structures */
-
-struct s_h1_weapon_state
-{
-	uint16 fire_counts[k_h1_maximum_weapon_triggers];
-	bool empty_clicked[k_h1_maximum_weapon_triggers];
-	int16 magazine_state;
-	bool seen;
-};
-
 /* globals */
 
 static std::unordered_map<datum, datum> g_h1_weapons;				// halo 2 weapon: halo 1 weapon
-static std::unordered_map<datum, s_h1_weapon_state> g_h1_weapon_states;	// by object
 
 /* prototypes */
 
 static void h1_reference_none(tag_reference* reference);
 static datum h1_damage_effect_reference(const h1_tag_reference* reference);
 static const s_h1_weapon_class* h1_weapon_class_get(const char* label);
-static void h1_weapon_effect_at_marker(datum object_index, const char* marker_name, const h1_tag_reference* effect);
-static bool h1_trigger_slow_automatic(const h1_weap_triggers* trigger);
 
 /* public code */
 
 void h1_weapons_reset(void)
 {
 	g_h1_weapons.clear();
-	g_h1_weapon_states.clear();
 	return;
 }
 
@@ -337,137 +323,9 @@ datum h1_weapon_definition_build(datum h1_weapon_index)
 		}
 	}
 
-	// halo 1 triggers are halo 2 barrels; a charging first trigger fires the second when charged (the plasma pistol)
-	const h1_weap_triggers* first_trigger = g_h1_cache_file->block_get(h1_weapon->triggers, 0);
-	const bool charging = first_trigger->charging_time > 0.f && trigger_count > 1;
-	const int32 h2_trigger_count = charging ? 1 : trigger_count;
-	h2x_weap_new_triggers* triggers = h1_runtime_block_new(&weapon->new_triggers, h2_trigger_count);
-	for (int32 i = 0; i < h2_trigger_count; i++)
-	{
-		const h1_weap_triggers* h1_trigger = g_h1_cache_file->block_get(h1_weapon->triggers, i);
-		h2x_weap_new_triggers* trigger = &triggers[i];
-		trigger->input = (int16)i;
-		trigger->primary_barrel_index = (int16)i;
-		trigger->secondary_barrel_index = NONE;
-		// slow automatic triggers latch like halo 2's shotgun and magnum, h1_weapons_update repeats them
-		trigger->behavior = TEST_BIT(h1_trigger->flags, _h1_trigger_does_not_repeat_automatically_bit) || h1_trigger_slow_automatic(h1_trigger) ?
-			(int16)_h2_trigger_behavior_latch : (int16)_h2_trigger_behavior_spew;
-		trigger->prediction = 1;
-		if (charging)
-		{
-			trigger->behavior = (int16)_h2_trigger_behavior_latch_autofire;
-			trigger->secondary_barrel_index = 1;
-			trigger->autofire_time = 0.06667f;
-			trigger->autofire_throw = 0.5f;
-			trigger->secondary_action = (int16)_h2_trigger_action_charge;
-			trigger->prediction = 2;
-		}
-		trigger->charging_time = h1_trigger->charging_time;
-		trigger->charged_time = h1_trigger->charged_time;
-		trigger->overcharged_action = h1_trigger->overcharged_action;
-		trigger->charged_illumination = h1_trigger->charged_illumination;
-		trigger->spew_time = h1_trigger->spew_time;
-		h1_reference_none(&trigger->charging_effect);
-		h1_reference_none(&trigger->charging_damage_effect);
-	}
-
-	const datum stub_effect = h1_effects_stub_effect_get();
-	h2x_weap_barrels* barrels = h1_runtime_block_new(&weapon->barrels, trigger_count);
-	for (int32 i = 0; i < trigger_count; i++)
-	{
-		const h1_weap_triggers* h1_trigger = g_h1_cache_file->block_get(h1_weapon->triggers, i);
-		h2x_weap_barrels* barrel = &barrels[i];
-
-		// tracks fired projectile, random firing effects, can fire with partial ammo, then the flags that moved
-		uint32 flags = h1_trigger->flags & 7;
-		if (TEST_BIT(h1_trigger->flags, _h1_trigger_projectiles_use_weapon_origin_bit)) flags |= FLAG(3);
-		if (TEST_BIT(h1_trigger->flags, _h1_trigger_ejects_during_chamber_bit)) flags |= FLAG(4);
-		if (TEST_BIT(h1_trigger->flags, _h1_trigger_use_error_when_unzoomed_bit)) flags |= FLAG(5);
-		if (TEST_BIT(h1_trigger->flags, _h1_trigger_projectile_vector_cannot_be_adjusted_bit)) flags |= FLAG(6);
-		if (TEST_BIT(h1_trigger->flags, _h1_trigger_projectiles_have_identical_error_bit)) flags |= FLAG(7);
-		barrel->flags = flags;
-		barrel->rounds_per_second = h1_trigger->rounds_per_second;
-		barrel->acceleration_time = h1_trigger->acceleration_time;
-		barrel->deceleration_time = h1_trigger->deceleration_time;
-		barrel->barrel_spin_scale = 1.f;
-		barrel->blurred_rate_of_fire = h1_trigger->blurred_rate_of_fire;
-		// halo 2 fires semi-automatic barrels (a halo 1 rate of fire of 0, or a trigger that doesn't repeat) one shot per pull with
-		// no rate of fire, the halo 1 rate becoming the recovery between shots
-		const bool no_rate = h1_trigger->rounds_per_second.upper <= 0.f;
-		// slow automatic triggers (the shotgun, the pistol) fire one shot per recovery like halo 2's shotgun: as a halo 2 rate of
-		// fire a tap owes the barrel a second shot that fires after the trigger is released
-		const bool semi_automatic = no_rate || h1_trigger_slow_automatic(h1_trigger) || TEST_BIT(h1_trigger->flags, _h1_trigger_does_not_repeat_automatically_bit);
-		if (semi_automatic)
-		{
-			barrel->rounds_per_second = { 0.f, 0.f };
-			// don't clear fire bit after recovering (halo 2's own semi-automatic barrels): else the held fire bit fires again
-			// when the recovery ends
-			barrel->flags |= FLAG(11);
-		}
-		barrel->shots_per_fire = semi_automatic ? short_bounds{ 1, 1 } : short_bounds{ 0, 0 };
-		barrel->fire_recovery_time = !semi_automatic ? 0.f : no_rate ? (i == 0 ? 0.05f : 0.1f) : 1.f / h1_trigger->rounds_per_second.upper;
-		barrel->soft_recovery_fraction = no_rate && i == 0 ? 1.f : 0.f;
-		// energy weapons (the plasma pistol) keep an empty halo 1 magazine that holds no rounds: no magazine for halo 2
-		const h1_weap_magazines* trigger_magazine = VALID_INDEX(h1_trigger->magazine_index, h1_weapon->magazines.count) ?
-			g_h1_cache_file->block_get(h1_weapon->magazines, h1_trigger->magazine_index) : NULL;
-		barrel->magazine_index = trigger_magazine && trigger_magazine->rounds_loaded_maximum > 0 ? h1_trigger->magazine_index : (int16)NONE;
-		barrel->rounds_per_shot = h1_trigger->rounds_per_shot;
-		barrel->minimum_rounds_loaded = h1_trigger->minimum_rounds_loaded;
-		barrel->rounds_between_tracers = h1_trigger->rounds_between_tracers;
-		barrel->optional_barrel_marker_name = _string_id_empty_string;
-		barrel->prediction_type = semi_automatic ? 2 : 1;
-		barrel->firing_noise = h1_trigger->firing_noise;
-		barrel->acceleration_time_2 = h1_trigger->acceleration_time_2;
-		barrel->deceleration_time_2 = h1_trigger->deceleration_time_2;
-		barrel->damage_error = h1_trigger->error;
-		barrel->acceleration_time_3 = h1_trigger->acceleration_time_2;
-		barrel->deceleration_time_3 = h1_trigger->deceleration_time_2;
-		// halo 1 keeps rates per tick, halo 2 per second
-		barrel->runtime_dual_error_acceleration_rate = h1_trigger->error_acceleration_rate * k_h1_ticks_per_second;
-		barrel->runtime_dual_error_deceleration_rate = h1_trigger->error_deceleration_rate * k_h1_ticks_per_second;
-		barrel->minimum_error = h1_trigger->minimum_error;
-		barrel->error_angle = h1_trigger->error_angle;
-		barrel->dual_wield_damage_scale = 1.f;
-		barrel->distribution_function = h1_trigger->distribution_function;
-		barrel->projectiles_per_shot = h1_trigger->projectiles_per_shot;
-		barrel->distribution_angle = h1_trigger->distribution_angle;
-		barrel->minimum_error_2 = h1_trigger->minimum_error;
-		barrel->error_angle_2 = h1_trigger->error_angle;
-		barrel->first_person_offset = h1_trigger->first_person_offset;
-		h1_runtime_reference_set(&barrel->projectile, projectiles[i] != NONE ? 'proj' : (tag_group)NONE, projectiles[i]);
-		h1_reference_none(&barrel->damage_effect);
-		barrel->ejection_port_recovery_time = h1_trigger->ejection_port_recovery_time;
-		barrel->illumination_recovery_time = h1_trigger->illumination_recovery_time;
-		barrel->heat_generated_per_round = h1_trigger->heat_generated_per_round;
-		barrel->age_generated_per_round = h1_trigger->age_generated_per_round;
-		barrel->overload_time = h1_trigger->overload_time;
-		barrel->illumination_recovery_rate = h1_trigger->illumination_recovery_rate * k_h1_ticks_per_second;
-		barrel->ejection_port_recovery_rate = h1_trigger->ejection_port_recovery_rate * k_h1_ticks_per_second;
-		barrel->rate_of_fire_acceleration_rate = h1_trigger->rate_of_fire_acceleration_rate * k_h1_ticks_per_second;
-		barrel->rate_of_fire_deceleration_rate = h1_trigger->rate_of_fire_deceleration_rate * k_h1_ticks_per_second;
-		barrel->error_acceleration_rate = h1_trigger->error_acceleration_rate * k_h1_ticks_per_second;
-		barrel->error_deceleration_rate = h1_trigger->error_deceleration_rate * k_h1_ticks_per_second;
-
-		// the halo 1 firing effects play in h1_weapons_update, halo 2 gets the stub and the halo 1 firing damage (camera shake)
-		const int32 effect_count = h1_trigger->firing_effects.count;
-		h2x_weap_barrels_firing_effects* effects = h1_runtime_block_new(&barrel->firing_effects, effect_count);
-		for (int32 j = 0; j < effect_count; j++)
-		{
-			const h1_weap_triggers_firing_effects* h1_effect = g_h1_cache_file->block_get(h1_trigger->firing_effects, j);
-			h2x_weap_barrels_firing_effects* effect = &effects[j];
-			effect->shot_count_lower_bound = h1_effect->shot_count_lower_bound;
-			effect->shot_count_upper_bound = h1_effect->shot_count_upper_bound;
-			h1_runtime_reference_set(&effect->firing_effect, h1_effect->firing_effect.index != NONE && stub_effect != NONE ? 'effe' : (tag_group)NONE, h1_effect->firing_effect.index != NONE ? stub_effect : NONE);
-			h1_runtime_reference_set(&effect->misfire_effect, h1_effect->misfire_effect.index != NONE && stub_effect != NONE ? 'effe' : (tag_group)NONE, h1_effect->misfire_effect.index != NONE ? stub_effect : NONE);
-			h1_runtime_reference_set(&effect->empty_effect, h1_effect->empty_effect.index != NONE && stub_effect != NONE ? 'effe' : (tag_group)NONE, h1_effect->empty_effect.index != NONE ? stub_effect : NONE);
-			const datum firing_damage = h1_damage_effect_reference(&h1_effect->firing_damage);
-			const datum misfire_damage = h1_damage_effect_reference(&h1_effect->misfire_damage);
-			const datum empty_damage = h1_damage_effect_reference(&h1_effect->empty_damage);
-			h1_runtime_reference_set(&effect->firing_damage, firing_damage != NONE ? 'jpt!' : (tag_group)NONE, firing_damage);
-			h1_runtime_reference_set(&effect->misfire_damage, misfire_damage != NONE ? 'jpt!' : (tag_group)NONE, misfire_damage);
-			h1_runtime_reference_set(&effect->empty_damage, empty_damage != NONE ? 'jpt!' : (tag_group)NONE, empty_damage);
-		}
-	}
+	// no halo 2 triggers or barrels: halo 1's weapon update fires the halo 1 triggers (h1_weapon_logic)
+	h1_runtime_block_new(&weapon->new_triggers, 0);
+	h1_runtime_block_new(&weapon->barrels, 0);
 
 	// first person: the halo 1 first person model's nodes and markers, the halo 1 first person animations (every character)
 	const h1_mode* h1_first_person_model = h1_weapon->first_person_model.index != NONE ? (const h1_mode*)g_h1_cache_file->tag_get('mode', h1_weapon->first_person_model.index) : NULL;
@@ -497,7 +355,7 @@ datum h1_weapon_definition_build(datum h1_weapon_index)
 
 	g_h1_weapons[weapon_index] = h1_weapon_index;
 	h1_objects_bind(weapon_index, h1_weapon_index);
-	h1_log("weapons: built %s (%s, %d triggers%s)", name, h1_weapon->label, trigger_count, charging ? ", charging" : "");
+	h1_log("weapons: built %s (%s, %d triggers)", name, h1_weapon->label, trigger_count);
 	return weapon_index;
 }
 
@@ -555,94 +413,12 @@ void h1_weapons_build_multiplayer(void)
 	return;
 }
 
-// weapons.c weapon firing effects: a halo 1 firing effect at the trigger's marker for every barrel shot halo 2 fires
+// per frame upkeep of the halo 1 weapons (halo 1's weapon update runs in h1_weapon_logic)
 void h1_weapons_update(void)
 {
 	if (!h1_maps_active() || !g_h1_cache_file || g_h1_weapons.empty())
 	{
 		return;
-	}
-	for (auto& entry : g_h1_weapon_states)
-	{
-		entry.second.seen = false;
-	}
-	object_iterator iterator;
-	object_iterator_new(&iterator, _object_mask_weapon, 0);
-	while (weapon_datum* weapon = (weapon_datum*)object_iterator_next(&iterator))
-	{
-		const datum h1_weapon_index = h1_weapon_h1_get(weapon->definition_index);
-		const h1_weap* h1_weapon = h1_weapon_index != NONE ? (const h1_weap*)g_h1_cache_file->tag_get('weap', h1_weapon_index) : NULL;
-		if (!h1_weapon)
-		{
-			continue;
-		}
-		const datum object_index = iterator.index;
-		auto found = g_h1_weapon_states.find(object_index);
-		if (found == g_h1_weapon_states.end())
-		{
-			s_h1_weapon_state created = {};
-			for (int32 i = 0; i < k_h1_maximum_weapon_triggers; i++)
-			{
-				created.fire_counts[i] = weapon->weapon.barrels[i].fire_count;
-			}
-			created.magazine_state = (int16)weapon->weapon.magazines[0].state;
-			found = g_h1_weapon_states.insert({ object_index, created }).first;
-		}
-		s_h1_weapon_state* state = &found->second;
-		state->seen = true;
-
-		for (int32 i = 0; i < k_h1_maximum_weapon_triggers && i < h1_weapon->triggers.count; i++)
-		{
-			const h1_weap_triggers* trigger = g_h1_cache_file->block_get(h1_weapon->triggers, i);
-			// weapons.c weapon_trigger_can_fire: a held automatic trigger fires again once its rate of fire allows. halo 2 latches
-			// the slow ones (h1_weapon_definition_build), so release the latch once the barrel has recovered (its recovery is the
-			// halo 1 rate of fire)
-			if (h1_trigger_slow_automatic(trigger) && i < k_weapon_trigger_count &&
-				weapon->weapon.barrels[i].state == _weapon_barrel_state_idle)
-			{
-				weapon->weapon.triggers[i].flags.set(_weapon_trigger_released_since_last_shot_bit, true);
-			}
-			const char* marker = i == 0 ? "primary trigger" : "secondary trigger";
-			const weapon_barrel* barrel = &weapon->weapon.barrels[i];
-			const h1_weap_triggers_firing_effects* firing_effect = trigger->firing_effects.count > 0 ?
-				g_h1_cache_file->block_get(trigger->firing_effects, MIN((int32)barrel->firing_effect_index, trigger->firing_effects.count - 1) < 0 ? 0 :
-					MIN((int32)barrel->firing_effect_index, trigger->firing_effects.count - 1)) : NULL;
-			if (barrel->fire_count != state->fire_counts[i])
-			{
-				if (firing_effect)
-				{
-					h1_weapon_effect_at_marker(object_index, marker, &firing_effect->firing_effect);
-				}
-				state->fire_counts[i] = barrel->fire_count;
-			}
-			const bool empty_clicked = barrel->flags.test(_weapon_barrel_did_empty_click_bit);
-			if (empty_clicked && !state->empty_clicked[i] && firing_effect)
-			{
-				h1_weapon_effect_at_marker(object_index, marker, &firing_effect->empty_effect);
-			}
-			state->empty_clicked[i] = empty_clicked;
-		}
-
-		// the reloading effect as a reload starts
-		const int16 magazine_state = (int16)weapon->weapon.magazines[0].state;
-		if (magazine_state != state->magazine_state && magazine_state != _magazine_idle && h1_weapon->magazines.count > 0)
-		{
-			const h1_weap_magazines* magazine = g_h1_cache_file->block_get(h1_weapon->magazines, 0);
-			if (magazine_state == _magazine_chambering)
-			{
-				h1_weapon_effect_at_marker(object_index, "", &magazine->chambering_effect);
-			}
-			else if (state->magazine_state == _magazine_idle || state->magazine_state == _magazine_unchambered)
-			{
-				h1_weapon_effect_at_marker(object_index, "", &magazine->reloading_effect);
-			}
-		}
-		state->magazine_state = magazine_state;
-	}
-
-	for (auto it = g_h1_weapon_states.begin(); it != g_h1_weapon_states.end();)
-	{
-		it = it->second.seen ? std::next(it) : g_h1_weapon_states.erase(it);
 	}
 	return;
 }
@@ -673,58 +449,4 @@ static const s_h1_weapon_class* h1_weapon_class_get(const char* label)
 }
 
 // a halo 1 effect (or sound) at the first marker of the name, the object's origin when it has none
-static void h1_weapon_effect_at_marker(datum object_index, const char* marker_name, const h1_tag_reference* effect)
-{
-	if (effect->index == NONE)
-	{
-		return;
-	}
-	const object_datum* object = (const object_datum*)object_try_and_get(object_index);
-	if (!object)
-	{
-		return;
-	}
-	real_point3d point = object->object.position;
-	real_vector3d forward = object->object.forward;
-	real_matrix4x3 first_person_marker = {};
-	if (marker_name && marker_name[0] && h1_first_person_marker_get(object_index, marker_name, &first_person_marker))
-	{
-		point = first_person_marker.position;
-		forward = first_person_marker.vectors.forward;
-	}
-	else if (marker_name && marker_name[0])
-	{
-		char name[32];
-		strncpy_s(name, marker_name, _TRUNCATE);
-		for (char* c = name; *c; c++)
-		{
-			if (*c == ' ')
-			{
-				*c = '_';
-			}
-		}
-		object_marker marker;
-		if (object_get_markers_by_string_id(object_index, string_id_find_or_add(name), &marker, 1) > 0)
-		{
-			point = marker.matrix.position;
-			forward = marker.matrix.vectors.forward;
-		}
-	}
-	if (effect->group_tag == 'snd!')
-	{
-		h1_sound_impulse(effect->index, &point, 1.f);
-	}
-	else if (effect->group_tag == 'effe')
-	{
-		// weapons.c: the effect is created on the weapon's markers (each location at its own marker)
-		h1_effect_new_on_object(effect->index, object_index);
-	}
-	return;
-}
 
-// a halo 1 automatic trigger with a slow constant rate of fire (the shotgun, the pistol)
-static bool h1_trigger_slow_automatic(const h1_weap_triggers* trigger)
-{
-	return !TEST_BIT(trigger->flags, _h1_trigger_does_not_repeat_automatically_bit) && trigger->rounds_per_second.upper > 0.f &&
-		trigger->rounds_per_second.lower == trigger->rounds_per_second.upper && trigger->rounds_per_second.upper <= 4.f;
-}

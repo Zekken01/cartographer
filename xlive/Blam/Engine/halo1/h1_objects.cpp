@@ -6,6 +6,7 @@
 #include "h1_log.h"
 #include "h1_render_shaders.h"
 #include "h1_weapons.h"
+#include "h1_weapon_logic.h"
 
 #include "items/weapons.h"
 #include "h1_render.h"
@@ -408,7 +409,7 @@ void h1_object_functions_update(datum h1_definition_index, int32 absolute_index,
 }
 
 // weapons.c weapon_export_function_values: the weapon modes fill the inputs from halo 2's weapon state
-static void h1_weapon_functions_export(const weapon_datum* weapon, datum h1_weapon_index, s_h1_object_functions* functions)
+static void h1_weapon_functions_export(const weapon_datum* weapon, datum object_index, datum h1_weapon_index, s_h1_object_functions* functions)
 {
 	const h1_weap* definition = (const h1_weap*)g_h1_cache_file->tag_get('weap', h1_weapon_index);
 	if (!definition)
@@ -474,6 +475,10 @@ static void h1_weapon_functions_export(const weapon_datum* weapon, datum h1_weap
 		case _h1_weapon_function_age:
 			value = weapon->weapon.age;
 			break;
+		case _h1_weapon_function_primary_charged:
+		case _h1_weapon_function_secondary_charged:
+			value = h1_weapon_logic_charged_fraction(object_index, (int16)trigger_index);
+			break;
 		default:
 			// charged fraction and the integrated light (halo 2 keeps the flashlight on the unit)
 			value = 0.f;
@@ -521,7 +526,7 @@ void h1_objects_update_functions(void)
 		const datum h1_weapon_index = h1_weapon_h1_get(object->definition_index);
 		if (h1_weapon_index != NONE)
 		{
-			h1_weapon_functions_export((const weapon_datum*)object, h1_weapon_index, functions);
+			h1_weapon_functions_export((const weapon_datum*)object, object_index, h1_weapon_index, functions);
 		}
 		h1_object_functions_update(binding->h1_definition_index, DATUM_INDEX_TO_ABSOLUTE_INDEX(object_index), functions);
 	}

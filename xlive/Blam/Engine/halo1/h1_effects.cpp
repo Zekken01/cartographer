@@ -258,6 +258,8 @@ struct s_h1_effect
 	bool loop;		// an object's attached effect: it stops after the last event and starts again
 	bool stopped;
 	bool first_person;	// on the local player's first person weapon: it has first person instances
+	int32 id;		// h1_effect_new_on_object_ex's handle, 0 for none
+	datum follow_object_index;	// effects.c effect_new_looping: the effect follows its object and restarts until stopped
 };
 
 struct s_h1_particle
@@ -715,6 +717,40 @@ void h1_effects_update(void)
 	h1_attachments_update(dt);
 	for (size_t i = 0; i < g_h1_effects.effects.size();)
 	{
+		s_h1_effect* effect = &g_h1_effects.effects[i];
+		if (effect->follow_object_index != NONE)
+		{
+			// effects.c effect_update of a looping effect: it follows its object and starts again at the loop start event
+			const object_datum* object = (const object_datum*)object_try_and_get(effect->follow_object_index);
+			if (!object)
+			{
+				effect->follow_object_index = NONE;
+				effect->loop = false;
+				effect->stopped = true;
+			}
+			else
+			{
+				h1_attachment_effect_build_locations(effect, effect->follow_object_index, object, "");
+				effect->velocity =
+				{
+					object->object.translational_velocity.i / k_h1_ticks_per_second,
+					object->object.translational_velocity.j / k_h1_ticks_per_second,
+					object->object.translational_velocity.k / k_h1_ticks_per_second
+				};
+				if (effect->stopped)
+				{
+					const h1_effe* definition = (const h1_effe*)g_h1_cache_file->tag_get('effe', effect->definition_index);
+					effect->stopped = false;
+					h1_effect_set_event(effect, definition && VALID_INDEX(definition->loop_start_event_index, definition->events.count) ?
+						definition->loop_start_event_index : (int16)0);
+				}
+			}
+		}
+		if (effect->stopped && !effect->loop && effect->follow_object_index == NONE && effect->id != 0)
+		{
+			g_h1_effects.effects.erase(g_h1_effects.effects.begin() + i);
+			continue;
+		}
 		if (!h1_effect_update(&g_h1_effects.effects[i], dt))
 		{
 			g_h1_effects.effects.erase(g_h1_effects.effects.begin() + i);
@@ -2658,11 +2694,18 @@ static void h1_attachment_effect_build_locations(s_h1_effect* effect, datum obje
 
 void h1_effect_new_on_object(datum h1_effect_index, datum object_index)
 {
+	h1_effect_new_on_object_ex(h1_effect_index, object_index, 1.f, 1.f, false);
+	return;
+}
+
+int32 h1_effect_new_on_object_ex(datum h1_effect_index, datum object_index, real32 scale_a, real32 scale_b, bool looping)
+{
+	static int32 s_next_id = 0;
 	const h1_effe* definition = h1_effect_index != NONE ? (const h1_effe*)g_h1_cache_file->tag_get('effe', h1_effect_index) : NULL;
 	const object_datum* object = (const object_datum*)object_try_and_get(object_index);
 	if (!definition || !object || definition->events.count <= 0 || g_h1_effects.effects.size() >= k_h1_maximum_effects)
 	{
-		return;
+		return 0;
 	}
 	s_h1_effect effect = {};
 	effect.definition_index = h1_effect_index;
@@ -2673,14 +2716,34 @@ void h1_effect_new_on_object(datum h1_effect_index, datum object_index)
 		object->object.translational_velocity.j / k_h1_ticks_per_second,
 		object->object.translational_velocity.k / k_h1_ticks_per_second
 	};
-	effect.scale_a = 1.f;
-	effect.scale_b = 1.f;
+	effect.scale_a = scale_a;
+	effect.scale_b = scale_b;
 	effect.color = { 1.f, 1.f, 1.f };
+	effect.id = ++s_next_id > 0 ? s_next_id : (s_next_id = 1);
+	effect.follow_object_index = looping ? object_index : NONE;
+	effect.loop = looping;
 	h1_attachment_effect_build_locations(&effect, object_index, object, "");
 	h1_effect_set_event(&effect, 0);
-	if (h1_effect_update(&effect, 0.f))
+	if (!h1_effect_update(&effect, 0.f))
 	{
-		g_h1_effects.effects.push_back(std::move(effect));
+		return 0;
+	}
+	const int32 id = effect.id;
+	g_h1_effects.effects.push_back(std::move(effect));
+	return id;
+}
+
+void h1_effect_stop(int32 id)
+{
+	for (s_h1_effect& effect : g_h1_effects.effects)
+	{
+		if (id != 0 && effect.id == id)
+		{
+			// effects.c effect_stop: no new events, the particles already made live on
+			effect.follow_object_index = NONE;
+			effect.loop = false;
+			effect.stopped = true;
+		}
 	}
 	return;
 }
