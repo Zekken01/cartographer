@@ -19,6 +19,7 @@
 
 #include "game/game_time.h"
 #include "rasterizer/rasterizer_globals.h"
+#include "rasterizer/dx9/rasterizer_dx9.h"
 #include "rasterizer/dx9/rasterizer_dx9_main.h"
 #include "render/render.h"
 
@@ -115,6 +116,43 @@ static real32 h1_render_game_time(void);
 static bool h1_render_breakable_surface_extant(int16 breakable_surface_index);
 
 /* public code */
+
+c_h1_render_state_guard::c_h1_render_state_guard(void) :
+	m_state_block(NULL)
+{
+	IDirect3DDevice9Ex* device = h1_maps_active() ? rasterizer_dx9_device_get_interface() : NULL;
+	if (device && FAILED(device->CreateStateBlock(D3DSBT_ALL, &m_state_block)))
+	{
+		m_state_block = NULL;
+	}
+	return;
+}
+
+c_h1_render_state_guard::~c_h1_render_state_guard(void)
+{
+	if (m_state_block)
+	{
+		m_state_block->Apply();
+		m_state_block->Release();
+
+		// halo 2's own state caches (its render states, vertex and pixel shader constants) skip setting what they hold: halo 2
+		// functions the halo 1 renderer calls set them with the device, and the device went back, so they take the device's again
+		IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+		DWORD* render_state_cache = Memory::GetAddress<DWORD*>(0xA4B1A0);
+		for (int32 state = D3DRS_ZENABLE; state <= D3DRS_BLENDOPALPHA; state++)
+		{
+			DWORD value;
+			if (SUCCEEDED(device->GetRenderState((D3DRENDERSTATETYPE)state, &value)))
+			{
+				render_state_cache[state] = value;
+			}
+		}
+		device->GetVertexShaderConstantF(0, (real32*)rasterizer_get_main_vertex_shader_cache(), 256);
+		device->GetPixelShaderConstantF(0, (real32*)rasterizer_get_main_pixel_shader_cache(), 32);
+	}
+	return;
+}
+
 
 void h1_render_structure_opaque(void)
 {

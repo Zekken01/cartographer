@@ -288,7 +288,15 @@ void h1_maps_update(void)
 
 	if (!found)
 	{
-		h1_log("autolaunch: no custom map entry for %s", map_name);
+		// a stock halo 2 multiplayer map by its scenario path
+		h1_log("autolaunch: no custom map entry for %s, launching scenarios\\multi\\%s", map_name, map_name);
+		game_options_new(&g_main_game_launch_options);
+		main_game_launch_set_multiplayer_variant(variant_name);
+		g_main_game_launch_options.game_mode = _game_mode_multiplayer;
+		g_main_game_launch_options.game_simulation = _game_simulation_local;
+		swprintf_s(g_main_game_launch_options.scenario_path, L"scenarios\\multi\\%S\\%S", map_name, map_name);
+		game_options_setup_default_players(1, &g_main_game_launch_options);
+		main_game_change(&g_main_game_launch_options);
 		return;
 	}
 

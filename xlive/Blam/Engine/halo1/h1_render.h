@@ -7,6 +7,19 @@
 * using Halo 2's camera so depth is shared with everything Halo 2 draws.
 */
 
+// keeps the device's state (render, sampler and texture stage states, shaders, constants) across a halo 1 draw: halo 2's
+// rasterizer caches the states it set, so a state the halo 1 renderer changes and leaves would show in what halo 2 draws next
+// (the interface's menus)
+class c_h1_render_state_guard
+{
+public:
+	c_h1_render_state_guard(void);
+	~c_h1_render_state_guard(void);
+
+private:
+	struct IDirect3DStateBlock9* m_state_block;
+};
+
 // called before the halo 2 opaque structure pass of a scene
 void h1_render_structure_opaque(void);
 

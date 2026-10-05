@@ -415,7 +415,10 @@ void __cdecl render_scene(
 			*/
 
 			rasterizer_dx9_perf_event_begin("lightmap_indirect", NULL);
-			h1_render_structure_opaque();
+			{
+				c_h1_render_state_guard h1_state_guard;
+				h1_render_structure_opaque();
+			}
 			render_scene_geometry(_collection_type_0, _render_layer_lightmap_indirect);
 			rasterizer_dx9_perf_event_end("lightmap_indirect");
 
@@ -506,7 +509,10 @@ void __cdecl render_scene(
 			*/
 
 			rasterizer_dx9_perf_event_begin("lightmap_indirect", NULL);
-			h1_render_structure_opaque();
+			{
+				c_h1_render_state_guard h1_state_guard;
+				h1_render_structure_opaque();
+			}
 			render_scene_geometry(_collection_type_0, _render_layer_lightmap_indirect);
 			rasterizer_dx9_perf_event_end("lightmap_indirect");
 
@@ -524,7 +530,10 @@ void __cdecl render_scene(
 		{
 render_layer_2:
 			render_scene_geometry(_collection_type_0, _render_layer_transparent);
-			h1_render_structure_transparent();
+			{
+				c_h1_render_state_guard h1_state_guard;
+				h1_render_structure_transparent();
+			}
 			
 			if (render_layer_debug_view != 2)
 			{
@@ -613,7 +622,12 @@ render_postprocess:
 
 		if (effect_flag != 2)
 		{
-			if (h1_render_sky())
+			bool h1_sky_drawn;
+			{
+				c_h1_render_state_guard h1_state_guard;
+				h1_sky_drawn = h1_render_sky();
+			}
+			if (h1_sky_drawn)
 			{
 				// halo 1 maps draw their own sky
 			}
@@ -857,10 +871,16 @@ static void render_view(
 			rasterizer_dx9_perf_event_begin("interface", NULL);
 			rasterizer_dx9_set_stencil_mode(0);
 			// the halo 1 weapon hud's screen effect (the sniper rifle's scope) under the interface
-			h1_hud_render_screen_effect();
+			{
+				c_h1_render_state_guard h1_state_guard;
+				h1_hud_render_screen_effect();
+			}
 			interface_draw_screen();
 			// the halo 1 weapon hud of halo 1 maps
-			h1_hud_render();
+			{
+				c_h1_render_state_guard h1_state_guard;
+				h1_hud_render();
+			}
 			rasterizer_dx9_render_screen_flash();
 			render_menu_user_interface(controller_index, (e_user_interface_render_window)NONE, &camera->viewport_bounds);
 			rasterizer_dx9_perf_event_end("interface");
