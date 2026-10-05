@@ -274,10 +274,6 @@ void h1_first_person_weapon_tick(void)
 		h1_fp_switch_weapons();
 	}
 	h1_fp_tick();
-	if (g_h1_fp.weapon_index != NONE)
-	{
-		h1_fp_compute_pose();
-	}
 	return;
 }
 
@@ -289,17 +285,17 @@ void h1_first_person_weapon_messages(void)
 	}
 	// first_person_weapon_message_from_weapon: the messages of the weapon in the unit's hands, as it sends them
 	const datum current_weapon = h1_fp_unit_current_weapon(g_h1_fp.unit_index);
-	if (current_weapon == NONE)
+	if (current_weapon != NONE)
 	{
-		return;
+		s_h1_first_person_weapon_message messages[k_h1_first_person_messages_per_tick];
+		const int32 count = h1_weapon_logic_first_person_messages_take(current_weapon, messages, k_h1_first_person_messages_per_tick);
+		for (int32 i = 0; i < count; i++)
+		{
+			h1_fp_message(messages[i].type, messages[i].magazine_busy);
+		}
 	}
-	s_h1_first_person_weapon_message messages[k_h1_first_person_messages_per_tick];
-	const int32 count = h1_weapon_logic_first_person_messages_take(current_weapon, messages, k_h1_first_person_messages_per_tick);
-	for (int32 i = 0; i < count; i++)
-	{
-		h1_fp_message(messages[i].type, messages[i].magazine_busy);
-	}
-	if (count > 0 && g_h1_fp.weapon_index != NONE)
+	// the tick's pose, with the states the messages set
+	if (g_h1_fp.weapon_index != NONE)
 	{
 		h1_fp_compute_pose();
 	}
@@ -452,7 +448,8 @@ static void h1_fp_start_interpolation(int16 frame_count)
 	{
 		return;
 	}
-	csmemcpy(g_h1_fp.original_node_orientations, g_h1_fp.node_orientations,
+	// (halo 1 blends the interpolation into node_orientations: the next one starts from the pose as it was shown)
+	csmemcpy(g_h1_fp.original_node_orientations, g_h1_fp.pose_valid ? g_h1_fp.pose : g_h1_fp.node_orientations,
 		sizeof(real_orientation) * MIN(graph->nodes.count, (int32)k_h1_maximum_first_person_nodes));
 	if (frame_count >= g_h1_fp.interpolation_frame_count - g_h1_fp.interpolation_frame_index)
 	{
