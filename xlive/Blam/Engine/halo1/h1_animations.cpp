@@ -8,6 +8,7 @@
 
 #include "tag_files/tag_groups.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -161,6 +162,14 @@ datum h1_first_person_animation_graph_build(datum h1_animation_graph_index, cons
 		if (slot_animation(k_h1_first_person_reload_empty) != NONE) actions.push_back({ "reload_continue_empty", slot_animation(k_h1_first_person_reload_empty) });
 		if (slot_animation(k_h1_first_person_shotgun_exit_empty) != NONE) actions.push_back({ "reload_exit", slot_animation(k_h1_first_person_shotgun_exit_empty) });
 	}
+
+	// animation_graph_find_action and friends binary search the labels: sort by string id
+	auto by_label = [](const s_h1_animation_slot& a, const s_h1_animation_slot& b)
+	{
+		return (uint32)string_id_find_or_add(a.label.c_str()) < (uint32)string_id_find_or_add(b.label.c_str());
+	};
+	std::sort(actions.begin(), actions.end(), by_label);
+	std::sort(overlays.begin(), overlays.end(), by_label);
 
 	// one mode, weapon class and weapon type: any
 	h2x_jmad_modes* mode = h1_runtime_block_new(&graph->modes, 1);
