@@ -7166,4 +7166,1021 @@ struct h2x_matg
 };
 ASSERT_STRUCT_SIZE(h2x_matg, 0x284);
 
+struct h2x_weap_ai_properties
+{
+	uint32 flags; // 0x0
+	string_id ai_type_name; // 0x4
+	int8 pad_8[4];
+	int16 ai_size; // 0xc
+	int16 leap_jump_speed; // 0xe
+};
+ASSERT_STRUCT_SIZE(h2x_weap_ai_properties, 0x10);
+
+struct h2x_weap_functions
+{
+	uint32 flags; // 0x0
+	string_id import_name; // 0x4
+	string_id export_name; // 0x8
+	string_id turn_off_with; // 0xc
+	real32 minimum_value; // 0x10
+	tag_data default_function; // 0x14
+	string_id scale_by; // 0x1c
+};
+ASSERT_STRUCT_SIZE(h2x_weap_functions, 0x20);
+
+struct h2x_weap_attachments
+{
+	tag_reference type; // 0x0
+	string_id marker; // 0x8
+	int16 change_color; // 0xc
+	int16 unknown; // 0xe
+	string_id primary_scale; // 0x10
+	string_id secondary_scale; // 0x14
+};
+ASSERT_STRUCT_SIZE(h2x_weap_attachments, 0x18);
+
+struct h2x_weap_widgets
+{
+	tag_reference type; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_weap_widgets, 0x8);
+
+struct h2x_weap_old_functions
+{
+	int8 pad_0[76];
+	string_id unknown; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_weap_old_functions, 0x50);
+
+struct h2x_weap_change_colors_initial_permutations
+{
+	real32 weight; // 0x0
+	real_rgb_color color_lower_bound; // 0x4
+	real_rgb_color color_upper_bound; // 0x10
+	string_id variant_name; // 0x1c
+};
+ASSERT_STRUCT_SIZE(h2x_weap_change_colors_initial_permutations, 0x20);
+
+struct h2x_weap_change_colors_functions
+{
+	int8 pad_0[4];
+	uint32 scale_flags; // 0x4
+	real_rgb_color color_lower_bound; // 0x8
+	real_rgb_color color_upper_bound; // 0x14
+	string_id darken_by; // 0x20
+	string_id scale_by; // 0x24
+};
+ASSERT_STRUCT_SIZE(h2x_weap_change_colors_functions, 0x28);
+
+struct h2x_weap_change_colors
+{
+	tag_block<h2x_weap_change_colors_initial_permutations> initial_permutations; // 0x0
+	tag_block<h2x_weap_change_colors_functions> functions; // 0x8
+};
+ASSERT_STRUCT_SIZE(h2x_weap_change_colors, 0x10);
+
+struct h2x_weap_predicted_resources
+{
+	int16 type; // 0x0
+	int16 resource_index; // 0x2
+	datum tag_index; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_weap_predicted_resources, 0x8);
+
+struct h2x_weap_predicted_bitmaps
+{
+	tag_reference bitmap; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_weap_predicted_bitmaps, 0x8);
+
+struct h2x_weap_first_person
+{
+	tag_reference first_person_model; // 0x0
+	tag_reference first_person_animations; // 0x8
+};
+ASSERT_STRUCT_SIZE(h2x_weap_first_person, 0x10);
+
+struct h2x_weap_predicted_resources_2
+{
+	int16 type; // 0x0
+	int16 resource_index; // 0x2
+	datum tag_index; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_weap_predicted_resources_2, 0x8);
+
+struct h2x_weap_magazines_magazine_equipment
+{
+	int16 rounds; // 0x0
+	int16 unknown; // 0x2
+	tag_reference equipment; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_weap_magazines_magazine_equipment, 0xc);
+
+struct h2x_weap_magazines
+{
+	uint32 flags; // 0x0
+	int16 rounds_recharged; // 0x4
+	int16 rounds_total_initial; // 0x6
+	int16 rounds_total_maximum; // 0x8
+	int16 rounds_loaded_maximum; // 0xa
+	int16 rounds_inventory_maximum; // 0xc
+	int16 unknown; // 0xe
+	real32 reload_time; // 0x10
+	int16 rounds_reloaded; // 0x14
+	int16 unknown_2; // 0x16
+	real32 chamber_time; // 0x18
+	int8 pad_1c[24];
+	tag_reference reloading_effect; // 0x34
+	tag_reference reloading_damage_effect; // 0x3c
+	tag_reference chambering_effect; // 0x44
+	tag_reference chambering_damage_effect; // 0x4c
+	tag_block<h2x_weap_magazines_magazine_equipment> magazine_equipment; // 0x54
+};
+ASSERT_STRUCT_SIZE(h2x_weap_magazines, 0x5c);
+
+struct h2x_weap_new_triggers
+{
+	uint32 flags; // 0x0
+	int16 input; // 0x4
+	int16 behavior; // 0x6
+	int16 primary_barrel_index; // 0x8
+	int16 secondary_barrel_index; // 0xa
+	int16 prediction; // 0xc
+	int16 unknown; // 0xe
+	real32 autofire_time; // 0x10
+	real32 autofire_throw; // 0x14
+	int16 secondary_action; // 0x18
+	int16 primary_action; // 0x1a
+	real32 charging_time; // 0x1c
+	real32 charged_time; // 0x20
+	int16 overcharged_action; // 0x24
+	int16 unknown_2; // 0x26
+	real32 charged_illumination; // 0x28
+	real32 spew_time; // 0x2c
+	tag_reference charging_effect; // 0x30
+	tag_reference charging_damage_effect; // 0x38
+};
+ASSERT_STRUCT_SIZE(h2x_weap_new_triggers, 0x40);
+
+struct h2x_weap_barrels_firing_effects
+{
+	int16 shot_count_lower_bound; // 0x0
+	int16 shot_count_upper_bound; // 0x2
+	tag_reference firing_effect; // 0x4
+	tag_reference misfire_effect; // 0xc
+	tag_reference empty_effect; // 0x14
+	tag_reference firing_damage; // 0x1c
+	tag_reference misfire_damage; // 0x24
+	tag_reference empty_damage; // 0x2c
+};
+ASSERT_STRUCT_SIZE(h2x_weap_barrels_firing_effects, 0x34);
+
+struct h2x_weap_barrels
+{
+	uint32 flags; // 0x0
+	real_bounds rounds_per_second; // 0x4
+	real32 acceleration_time; // 0xc
+	real32 deceleration_time; // 0x10
+	real32 barrel_spin_scale; // 0x14
+	real32 blurred_rate_of_fire; // 0x18
+	short_bounds shots_per_fire; // 0x1c
+	real32 fire_recovery_time; // 0x20
+	real32 soft_recovery_fraction; // 0x24
+	int16 magazine_index; // 0x28
+	int16 rounds_per_shot; // 0x2a
+	int16 minimum_rounds_loaded; // 0x2c
+	int16 rounds_between_tracers; // 0x2e
+	string_id optional_barrel_marker_name; // 0x30
+	int16 prediction_type; // 0x34
+	int16 firing_noise; // 0x36
+	real32 acceleration_time_2; // 0x38
+	real32 deceleration_time_2; // 0x3c
+	real_bounds damage_error; // 0x40
+	real32 acceleration_time_3; // 0x48
+	real32 deceleration_time_3; // 0x4c
+	real32 runtime_dual_error_acceleration_rate; // 0x50
+	real32 runtime_dual_error_deceleration_rate; // 0x54
+	real32 minimum_error; // 0x58
+	real_bounds error_angle; // 0x5c
+	real32 dual_wield_damage_scale; // 0x64
+	int16 distribution_function; // 0x68
+	int16 projectiles_per_shot; // 0x6a
+	real32 distribution_angle; // 0x6c
+	real32 minimum_error_2; // 0x70
+	real_bounds error_angle_2; // 0x74
+	real_point3d first_person_offset; // 0x7c
+	int8 damage_effect_reporting_type; // 0x88
+	int8 unknown; // 0x89
+	int16 unknown_2; // 0x8a
+	tag_reference projectile; // 0x8c
+	tag_reference damage_effect; // 0x94
+	real32 ejection_port_recovery_time; // 0x9c
+	real32 illumination_recovery_time; // 0xa0
+	real32 heat_generated_per_round; // 0xa4
+	real32 age_generated_per_round; // 0xa8
+	real32 overload_time; // 0xac
+	real_bounds angle_change_per_shot; // 0xb0
+	real32 angle_change_acceleration_time; // 0xb8
+	real32 angle_change_deceleration_time; // 0xbc
+	int16 angle_change_function; // 0xc0
+	int16 unknown_3; // 0xc2
+	real32 angle_change_acceleration_rate; // 0xc4
+	real32 angle_change_deceleration_rate; // 0xc8
+	real32 illumination_recovery_rate; // 0xcc
+	real32 ejection_port_recovery_rate; // 0xd0
+	real32 rate_of_fire_acceleration_rate; // 0xd4
+	real32 rate_of_fire_deceleration_rate; // 0xd8
+	real32 error_acceleration_rate; // 0xdc
+	real32 error_deceleration_rate; // 0xe0
+	tag_block<h2x_weap_barrels_firing_effects> firing_effects; // 0xe4
+};
+ASSERT_STRUCT_SIZE(h2x_weap_barrels, 0xec);
+
+struct h2x_weap
+{
+	int16 object_type; // 0x0
+	uint16 flags; // 0x2
+	real32 bounding_radius; // 0x4
+	real_point3d bounding_offset; // 0x8
+	real32 acceleration_scale; // 0x14
+	int16 lightmap_shadow_mode; // 0x18
+	int8 sweetener_size; // 0x1a
+	int8 unknown; // 0x1b
+	uint32 runtime_flags; // 0x1c
+	real32 dynamic_light_sphere_radius; // 0x20
+	real_point3d dynamic_light_sphere_offset; // 0x24
+	string_id default_model_variant; // 0x30
+	tag_reference model; // 0x34
+	tag_reference crate_object; // 0x3c
+	tag_reference modifier_shader; // 0x44
+	tag_reference creation_effect; // 0x4c
+	tag_reference material_effects; // 0x54
+	tag_block<h2x_weap_ai_properties> ai_properties; // 0x5c
+	tag_block<h2x_weap_functions> functions; // 0x64
+	real32 apply_collision_damage_scale; // 0x6c
+	real_bounds game_acceleration; // 0x70
+	real_bounds game_scale; // 0x78
+	real_bounds absolute_acceleration; // 0x80
+	real_bounds absolute_scale; // 0x88
+	int16 hud_text_message_index; // 0x90
+	int16 unknown_2; // 0x92
+	tag_block<h2x_weap_attachments> attachments; // 0x94
+	tag_block<h2x_weap_widgets> widgets; // 0x9c
+	tag_block<h2x_weap_old_functions> old_functions; // 0xa4
+	tag_block<h2x_weap_change_colors> change_colors; // 0xac
+	tag_block<h2x_weap_predicted_resources> predicted_resources; // 0xb4
+	uint32 flags_2; // 0xbc
+	int16 old_message_index; // 0xc0
+	int16 sort_order; // 0xc2
+	real32 multiplayer_on_ground_scale; // 0xc4
+	real32 campaign_on_ground_scale; // 0xc8
+	string_id pickup_message; // 0xcc
+	string_id swap_message; // 0xd0
+	string_id pickup_or_dual_wield_message; // 0xd4
+	string_id swap_or_dual_wield_message; // 0xd8
+	string_id dual_wield_only_message; // 0xdc
+	string_id picked_up_message; // 0xe0
+	string_id singular_quantity_message; // 0xe4
+	string_id plural_quantity_message; // 0xe8
+	string_id switch_to_message; // 0xec
+	string_id switch_to_from_ai_message; // 0xf0
+	tag_reference unused; // 0xf4
+	tag_reference collision_sound; // 0xfc
+	tag_block<h2x_weap_predicted_bitmaps> predicted_bitmaps; // 0x104
+	tag_reference detonation_damage_effect; // 0x10c
+	real_bounds detonation_delay; // 0x114
+	tag_reference detonating_effect; // 0x11c
+	tag_reference detonation_effect; // 0x124
+	uint32 flags_3; // 0x12c
+	string_id unknown_3; // 0x130
+	int16 secondary_trigger_mode; // 0x134
+	int16 maximum_alternate_shots_loaded; // 0x136
+	real32 turn_on_time; // 0x138
+	real32 ready_time; // 0x13c
+	tag_reference ready_effect; // 0x140
+	tag_reference ready_damage_effect; // 0x148
+	real32 heat_recovery_threshold; // 0x150
+	real32 overheated_threshold; // 0x154
+	real32 heat_detonation_threshold; // 0x158
+	real32 heat_detonation_fraction; // 0x15c
+	real32 heat_loss_per_second; // 0x160
+	real32 heat_illumination; // 0x164
+	real32 overheated_heat_loss_per_second; // 0x168
+	tag_reference overheated; // 0x16c
+	tag_reference overheated_damage_effect; // 0x174
+	tag_reference detonation; // 0x17c
+	tag_reference detonation_damage_effect_2; // 0x184
+	tag_reference player_melee_damage; // 0x18c
+	tag_reference player_melee_response; // 0x194
+	real32 magnetism_angle; // 0x19c
+	real32 magnetism_range; // 0x1a0
+	real32 throttle_magnitude; // 0x1a4
+	real32 throttle_minimum_distance; // 0x1a8
+	real32 throttle_maximum_adjustment_angle; // 0x1ac
+	real_euler_angles2d damage_pyramid_angles; // 0x1b0
+	real32 damage_pyramid_depth; // 0x1b8
+	tag_reference f_1st_hit_melee_damage; // 0x1bc
+	tag_reference f_1st_hit_melee_response; // 0x1c4
+	tag_reference f_2nd_hit_melee_damage; // 0x1cc
+	tag_reference f_2nd_hit_melee_response; // 0x1d4
+	tag_reference f_3rd_hit_melee_damage; // 0x1dc
+	tag_reference f_3rd_hit_melee_response; // 0x1e4
+	tag_reference lunge_melee_damage; // 0x1ec
+	tag_reference lunge_melee_response; // 0x1f4
+	int8 melee_damage_reporting_type; // 0x1fc
+	int8 unknown_4; // 0x1fd
+	int16 magnification_levels; // 0x1fe
+	real_bounds magnification_range; // 0x200
+	real32 autoaim_angle; // 0x208
+	real32 autoaim_range; // 0x20c
+	real32 magnetism_angle_2; // 0x210
+	real32 magnetism_range_2; // 0x214
+	real32 deviation_angle; // 0x218
+	int8 pad_21c[16];
+	int16 movement_penalized; // 0x22c
+	int16 unknown_5; // 0x22e
+	real32 forward_movement_penalty; // 0x230
+	real32 sideways_movement_penalty; // 0x234
+	real32 ai_scariness; // 0x238
+	real32 weapon_power_on_time; // 0x23c
+	real32 weapon_power_off_time; // 0x240
+	tag_reference weapon_power_on_effect; // 0x244
+	tag_reference weapon_power_off_effect; // 0x24c
+	real32 age_heat_recovery_penalty; // 0x254
+	real32 age_rate_of_fire_penalty; // 0x258
+	real32 age_misfire_start; // 0x25c
+	real32 age_misfire_chance; // 0x260
+	tag_reference pickup_sound; // 0x264
+	tag_reference zoom_in_sound; // 0x26c
+	tag_reference zoom_out_sound; // 0x274
+	real32 active_camo_ding; // 0x27c
+	real32 active_camo_regrowth_rate; // 0x280
+	string_id handle_node; // 0x284
+	string_id weapon_class; // 0x288
+	string_id weapon_name; // 0x28c
+	int16 multiplayer_weapon_type; // 0x290
+	int16 weapon_type; // 0x292
+	int16 tracking_type; // 0x294
+	int16 unknown_6; // 0x296
+	int8 pad_298[16];
+	tag_block<h2x_weap_first_person> first_person; // 0x2a8
+	tag_reference new_hud_interface; // 0x2b0
+	tag_block<h2x_weap_predicted_resources_2> predicted_resources_2; // 0x2b8
+	tag_block<h2x_weap_magazines> magazines; // 0x2c0
+	tag_block<h2x_weap_new_triggers> new_triggers; // 0x2c8
+	tag_block<h2x_weap_barrels> barrels; // 0x2d0
+	real32 weapon_power_on_velocity; // 0x2d8
+	real32 weapon_power_off_velocity; // 0x2dc
+	real32 maximum_movement_acceleration; // 0x2e0
+	real32 maximum_movement_velocity; // 0x2e4
+	real32 maximum_turning_acceleration; // 0x2e8
+	real32 maximum_turning_velocity; // 0x2ec
+	tag_reference deployed_vehicle; // 0x2f0
+	tag_reference age_effect; // 0x2f8
+	tag_reference aged_weapon; // 0x300
+	real_vector3d first_person_weapon_offset; // 0x308
+	real_vector2d first_person_scope_size; // 0x314
+};
+ASSERT_STRUCT_SIZE(h2x_weap, 0x31c);
+
+struct h2x_mulg_universal_team_colors
+{
+	real_rgb_color color; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_universal_team_colors, 0xc);
+
+struct h2x_mulg_universal
+{
+	tag_reference random_player_names; // 0x0
+	tag_reference team_names; // 0x8
+	tag_block<h2x_mulg_universal_team_colors> team_colors; // 0x10
+	tag_reference multiplayer_text; // 0x18
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_universal, 0x20);
+
+struct h2x_mulg_runtime_weapons
+{
+	tag_reference weapon; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_weapons, 0x8);
+
+struct h2x_mulg_runtime_vehicles
+{
+	tag_reference vehicle; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_vehicles, 0x8);
+
+struct h2x_mulg_runtime_grenades
+{
+	tag_reference grenade; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_grenades, 0x8);
+
+struct h2x_mulg_runtime_powerups
+{
+	tag_reference equipment; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_powerups, 0x8);
+
+struct h2x_mulg_runtime_sounds
+{
+	tag_reference sound; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_sounds, 0x8);
+
+struct h2x_mulg_runtime_general_events_sound_permutations
+{
+	uint16 sound_flags; // 0x0
+	int16 unknown; // 0x2
+	tag_reference english_sound; // 0x4
+	tag_reference japanese_sound; // 0xc
+	tag_reference german_sound; // 0x14
+	tag_reference french_sound; // 0x1c
+	tag_reference spanish_sound; // 0x24
+	tag_reference italian_sound; // 0x2c
+	tag_reference korean_sound; // 0x34
+	tag_reference chinese_sound; // 0x3c
+	tag_reference portuguese_sound; // 0x44
+	real32 probability; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_general_events_sound_permutations, 0x50);
+
+struct h2x_mulg_runtime_general_events
+{
+	uint16 flags; // 0x0
+	int16 type; // 0x2
+	int16 event; // 0x4
+	int16 audience; // 0x6
+	int16 unknown; // 0x8
+	int16 unknown_2; // 0xa
+	string_id display_string; // 0xc
+	int16 required_field; // 0x10
+	int16 excluded_audience; // 0x12
+	string_id primary_string; // 0x14
+	int32 primary_string_duration; // 0x18
+	string_id plural_display_string; // 0x1c
+	int8 pad_20[28];
+	real32 sound_delay_announcer_only; // 0x3c
+	uint16 sound_flags; // 0x40
+	int16 unknown_3; // 0x42
+	tag_reference sound; // 0x44
+	tag_reference japanese_sound; // 0x4c
+	tag_reference german_sound; // 0x54
+	tag_reference french_sound; // 0x5c
+	tag_reference spanish_sound; // 0x64
+	tag_reference italian_sound; // 0x6c
+	tag_reference korean_sound; // 0x74
+	tag_reference chinese_sound; // 0x7c
+	tag_reference portuguese_sound; // 0x84
+	int8 pad_8c[20];
+	tag_block<h2x_mulg_runtime_general_events_sound_permutations> sound_permutations; // 0xa0
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_general_events, 0xa8);
+
+struct h2x_mulg_runtime_flavor_events_sound_permutations
+{
+	uint16 sound_flags; // 0x0
+	int16 unknown; // 0x2
+	tag_reference english_sound; // 0x4
+	tag_reference japanese_sound; // 0xc
+	tag_reference german_sound; // 0x14
+	tag_reference french_sound; // 0x1c
+	tag_reference spanish_sound; // 0x24
+	tag_reference italian_sound; // 0x2c
+	tag_reference korean_sound; // 0x34
+	tag_reference chinese_sound; // 0x3c
+	tag_reference portuguese_sound; // 0x44
+	real32 probability; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_flavor_events_sound_permutations, 0x50);
+
+struct h2x_mulg_runtime_flavor_events
+{
+	uint16 flags; // 0x0
+	int16 type; // 0x2
+	int16 event; // 0x4
+	int16 audience; // 0x6
+	int16 unknown; // 0x8
+	int16 unknown_2; // 0xa
+	string_id display_string; // 0xc
+	int16 required_field; // 0x10
+	int16 excluded_audience; // 0x12
+	string_id primary_string; // 0x14
+	int32 primary_string_duration; // 0x18
+	string_id plural_display_string; // 0x1c
+	int8 pad_20[28];
+	real32 sound_delay_announcer_only; // 0x3c
+	uint16 sound_flags; // 0x40
+	int16 unknown_3; // 0x42
+	tag_reference sound; // 0x44
+	tag_reference japanese_sound; // 0x4c
+	tag_reference german_sound; // 0x54
+	tag_reference french_sound; // 0x5c
+	tag_reference spanish_sound; // 0x64
+	tag_reference italian_sound; // 0x6c
+	tag_reference korean_sound; // 0x74
+	tag_reference chinese_sound; // 0x7c
+	tag_reference portuguese_sound; // 0x84
+	int8 pad_8c[20];
+	tag_block<h2x_mulg_runtime_flavor_events_sound_permutations> sound_permutations; // 0xa0
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_flavor_events, 0xa8);
+
+struct h2x_mulg_runtime_slayer_events_sound_permutations
+{
+	uint16 sound_flags; // 0x0
+	int16 unknown; // 0x2
+	tag_reference english_sound; // 0x4
+	tag_reference japanese_sound; // 0xc
+	tag_reference german_sound; // 0x14
+	tag_reference french_sound; // 0x1c
+	tag_reference spanish_sound; // 0x24
+	tag_reference italian_sound; // 0x2c
+	tag_reference korean_sound; // 0x34
+	tag_reference chinese_sound; // 0x3c
+	tag_reference portuguese_sound; // 0x44
+	real32 probability; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_slayer_events_sound_permutations, 0x50);
+
+struct h2x_mulg_runtime_slayer_events
+{
+	uint16 flags; // 0x0
+	int16 type; // 0x2
+	int16 event; // 0x4
+	int16 audience; // 0x6
+	int16 unknown; // 0x8
+	int16 unknown_2; // 0xa
+	string_id display_string; // 0xc
+	int16 required_field; // 0x10
+	int16 excluded_audience; // 0x12
+	string_id primary_string; // 0x14
+	int32 primary_string_duration; // 0x18
+	string_id plural_display_string; // 0x1c
+	int8 pad_20[28];
+	real32 sound_delay_announcer_only; // 0x3c
+	uint16 sound_flags; // 0x40
+	int16 unknown_3; // 0x42
+	tag_reference sound; // 0x44
+	tag_reference japanese_sound; // 0x4c
+	tag_reference german_sound; // 0x54
+	tag_reference french_sound; // 0x5c
+	tag_reference spanish_sound; // 0x64
+	tag_reference italian_sound; // 0x6c
+	tag_reference korean_sound; // 0x74
+	tag_reference chinese_sound; // 0x7c
+	tag_reference portuguese_sound; // 0x84
+	int8 pad_8c[20];
+	tag_block<h2x_mulg_runtime_slayer_events_sound_permutations> sound_permutations; // 0xa0
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_slayer_events, 0xa8);
+
+struct h2x_mulg_runtime_ctf_events_sound_permutations
+{
+	uint16 sound_flags; // 0x0
+	int16 unknown; // 0x2
+	tag_reference english_sound; // 0x4
+	tag_reference japanese_sound; // 0xc
+	tag_reference german_sound; // 0x14
+	tag_reference french_sound; // 0x1c
+	tag_reference spanish_sound; // 0x24
+	tag_reference italian_sound; // 0x2c
+	tag_reference korean_sound; // 0x34
+	tag_reference chinese_sound; // 0x3c
+	tag_reference portuguese_sound; // 0x44
+	real32 probability; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_ctf_events_sound_permutations, 0x50);
+
+struct h2x_mulg_runtime_ctf_events
+{
+	uint16 flags; // 0x0
+	int16 type; // 0x2
+	int16 event; // 0x4
+	int16 audience; // 0x6
+	int16 unknown; // 0x8
+	int16 unknown_2; // 0xa
+	string_id display_string; // 0xc
+	int16 required_field; // 0x10
+	int16 excluded_audience; // 0x12
+	string_id primary_string; // 0x14
+	int32 primary_string_duration; // 0x18
+	string_id plural_display_string; // 0x1c
+	int8 pad_20[28];
+	real32 sound_delay_announcer_only; // 0x3c
+	uint16 sound_flags; // 0x40
+	int16 unknown_3; // 0x42
+	tag_reference sound; // 0x44
+	tag_reference japanese_sound; // 0x4c
+	tag_reference german_sound; // 0x54
+	tag_reference french_sound; // 0x5c
+	tag_reference spanish_sound; // 0x64
+	tag_reference italian_sound; // 0x6c
+	tag_reference korean_sound; // 0x74
+	tag_reference chinese_sound; // 0x7c
+	tag_reference portuguese_sound; // 0x84
+	int8 pad_8c[20];
+	tag_block<h2x_mulg_runtime_ctf_events_sound_permutations> sound_permutations; // 0xa0
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_ctf_events, 0xa8);
+
+struct h2x_mulg_runtime_oddball_events_sound_permutations
+{
+	uint16 sound_flags; // 0x0
+	int16 unknown; // 0x2
+	tag_reference english_sound; // 0x4
+	tag_reference japanese_sound; // 0xc
+	tag_reference german_sound; // 0x14
+	tag_reference french_sound; // 0x1c
+	tag_reference spanish_sound; // 0x24
+	tag_reference italian_sound; // 0x2c
+	tag_reference korean_sound; // 0x34
+	tag_reference chinese_sound; // 0x3c
+	tag_reference portuguese_sound; // 0x44
+	real32 probability; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_oddball_events_sound_permutations, 0x50);
+
+struct h2x_mulg_runtime_oddball_events
+{
+	uint16 flags; // 0x0
+	int16 type; // 0x2
+	int16 event; // 0x4
+	int16 audience; // 0x6
+	int16 unknown; // 0x8
+	int16 unknown_2; // 0xa
+	string_id display_string; // 0xc
+	int16 required_field; // 0x10
+	int16 excluded_audience; // 0x12
+	string_id primary_string; // 0x14
+	int32 primary_string_duration; // 0x18
+	string_id plural_display_string; // 0x1c
+	int8 pad_20[28];
+	real32 sound_delay_announcer_only; // 0x3c
+	uint16 sound_flags; // 0x40
+	int16 unknown_3; // 0x42
+	tag_reference sound; // 0x44
+	tag_reference japanese_sound; // 0x4c
+	tag_reference german_sound; // 0x54
+	tag_reference french_sound; // 0x5c
+	tag_reference spanish_sound; // 0x64
+	tag_reference italian_sound; // 0x6c
+	tag_reference korean_sound; // 0x74
+	tag_reference chinese_sound; // 0x7c
+	tag_reference portuguese_sound; // 0x84
+	int8 pad_8c[20];
+	tag_block<h2x_mulg_runtime_oddball_events_sound_permutations> sound_permutations; // 0xa0
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_oddball_events, 0xa8);
+
+struct h2x_mulg_runtime_king_of_the_hill_events_sound_permutations
+{
+	uint16 sound_flags; // 0x0
+	int16 unknown; // 0x2
+	tag_reference english_sound; // 0x4
+	tag_reference japanese_sound; // 0xc
+	tag_reference german_sound; // 0x14
+	tag_reference french_sound; // 0x1c
+	tag_reference spanish_sound; // 0x24
+	tag_reference italian_sound; // 0x2c
+	tag_reference korean_sound; // 0x34
+	tag_reference chinese_sound; // 0x3c
+	tag_reference portuguese_sound; // 0x44
+	real32 probability; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_king_of_the_hill_events_sound_permutations, 0x50);
+
+struct h2x_mulg_runtime_king_of_the_hill_events
+{
+	uint16 flags; // 0x0
+	int16 type; // 0x2
+	int16 event; // 0x4
+	int16 audience; // 0x6
+	int16 unknown; // 0x8
+	int16 unknown_2; // 0xa
+	string_id display_string; // 0xc
+	int16 required_field; // 0x10
+	int16 excluded_audience; // 0x12
+	string_id primary_string; // 0x14
+	int32 primary_string_duration; // 0x18
+	string_id plural_display_string; // 0x1c
+	int8 pad_20[28];
+	real32 sound_delay_announcer_only; // 0x3c
+	uint16 sound_flags; // 0x40
+	int16 unknown_3; // 0x42
+	tag_reference sound; // 0x44
+	tag_reference japanese_sound; // 0x4c
+	tag_reference german_sound; // 0x54
+	tag_reference french_sound; // 0x5c
+	tag_reference spanish_sound; // 0x64
+	tag_reference italian_sound; // 0x6c
+	tag_reference korean_sound; // 0x74
+	tag_reference chinese_sound; // 0x7c
+	tag_reference portuguese_sound; // 0x84
+	int8 pad_8c[20];
+	tag_block<h2x_mulg_runtime_king_of_the_hill_events_sound_permutations> sound_permutations; // 0xa0
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_king_of_the_hill_events, 0xa8);
+
+struct h2x_mulg_runtime_juggernaut_events_sound_permutations
+{
+	uint16 sound_flags; // 0x0
+	int16 unknown; // 0x2
+	tag_reference english_sound; // 0x4
+	tag_reference japanese_sound; // 0xc
+	tag_reference german_sound; // 0x14
+	tag_reference french_sound; // 0x1c
+	tag_reference spanish_sound; // 0x24
+	tag_reference italian_sound; // 0x2c
+	tag_reference korean_sound; // 0x34
+	tag_reference chinese_sound; // 0x3c
+	tag_reference portuguese_sound; // 0x44
+	real32 probability; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_juggernaut_events_sound_permutations, 0x50);
+
+struct h2x_mulg_runtime_juggernaut_events
+{
+	uint16 flags; // 0x0
+	int16 type; // 0x2
+	int16 event; // 0x4
+	int16 audience; // 0x6
+	int16 unknown; // 0x8
+	int16 unknown_2; // 0xa
+	string_id display_string; // 0xc
+	int16 required_field; // 0x10
+	int16 excluded_audience; // 0x12
+	string_id primary_string; // 0x14
+	int32 primary_string_duration; // 0x18
+	string_id plural_display_string; // 0x1c
+	int8 pad_20[28];
+	real32 sound_delay_announcer_only; // 0x3c
+	uint16 sound_flags; // 0x40
+	int16 unknown_3; // 0x42
+	tag_reference sound; // 0x44
+	tag_reference japanese_sound; // 0x4c
+	tag_reference german_sound; // 0x54
+	tag_reference french_sound; // 0x5c
+	tag_reference spanish_sound; // 0x64
+	tag_reference italian_sound; // 0x6c
+	tag_reference korean_sound; // 0x74
+	tag_reference chinese_sound; // 0x7c
+	tag_reference portuguese_sound; // 0x84
+	int8 pad_8c[20];
+	tag_block<h2x_mulg_runtime_juggernaut_events_sound_permutations> sound_permutations; // 0xa0
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_juggernaut_events, 0xa8);
+
+struct h2x_mulg_runtime_territories_events_sound_permutations
+{
+	uint16 sound_flags; // 0x0
+	int16 unknown; // 0x2
+	tag_reference english_sound; // 0x4
+	tag_reference japanese_sound; // 0xc
+	tag_reference german_sound; // 0x14
+	tag_reference french_sound; // 0x1c
+	tag_reference spanish_sound; // 0x24
+	tag_reference italian_sound; // 0x2c
+	tag_reference korean_sound; // 0x34
+	tag_reference chinese_sound; // 0x3c
+	tag_reference portuguese_sound; // 0x44
+	real32 probability; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_territories_events_sound_permutations, 0x50);
+
+struct h2x_mulg_runtime_territories_events
+{
+	uint16 flags; // 0x0
+	int16 type; // 0x2
+	int16 event; // 0x4
+	int16 audience; // 0x6
+	int16 unknown; // 0x8
+	int16 unknown_2; // 0xa
+	string_id display_string; // 0xc
+	int16 required_field; // 0x10
+	int16 excluded_audience; // 0x12
+	string_id primary_string; // 0x14
+	int32 primary_string_duration; // 0x18
+	string_id plural_display_string; // 0x1c
+	int8 pad_20[28];
+	real32 sound_delay_announcer_only; // 0x3c
+	uint16 sound_flags; // 0x40
+	int16 unknown_3; // 0x42
+	tag_reference sound; // 0x44
+	tag_reference japanese_sound; // 0x4c
+	tag_reference german_sound; // 0x54
+	tag_reference french_sound; // 0x5c
+	tag_reference spanish_sound; // 0x64
+	tag_reference italian_sound; // 0x6c
+	tag_reference korean_sound; // 0x74
+	tag_reference chinese_sound; // 0x7c
+	tag_reference portuguese_sound; // 0x84
+	int8 pad_8c[20];
+	tag_block<h2x_mulg_runtime_territories_events_sound_permutations> sound_permutations; // 0xa0
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_territories_events, 0xa8);
+
+struct h2x_mulg_runtime_assault_events_sound_permutations
+{
+	uint16 sound_flags; // 0x0
+	int16 unknown; // 0x2
+	tag_reference english_sound; // 0x4
+	tag_reference japanese_sound; // 0xc
+	tag_reference german_sound; // 0x14
+	tag_reference french_sound; // 0x1c
+	tag_reference spanish_sound; // 0x24
+	tag_reference italian_sound; // 0x2c
+	tag_reference korean_sound; // 0x34
+	tag_reference chinese_sound; // 0x3c
+	tag_reference portuguese_sound; // 0x44
+	real32 probability; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_assault_events_sound_permutations, 0x50);
+
+struct h2x_mulg_runtime_assault_events
+{
+	uint16 flags; // 0x0
+	int16 type; // 0x2
+	int16 event; // 0x4
+	int16 audience; // 0x6
+	int16 unknown; // 0x8
+	int16 unknown_2; // 0xa
+	string_id display_string; // 0xc
+	int16 required_field; // 0x10
+	int16 excluded_audience; // 0x12
+	string_id primary_string; // 0x14
+	int32 primary_string_duration; // 0x18
+	string_id plural_display_string; // 0x1c
+	int8 pad_20[28];
+	real32 sound_delay_announcer_only; // 0x3c
+	uint16 sound_flags; // 0x40
+	int16 unknown_3; // 0x42
+	tag_reference sound; // 0x44
+	tag_reference japanese_sound; // 0x4c
+	tag_reference german_sound; // 0x54
+	tag_reference french_sound; // 0x5c
+	tag_reference spanish_sound; // 0x64
+	tag_reference italian_sound; // 0x6c
+	tag_reference korean_sound; // 0x74
+	tag_reference chinese_sound; // 0x7c
+	tag_reference portuguese_sound; // 0x84
+	int8 pad_8c[20];
+	tag_block<h2x_mulg_runtime_assault_events_sound_permutations> sound_permutations; // 0xa0
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_assault_events, 0xa8);
+
+struct h2x_mulg_runtime_multiplayer_constants
+{
+	real32 maximum_random_spawn_bias; // 0x0
+	real32 teleporter_recharge_time; // 0x4
+	real32 grenade_danger_weight; // 0x8
+	real32 grenade_danger_inner_radius; // 0xc
+	real32 grenade_danger_outer_radius; // 0x10
+	real32 grenade_danger_lead_time; // 0x14
+	real32 vehicle_danger_minimum_speed; // 0x18
+	real32 vehicle_danger_weight; // 0x1c
+	real32 vehicle_danger_radius; // 0x20
+	real32 vehicle_danger_lead_time; // 0x24
+	real32 vehicle_nearby_player_distance; // 0x28
+	int8 pad_2c[148];
+	tag_reference hill_shader; // 0xc0
+	int8 pad_c8[16];
+	real32 flag_reset_stop_distance; // 0xd8
+	tag_reference bomb_explode_effect; // 0xdc
+	tag_reference bomb_explode_damage_effect; // 0xe4
+	tag_reference bomb_defuse_effect; // 0xec
+	string_id bomb_defusal_string; // 0xf4
+	string_id blocked_teleporter_string; // 0xf8
+	int8 pad_fc[100];
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_multiplayer_constants, 0x160);
+
+struct h2x_mulg_runtime_state_responses
+{
+	uint16 flags; // 0x0
+	int16 unknown; // 0x2
+	int16 state; // 0x4
+	int16 unknown_2; // 0x6
+	string_id free_for_all_message; // 0x8
+	string_id team_message; // 0xc
+	tag_reference unknown_3; // 0x10
+	int8 pad_18[4];
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime_state_responses, 0x1c);
+
+struct h2x_mulg_runtime
+{
+	tag_reference flag; // 0x0
+	tag_reference ball; // 0x8
+	tag_reference unit; // 0x10
+	tag_reference flag_shader; // 0x18
+	tag_reference hill_shader; // 0x20
+	tag_reference head; // 0x28
+	tag_reference juggernaut_powerup; // 0x30
+	tag_reference bomb; // 0x38
+	tag_reference unknown; // 0x40
+	tag_reference unknown_2; // 0x48
+	tag_reference unknown_3; // 0x50
+	tag_reference unknown_4; // 0x58
+	tag_reference unknown_5; // 0x60
+	tag_block<h2x_mulg_runtime_weapons> weapons; // 0x68
+	tag_block<h2x_mulg_runtime_vehicles> vehicles; // 0x70
+	tag_block<h2x_mulg_runtime_grenades> grenades; // 0x78
+	tag_block<h2x_mulg_runtime_powerups> powerups; // 0x80
+	tag_reference in_game_text; // 0x88
+	tag_block<h2x_mulg_runtime_sounds> sounds; // 0x90
+	tag_block<h2x_mulg_runtime_general_events> general_events; // 0x98
+	tag_block<h2x_mulg_runtime_flavor_events> flavor_events; // 0xa0
+	tag_block<h2x_mulg_runtime_slayer_events> slayer_events; // 0xa8
+	tag_block<h2x_mulg_runtime_ctf_events> ctf_events; // 0xb0
+	tag_block<h2x_mulg_runtime_oddball_events> oddball_events; // 0xb8
+	uint32 null_block; // 0xc0
+	uint32 null_block_2; // 0xc4
+	tag_block<h2x_mulg_runtime_king_of_the_hill_events> king_of_the_hill_events; // 0xc8
+	uint32 null_block_3; // 0xd0
+	uint32 null_block_4; // 0xd4
+	tag_block<h2x_mulg_runtime_juggernaut_events> juggernaut_events; // 0xd8
+	tag_block<h2x_mulg_runtime_territories_events> territories_events; // 0xe0
+	tag_block<h2x_mulg_runtime_assault_events> assault_events; // 0xe8
+	uint32 null_block_5; // 0xf0
+	uint32 null_block_6; // 0xf4
+	uint32 null_block_7; // 0xf8
+	uint32 null_block_8; // 0xfc
+	uint32 null_block_9; // 0x100
+	uint32 null_block_10; // 0x104
+	uint32 null_block_11; // 0x108
+	uint32 null_block_12; // 0x10c
+	tag_reference default_item_collection_1; // 0x110
+	tag_reference default_item_collection_2; // 0x118
+	int32 default_frag_grenade_count; // 0x120
+	int32 default_plasma_grenade_count; // 0x124
+	int8 pad_128[40];
+	real32 upper_height; // 0x150
+	real32 lower_height; // 0x154
+	int8 pad_158[40];
+	real32 inner_radius; // 0x180
+	real32 outer_radius; // 0x184
+	real32 weight; // 0x188
+	int8 pad_18c[16];
+	real32 inner_radius_2; // 0x19c
+	real32 outer_radius_2; // 0x1a0
+	real32 weight_2; // 0x1a4
+	int8 pad_1a8[16];
+	real32 vehicle_inner_radius; // 0x1b8
+	real32 vehicle_outer_radius; // 0x1bc
+	real32 vehicle_weight; // 0x1c0
+	int8 pad_1c4[16];
+	real32 inner_radius_3; // 0x1d4
+	real32 outer_radius_3; // 0x1d8
+	real32 weight_3; // 0x1dc
+	int8 pad_1e0[16];
+	real32 inner_radius_4; // 0x1f0
+	real32 outer_radius_4; // 0x1f4
+	real32 weight_4; // 0x1f8
+	int8 pad_1fc[16];
+	real32 inner_radius_5; // 0x20c
+	real32 outer_radius_5; // 0x210
+	real32 weight_5; // 0x214
+	int8 pad_218[16];
+	real32 inner_radius_6; // 0x228
+	real32 outer_radius_6; // 0x22c
+	real32 weight_6; // 0x230
+	int8 pad_234[16];
+	real32 inner_radius_7; // 0x244
+	real32 outer_radius_7; // 0x248
+	real32 weight_7; // 0x24c
+	int8 pad_250[16];
+	real32 inner_radius_8; // 0x260
+	real32 outer_radius_8; // 0x264
+	real32 weight_8; // 0x268
+	int8 pad_26c[16];
+	real32 inner_radius_9; // 0x27c
+	real32 outer_radius_9; // 0x280
+	real32 weight_9; // 0x284
+	int8 pad_288[16];
+	real32 inner_radius_10; // 0x298
+	real32 outer_radius_10; // 0x29c
+	real32 weight_10; // 0x2a0
+	int8 pad_2a4[16];
+	real32 inner_radius_11; // 0x2b4
+	real32 outer_radius_11; // 0x2b8
+	real32 weight_11; // 0x2bc
+	int8 pad_2c0[624];
+	tag_block<h2x_mulg_runtime_multiplayer_constants> multiplayer_constants; // 0x530
+	tag_block<h2x_mulg_runtime_state_responses> state_responses; // 0x538
+	tag_reference scoreboard_hud_definition; // 0x540
+	tag_reference scoreboard_emblem_shader; // 0x548
+	tag_reference scoreboard_emblem_bitmap; // 0x550
+	tag_reference scoreboard_dead_emblem_shader; // 0x558
+	tag_reference scoreboard_dead_emblem_bitmap; // 0x560
+};
+ASSERT_STRUCT_SIZE(h2x_mulg_runtime, 0x568);
+
+struct h2x_mulg
+{
+	tag_block<h2x_mulg_universal> universal; // 0x0
+	tag_block<h2x_mulg_runtime> runtime; // 0x8
+};
+ASSERT_STRUCT_SIZE(h2x_mulg, 0x10);
+
 #pragma pack(pop)

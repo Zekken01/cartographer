@@ -11,6 +11,7 @@
 #include "h1_render_shaders.h"
 #include "h1_objects.h"
 #include "h1_scenery.h"
+#include "h1_weapons.h"
 #include "h1_runtime.h"
 #include "h1_sound.h"
 
@@ -121,6 +122,7 @@ void h1_render_structure_opaque(void)
 		h1_sound_listener_set(&frame->camera);
 		h1_effects_update();
 		h1_scenery_update();
+		h1_weapons_update();
 	}
 
 	h1_fog_update();
@@ -133,6 +135,7 @@ void h1_render_structure_opaque(void)
 
 
 	const real32 game_time = h1_render_game_time();
+	h1_objects_render_frame_begin();
 	for (const s_h1_scenery_instance& instance : g_h1_render.scenery)
 	{
 		const real32* function_values;

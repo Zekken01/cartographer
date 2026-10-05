@@ -8,6 +8,7 @@
 #include "h1_objects.h"
 #include "h1_projectiles.h"
 #include "h1_scenery.h"
+#include "h1_weapons.h"
 #include "h1_projectiles.h"
 #include "h1_runtime.h"
 #include "h2_tag_definitions_generated.h"
@@ -91,6 +92,7 @@ void h1_equipment_build(scenario* h2_scenario, const h1_scnr* h1_scenario)
 	h1_effects_reset();
 	h1_scenery_reset();
 	h1_projectiles_reset();
+	h1_weapons_reset();
 
 	const int32 h1_item_count = h1_scenario->netgame_equipment.count;
 
@@ -201,6 +203,7 @@ void h1_equipment_build(scenario* h2_scenario, const h1_scnr* h1_scenario)
 	}
 
 	h1_grenades_build();
+	h1_weapons_build_multiplayer();
 	h1_simulation_definition_table_extend(h2_scenario);
 	h1_log("equipment: %d netgame items and vehicles from %d halo 1 items and %d vehicles, %d starting equipment", count, h1_item_count, vehicle_count, starting_count);
 	return;
@@ -273,6 +276,17 @@ static datum h1_item_collection_get(datum h1_collection_index, int8* out_classif
 					classification = (int8)(h1_equipment->powerup_type == 6 ? _h2_classification_grenade : _h2_classification_powerup);
 				}
 				continue;
+			}
+			if (h1_item && h1_item->group_tag == 'weap')
+			{
+				// halo 1 weapons are built from their own tags
+				const datum h2_weapon = h1_weapon_definition_build(permutation->item.index);
+				if (h2_weapon != NONE)
+				{
+					permutations.push_back({ permutation->weight > 0.f ? permutation->weight : 1.f, h2_weapon, 'weap' });
+					classification = _h2_classification_weapon;
+					continue;
+				}
 			}
 			const s_h1_object_substitute* substitute = h1_object_substitute_get(g_h1_cache_file->tag_name_get(permutation->item.index));
 			if (!substitute || substitute->h2_group == 'vehi')

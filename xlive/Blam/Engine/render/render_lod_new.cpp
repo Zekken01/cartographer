@@ -213,6 +213,7 @@ void __cdecl object_build_render_cache_and_info(
     // halo 1 objects draw their halo 1 model instead (h1_objects_render)
     if (h1_objects_render_replaced(object_index))
     {
+        h1_objects_render_submit(object_index, info->first_person);
         render_model_count = 0;
     }
 

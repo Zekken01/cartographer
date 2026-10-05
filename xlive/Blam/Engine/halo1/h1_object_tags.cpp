@@ -7,6 +7,7 @@
 #include "h2_tag_definitions_generated.h"
 
 #include "game/game_globals.h"
+#include "math/matrix_math.h"
 #include "game/materials.h"
 #include "physics/collision_bsp_definition.h"
 #include "tag_files/tag_groups.h"
@@ -32,7 +33,7 @@ datum h1_object_render_model_build(const h1_mode* h1_model, const char* name)
 	}
 
 	model->name = h1_string_id(h1_name_last_component(name));
-	model->node_list_checksum = h1_model->node_list_checksum;
+	model->node_list_checksum = h1_model ? h1_model->node_list_checksum : 0;
 	// no geometry: every level of detail and permutation section is NONE
 	model->l1_section_group_index_super_low = NONE;
 	model->l2_section_group_index_low = NONE;
@@ -40,6 +41,22 @@ datum h1_object_render_model_build(const h1_mode* h1_model, const char* name)
 	model->l4_section_group_index_high = NONE;
 	model->l5_section_group_index_super_high = NONE;
 	model->l6_section_group_index_hollywood = NONE;
+
+	// objects without a halo 1 model (bullets) get a single node
+	if (!h1_model)
+	{
+		h2x_mode_nodes* node = h1_runtime_block_new(&model->nodes, 1);
+		node->name = h1_string_id("frame");
+		node->parent_node_index = NONE;
+		node->first_child_node_index = NONE;
+		node->next_sibling_node_index = NONE;
+		node->import_node_index = NONE;
+		node->default_rotation = { 0.f, 0.f, 0.f, 1.f };
+		real_matrix4x3 identity;
+		matrix4x3_identity(&identity);
+		csmemcpy(&node->inverse_scale, &identity, sizeof(real_matrix4x3));
+		return model_index;
+	}
 
 	h2x_mode_regions* regions = h1_runtime_block_new(&model->regions, h1_model->regions.count);
 	for (int32 r = 0; r < h1_model->regions.count; r++)
@@ -196,10 +213,10 @@ datum h1_object_model_build(const s_h1_object_tags* tags, const h1_mode* h1_mode
 	h1_runtime_reference_set(&model->hologram_shader, (tag_group)NONE, NONE);
 	model->disappear_distance = tags->disappear_distance;
 	model->begin_fade_distance = tags->disappear_distance * 0.9f;
-	model->node_list_checksum = h1_model->node_list_checksum;
+	model->node_list_checksum = h1_model ? h1_model->node_list_checksum : 0;
 
 	// one variant using every region's first permutation
-	const int32 region_count = MIN(h1_model->regions.count, 16);
+	const int32 region_count = h1_model ? MIN(h1_model->regions.count, 16) : 0;
 	h2x_hlmt_variants* variant = h1_runtime_block_new(&model->variants, 1);
 	variant->name = _string_id_default;
 	int8* runtime_region_indices = &variant->runtime_model_region_0_index;
@@ -283,6 +300,19 @@ datum h1_object_model_build(const s_h1_object_tags* tags, const h1_mode* h1_mode
 
 	}
 nodes:
+	if (!h1_model)
+	{
+		h2x_hlmt_nodes* node = h1_runtime_block_new(&model->nodes, 1);
+		node->name = h1_string_id("frame");
+		node->parent_node_index = NONE;
+		node->first_child_node_index = NONE;
+		node->next_sibling_node_index = NONE;
+		node->default_rotation = { 0.f, 0.f, 0.f, 1.f };
+		real_matrix4x3 identity;
+		matrix4x3_identity(&identity);
+		csmemcpy(&node->default_inverse_scale, &identity, sizeof(real_matrix4x3));
+		return model_index;
+	}
 	h2x_hlmt_nodes* nodes = h1_runtime_block_new(&model->nodes, h1_model->nodes.count);
 	for (int32 i = 0; i < h1_model->nodes.count; i++)
 	{

@@ -27,6 +27,13 @@ bool h1_objects_definition_bound(datum definition_index);
 // true when the object draws its halo 1 model instead of a halo 2 render model
 bool h1_objects_render_replaced(datum object_index);
 
+// an object halo 2 renders this frame (render_lod_new object_build_render_cache_and_info): only those are drawn, which
+// leaves out the culled ones and the first person player's unit and weapons
+void h1_objects_render_submit(datum object_index, bool first_person);
+
+// the objects submitted since the last call become the ones drawn (each frame before the halo 1 objects draw)
+void h1_objects_render_frame_begin(void);
+
 // objects.h object function modes (the a in to d in of an object definition)
 enum
 {
@@ -44,6 +51,28 @@ enum
 	_h1_object_function_last_region_damage = 17,
 	_h1_object_function_alive,
 	_h1_object_function_compass,
+};
+
+// weapon_export_function_mode.h
+enum
+{
+	_h1_weapon_function_none = 0,
+	_h1_weapon_function_heat,
+	_h1_weapon_function_primary_ammunition,
+	_h1_weapon_function_secondary_ammunition,
+	_h1_weapon_function_primary_rate_of_fire,
+	_h1_weapon_function_secondary_rate_of_fire,
+	_h1_weapon_function_ready,
+	_h1_weapon_function_primary_ejection_port,
+	_h1_weapon_function_secondary_ejection_port,
+	_h1_weapon_function_overheated,
+	_h1_weapon_function_primary_charged,
+	_h1_weapon_function_secondary_charged,
+	_h1_weapon_function_illumination,
+	_h1_weapon_function_age,
+	_h1_weapon_function_integrated_light,
+	_h1_weapon_function_primary_firing,
+	_h1_weapon_function_secondary_firing,
 };
 
 // object_definitions.h function flags, bounds modes and runtime flags
@@ -92,6 +121,15 @@ void h1_object_functions_export(datum h1_definition_index, const s_h1_object_vit
 
 // objects.c object_compute_function_values and object_compute_change_colors (absolute index: the object's datum index)
 void h1_object_functions_update(datum h1_definition_index, int32 absolute_index, s_h1_object_functions* functions);
+
+// the functions of every bound object from its vitality, damage and (weapons) weapon state (once per frame)
+void h1_objects_update_functions(void);
+
+// an object's current functions, NULL when it isn't a halo 1 object
+const s_h1_object_functions* h1_object_functions_get(datum object_index);
+
+// objects.c object_get_function_value: an outgoing function value (function index NONE: 1), false when the function is off
+bool h1_object_function_value_get(datum object_index, int16 function_index, real32* out_value);
 
 // objects.c object_choose_random_change_colors: the four change colors of a halo 1 object created at a position
 void h1_object_change_colors_choose(datum h1_definition_index, const real_point3d* position, real_rgb_color out_colors[4]);

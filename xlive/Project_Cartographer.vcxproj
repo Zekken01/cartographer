@@ -1176,6 +1176,7 @@
     <ClCompile Include="Blam\Engine\halo1\h1_items.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_fog.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_scenery.cpp" />
+    <ClCompile Include="Blam\Engine\halo1\h1_weapons.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_projectiles.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_effects.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_render.cpp" />
@@ -2157,6 +2158,7 @@
     <ClInclude Include="Blam\Engine\halo1\h1_items.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_fog.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_scenery.h" />
+    <ClInclude Include="Blam\Engine\halo1\h1_weapons.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_projectiles.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_effects.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_render.h" />

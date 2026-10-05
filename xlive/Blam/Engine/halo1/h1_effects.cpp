@@ -678,6 +678,7 @@ void h1_effects_update(void)
 	dt = PIN(dt, 0.f, 0.1f);
 	g_h1_effects.frame_dt = dt;
 
+	h1_objects_update_functions();
 	h1_attachments_update(dt);
 	for (size_t i = 0; i < g_h1_effects.effects.size();)
 	{
@@ -2425,8 +2426,8 @@ static bool h1_light_update(s_h1_light* light, real32 ticks)
 	real32 intensity;
 	if (light->attached)
 	{
-		// the light's object function and change color: halo 2 objects have neither, so 1 and white
-		intensity = 1.f;
+		// the light's object function (h1_attachments_update), its change color is white
+		intensity = PIN(light->intensity_scale, 0.f, 1.f);
 		h1_rgb_colors_interpolate(&light->color, definition->interpolation_flags, &definition->color_lower_bound.rgb, &definition->color_upper_bound.rgb, intensity);
 		if (definition->color_lower_bound.alpha > k_real_epsilon || definition->color_upper_bound.alpha > k_real_epsilon)
 		{
@@ -2656,10 +2657,20 @@ static void h1_attachments_update(real32 dt)
 			}
 			attachment->seen = true;
 
+			// effects.c effect_update of looping effects and object_lights.c: the attachment's primary scale function
+			const int16 function_index = attachment_definition->primary_scale > 0 ? (int16)(attachment_definition->primary_scale - 1) : (int16)NONE;
+			real32 function_value;
+			const bool function_active = h1_object_function_value_get(object_index, function_index, &function_value);
 			if (group_tag == 'effe')
 			{
+				attachment->effect.scale_a = function_value;
 				for (int32 tick = 0; tick < ticks; tick++)
 				{
+					if (!function_active)
+					{
+						attachment->effect.stopped = true;
+						break;
+					}
 					h1_attachment_effect_build_locations(&attachment->effect, object_index, object, attachment_definition->marker);
 					// halo 2 velocities are per second, halo 1's per tick
 					attachment->effect.velocity =
@@ -2678,6 +2689,7 @@ static void h1_attachments_update(real32 dt)
 			}
 			else
 			{
+				attachment->light.intensity_scale = function_value;
 				object_marker marker;
 				if (h1_object_markers_get(object_index, attachment_definition->marker, &marker, 1) > 0)
 				{

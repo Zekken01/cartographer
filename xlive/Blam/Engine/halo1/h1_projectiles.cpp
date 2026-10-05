@@ -137,12 +137,8 @@ datum h1_projectile_definition_build(datum h1_projectile_index)
 		return existing;
 	}
 
-	const h1_mode* h1_model = (const h1_mode*)g_h1_cache_file->tag_get('mode', h1_projectile->model.index);
-	if (!h1_model)
-	{
-		h1_log("projectiles: %s is missing its model", name);
-		return NONE;
-	}
+	// bullets and plasma bolts have no model, they're seen through their attachments
+	const h1_mode* h1_model = h1_projectile->model.index != NONE ? (const h1_mode*)g_h1_cache_file->tag_get('mode', h1_projectile->model.index) : NULL;
 
 	s_h1_object_tags tags;
 	tags.render_model = h1_object_render_model_build(h1_model, name);
