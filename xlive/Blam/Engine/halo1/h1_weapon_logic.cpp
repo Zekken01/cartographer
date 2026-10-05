@@ -1093,7 +1093,10 @@ static int32 h1_weapon_effect_new(s_h1_weapon_logic_context* context, const h1_t
 	{
 		if (!looping)
 		{
-			h1_sound_impulse(effect->index, &context->weapon->object.position, scale);
+			// (its world origin: a held weapon's position is its parent's space)
+			real_point3d origin;
+			object_get_origin(context->weapon_index, &origin, false);
+			h1_sound_impulse(effect->index, &origin, scale);
 		}
 		return 0;
 	}

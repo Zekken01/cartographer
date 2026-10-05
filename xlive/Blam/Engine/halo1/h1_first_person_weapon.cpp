@@ -727,7 +727,10 @@ static void h1_fp_tick(void)
 	}
 	if (sound_index != NONE)
 	{
-		h1_sound_impulse(sound_index, &weapon->object.position, 1.f);
+		// object_impulse_sound_new on the weapon: its world origin (a held weapon's position is its parent's space)
+		real_point3d origin;
+		object_get_origin(g_h1_fp.weapon_index, &origin, false);
+		h1_sound_impulse(sound_index, &origin, 1.f);
 	}
 
 	const real32 throttle = sqrtf(unit->unit.throttle.i * unit->unit.throttle.i + unit->unit.throttle.j * unit->unit.throttle.j +
