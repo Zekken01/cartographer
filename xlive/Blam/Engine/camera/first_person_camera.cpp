@@ -5,6 +5,7 @@
 #include "observer.h"
 
 #include "cache/cache_files.h"
+#include "halo1/h1_map_loader.h"
 #include "game/game.h"
 #include "game/game_globals.h"
 #include "game/players.h"
@@ -151,6 +152,12 @@ static void __cdecl first_person_camera_update(int8* camera, s_director_update* 
 		s_game_globals_player_control const* player_control = TAG_BLOCK_GET_ELEMENT(&globals->player_control, 0, s_game_globals_player_control);
 
 		result->crosshair_position = player_control->crosshair_location;
+	}
+
+	// halo 1 maps: halo 1's crosshair is at the middle of the screen, the aim goes through it
+	if (h1_maps_active())
+	{
+		result->crosshair_position = { 0.f, 0.f };
 	}
 
 	real32 field_of_view = player_control_get_field_of_view(director_update->user_index) * g_camera_scale;
