@@ -190,7 +190,7 @@ static void h1_fp_forget_weapon(void);
 static void h1_fp_switch_weapons(void);
 static void h1_fp_set_state(int16 new_state);
 static void h1_fp_next_state(void);
-static void h1_fp_message(int16 message_type);
+static void h1_fp_message(int16 message_type, bool magazine_busy = false);
 static void h1_fp_tick(void);
 static void h1_fp_start_interpolation(int16 frame_count);
 static void h1_fp_compute_pose(void);
@@ -255,11 +255,11 @@ void h1_first_person_weapon_tick(void)
 	const datum current_weapon = h1_fp_unit_current_weapon(unit_index);
 	if (current_weapon != NONE)
 	{
-		e_h1_first_person_weapon_message messages[k_h1_first_person_messages_per_tick];
+		s_h1_first_person_weapon_message messages[k_h1_first_person_messages_per_tick];
 		const int32 count = h1_weapon_logic_first_person_messages_take(current_weapon, messages, k_h1_first_person_messages_per_tick);
 		for (int32 i = 0; i < count; i++)
 		{
-			h1_fp_message(messages[i]);
+			h1_fp_message(messages[i].type, messages[i].magazine_busy);
 		}
 	}
 	// first_person_weapon_message_from_unit: halo 2's unit throws grenades and lowers the weapon, its first person action says so
@@ -610,7 +610,7 @@ static void h1_fp_next_state(void)
 }
 
 // first_person_weapons.c first_person_weapon_message
-static void h1_fp_message(int16 message_type)
+static void h1_fp_message(int16 message_type, bool magazine_busy)
 {
 	int16 state = NONE;
 	switch (message_type)
@@ -637,7 +637,7 @@ static void h1_fp_message(int16 message_type)
 		const int16 rounds_total = weapon->weapon.magazines[0].rounds_inventory;
 		if (g_h1_fp.state == _h1_fp_state_shotgun_enter_reload || g_h1_fp.state == _h1_fp_state_overheated_exit ||
 			g_h1_fp.state == _h1_fp_state_shotgun_exit_reload_empty || g_h1_fp.state == _h1_fp_state_shotgun_exit_reload_full ||
-			g_h1_fp.state == _h1_fp_state_reload_while_empty || g_h1_fp.state == _h1_fp_state_reload_while_full)
+			g_h1_fp.state == _h1_fp_state_reload_while_empty || g_h1_fp.state == _h1_fp_state_reload_while_full || magazine_busy)
 		{
 			g_h1_fp.shotgun_reload_type = MIN(magazine_definition->rounds_loaded_maximum - rounds_loaded, (int32)rounds_total) == 1 ?
 				(int16)_h1_shotgun_reload_type_last_round : (int16)NONE;

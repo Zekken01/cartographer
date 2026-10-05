@@ -247,7 +247,7 @@ struct s_h1_weapon_logic_state
 	bool in_hands;
 	real32 leftover_ticks;
 	bool primary_pressed;
-	std::vector<e_h1_first_person_weapon_message> messages;
+	std::vector<s_h1_first_person_weapon_message> messages;
 };
 
 struct s_h1_weapon_logic_context
@@ -443,14 +443,14 @@ bool h1_weapon_logic_interface_state(datum weapon_index, s_h1_weapon_interface_s
 	return true;
 }
 
-int32 h1_weapon_logic_first_person_messages_take(datum weapon_index, e_h1_first_person_weapon_message* messages, int32 maximum_count)
+int32 h1_weapon_logic_first_person_messages_take(datum weapon_index, s_h1_first_person_weapon_message* messages, int32 maximum_count)
 {
 	auto found = g_h1_weapon_logic.find(weapon_index);
 	if (found == g_h1_weapon_logic.end())
 	{
 		return 0;
 	}
-	std::vector<e_h1_first_person_weapon_message>& queued = found->second.messages;
+	std::vector<s_h1_first_person_weapon_message>& queued = found->second.messages;
 	const int32 count = MIN((int32)queued.size(), maximum_count);
 	for (int32 i = 0; i < count; i++)
 	{
@@ -1068,12 +1068,12 @@ static datum h1_weapon_owner_object_index(const s_h1_weapon_logic_context* conte
 // first_person_weapons.c first_person_weapon_message_from_weapon: kept for the first person weapon
 static void h1_first_person_weapon_message(s_h1_weapon_logic_context* context, e_h1_first_person_weapon_message message)
 {
-	std::vector<e_h1_first_person_weapon_message>& messages = context->state->messages;
+	std::vector<s_h1_first_person_weapon_message>& messages = context->state->messages;
 	if (messages.size() >= k_h1_maximum_queued_messages)
 	{
 		messages.erase(messages.begin());
 	}
-	messages.push_back(message);
+	messages.push_back({ message, context->state->magazines[0].state != _h1_magazine_idle });
 	return;
 }
 
