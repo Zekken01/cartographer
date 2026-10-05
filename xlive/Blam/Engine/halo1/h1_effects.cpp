@@ -8,6 +8,7 @@
 #include "h1_log.h"
 #include "h1_map_loader.h"
 #include "h1_objects.h"
+#include "h1_projectile_logic.h"
 #include "h1_render.h"
 #include "h1_render_shaders.h"
 #include "h1_runtime.h"
@@ -260,6 +261,8 @@ struct s_h1_effect
 	bool first_person;	// on the local player's first person weapon: it has first person instances
 	int32 id;		// h1_effect_new_on_object_ex's handle, 0 for none
 	datum follow_object_index;	// effects.c effect_new_looping: the effect follows its object and restarts until stopped
+	bool deals_damage;			// its damage parts are dealt (halo 1's projectiles), otherwise halo 2 deals the damage
+	datum owner_object_index;	// the damage parts' owner
 };
 
 struct s_h1_particle
@@ -699,6 +702,54 @@ void h1_effect_new_unattached(datum h1_effect_index, const real_point3d* point, 
 	return;
 }
 
+void h1_effect_new_from_markers(datum h1_effect_index, datum owner_object_index, int32 marker_count, const char* const* marker_names,
+	const real_point3d* marker_points, const real_vector3d* marker_forwards, real32 scale_a, real32 scale_b)
+{
+	const h1_effe* definition = h1_effect_index != NONE ? (const h1_effe*)g_h1_cache_file->tag_get('effe', h1_effect_index) : NULL;
+	if (!definition || definition->events.count <= 0 || marker_count <= 0 || g_h1_effects.effects.size() >= k_h1_maximum_effects)
+	{
+		return;
+	}
+
+	s_h1_effect effect = {};
+	effect.definition_index = h1_effect_index;
+	effect.velocity = { 0.f, 0.f, 0.f };
+	effect.scale_a = scale_a;
+	effect.scale_b = scale_b;
+	effect.color = { 1.f, 1.f, 1.f };
+	effect.deals_damage = true;
+	effect.owner_object_index = owner_object_index;
+	effect.follow_object_index = NONE;
+	effect.locations.resize(definition->locations.count);
+	for (int32 i = 0; i < definition->locations.count; i++)
+	{
+		const h1_effe_locations* location = g_h1_cache_file->block_get(definition->locations, i);
+		int32 marker_index = 0;
+		for (int32 j = 0; j < marker_count; j++)
+		{
+			if (_stricmp(location->marker_name, marker_names[j]) == 0)
+			{
+				marker_index = j;
+				break;
+			}
+		}
+		s_h1_effect_location instance = {};
+		instance.position = marker_points[marker_index];
+		instance.forward = marker_forwards[marker_index];
+		h1_normalize(&instance.forward);
+		instance.up = h1_perpendicular(&instance.forward);
+		h1_normalize(&instance.up);
+		effect.locations[i].push_back(instance);
+	}
+
+	h1_effect_set_event(&effect, 0);
+	if (h1_effect_update(&effect, 0.f))
+	{
+		g_h1_effects.effects.push_back(std::move(effect));
+	}
+	return;
+}
+
 void h1_effects_update(void)
 {
 	LARGE_INTEGER now, frequency;
@@ -1049,7 +1100,8 @@ static bool h1_effect_update(s_h1_effect* effect, real32 dt)
 	return true;
 }
 
-// effects.c effect_generate_parts: sounds, particle systems, lights and decals; damage is halo 2's and objects aren't made
+// effects.c effect_generate_parts: sounds, particle systems, lights, decals and the damage of halo 1's projectiles' effects (other
+// damage is halo 2's); objects aren't made
 static void h1_effect_generate_parts(s_h1_effect* effect)
 {
 	const h1_effe* definition = (const h1_effe*)g_h1_cache_file->tag_get('effe', effect->definition_index);
@@ -1097,6 +1149,12 @@ static void h1_effect_generate_parts(s_h1_effect* effect)
 			}
 			case 'ligh':
 				h1_light_new_unattached(part->type.index, &point, &forward, scale);
+				break;
+			case 'jpt!':
+				if (effect->deals_damage)
+				{
+					h1_projectile_logic_area_damage(part->type.index, effect->owner_object_index, &point, &forward, scale);
+				}
 				break;
 			case 'deca':
 			{

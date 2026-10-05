@@ -4,6 +4,7 @@
 #include "h1_cache_file.h"
 #include "h1_effects.h"
 #include "h1_scenery.h"
+#include "h1_projectile_logic.h"
 #include "h1_weapon_logic.h"
 #include "h1_log.h"
 #include "h1_render.h"
@@ -91,6 +92,7 @@ void h1_maps_apply_patches(void)
 	h1_effects_apply_patches();
 	h1_scenery_apply_patches();
 	h1_weapon_logic_apply_patches();
+	h1_projectile_logic_apply_patches();
 	return;
 }
 

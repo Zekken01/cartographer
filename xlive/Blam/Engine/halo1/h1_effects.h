@@ -46,5 +46,9 @@ int32 h1_effect_new_on_object_ex(datum h1_effect_index, datum object_index, real
 // effects.c effect_stop: the effect makes no more events
 void h1_effect_stop(int32 id);
 
+// effects.c effect_new_unattached_from_markers: a halo 1 effect whose locations are the markers it names (the first marker for the
+// unnamed and the unknown), its damage parts dealt by the owner (halo 1's projectiles: their impacts and detonations)
+void h1_effect_new_from_markers(datum h1_effect_index, datum owner_object_index, int32 marker_count, const char* const* marker_names,
+	const real_point3d* marker_points, const real_vector3d* marker_forwards, real32 scale_a, real32 scale_b);
 // the empty halo 2 effect a halo 2 tag refers to where a halo 1 effect plays instead (built on first use)
 datum h1_effects_stub_effect_get(void);

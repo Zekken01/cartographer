@@ -6,6 +6,7 @@
 #include "h1_first_person_weapon.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
+#include "h1_projectile_logic.h"
 #include "h1_projectiles.h"
 #include "h1_sound.h"
 #include "h1_weapons.h"
@@ -1724,9 +1725,6 @@ static void h1_weapon_trigger_overcharged(s_h1_weapon_logic_context* context, in
 // weapons.c trigger_create_projectiles: halo 2 makes the projectile objects (built from the halo 1 projectiles)
 static void h1_weapon_trigger_create_projectiles(s_h1_weapon_logic_context* context, int16 trigger_index)
 {
-	typedef void(__cdecl* t_projectile_set_target)(datum projectile_index, const datum* target);
-	typedef void(__cdecl* t_projectile_kill_tracer)(datum projectile_index);
-	typedef void(__cdecl* t_projectile_initial_update)(datum projectile_index);
 
 	weapon_datum* weapon = context->weapon;
 	s_h1_weapon_logic_state* state = context->state;
@@ -1757,7 +1755,6 @@ static void h1_weapon_trigger_create_projectiles(s_h1_weapon_logic_context* cont
 		real32 velocity = 0.f;
 		real32 error = 0.f;
 		datum target_object_index = NONE;
-		datum target_model = NONE;
 
 		if (!TEST_BIT(trigger_definition->flags, _h1_trigger_definition_projectiles_cannot_be_aimed_bit) && unit)
 		{
@@ -1795,7 +1792,6 @@ static void h1_weapon_trigger_create_projectiles(s_h1_weapon_logic_context* cont
 
 				// aim_assist.c player_aim_projectile: halo 2's aim assist found the target this tick
 				target_object_index = unit->unit.target_info.target_object;
-				target_model = unit->unit.target_info.model_target;
 				if (target_object_index != NONE)
 				{
 					const object_datum* target = (const object_datum*)object_try_and_get(target_object_index);
@@ -1889,17 +1885,8 @@ static void h1_weapon_trigger_create_projectiles(s_h1_weapon_logic_context* cont
 			{
 				continue;
 			}
-			if (target_object_index != NONE)
-			{
-				const datum target[2] = { target_object_index, target_model };
-				Memory::GetAddress<t_projectile_set_target>(0x145787)(projectile_object_index, target);
-			}
-			if (!tracer)
-			{
-				Memory::GetAddress<t_projectile_kill_tracer>(0x145B20)(projectile_object_index);
-			}
-			// halo 2's barrel fire (FUN_0055c687): the instantaneous projectiles trace now
-			Memory::GetAddress<t_projectile_initial_update>(0x14A1EF)(projectile_object_index);
+			// projectiles.c projectile_new: halo 1's projectile logic flies it (halo 2's velocities are a second's)
+			h1_projectile_logic_new(projectile_object_index, velocity / k_h1_ticks_per_second, target_object_index, tracer);
 		}
 	}
 	return;
