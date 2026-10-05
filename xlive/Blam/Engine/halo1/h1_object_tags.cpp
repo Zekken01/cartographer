@@ -18,6 +18,7 @@
 static const char* h1_name_last_component(const char* path);
 static string_id h1_string_id(const char* string);
 static int16 h1_model_node_find(const h1_mode* h1_model, const char* name);
+static real_quaternion h1_quaternion_to_h2(const real_quaternion* rotation);
 
 /* public code */
 
@@ -69,7 +70,7 @@ datum h1_object_render_model_build(const h1_mode* h1_model, const char* name)
 		nodes[i].next_sibling_node_index = h1_node->next_sibling_node_index;
 		nodes[i].import_node_index = NONE;
 		nodes[i].default_translation = h1_node->default_translation;
-		nodes[i].default_rotation = h1_node->default_rotation;
+		nodes[i].default_rotation = h1_quaternion_to_h2(&h1_node->default_rotation);
 		csmemcpy(&nodes[i].inverse_scale, &h1_node->inverse_scale, sizeof(real_matrix4x3));
 		nodes[i].distance_from_parent = h1_node->node_distance_from_parent;
 	}
@@ -88,7 +89,7 @@ datum h1_object_render_model_build(const h1_mode* h1_model, const char* name)
 			markers[j].permutation_index = instance->permutation_index;
 			markers[j].node_index = instance->node_index;
 			markers[j].translation = instance->translation;
-			markers[j].rotation = instance->rotation;
+			markers[j].rotation = h1_quaternion_to_h2(&instance->rotation);
 			markers[j].scale = 1.f;
 		}
 	}
@@ -281,13 +282,25 @@ nodes:
 		nodes[i].first_child_node_index = h1_node->first_child_node_index;
 		nodes[i].next_sibling_node_index = h1_node->next_sibling_node_index;
 		nodes[i].default_translation = h1_node->default_translation;
-		nodes[i].default_rotation = h1_node->default_rotation;
+		nodes[i].default_rotation = h1_quaternion_to_h2(&h1_node->default_rotation);
 		csmemcpy(&nodes[i].default_inverse_scale, &h1_node->inverse_scale, sizeof(real_matrix4x3));
 	}
 	return model_index;
 }
 
 /* private code */
+
+// halo 1 builds rotation matrices from the conjugate of its quaternions (a node's stored inverse matrix is the
+// transpose of the matrix halo 2 builds from the same quaternion), halo 2 from the quaternion itself
+static real_quaternion h1_quaternion_to_h2(const real_quaternion* rotation)
+{
+	real_quaternion result;
+	result.v.i = -rotation->v.i;
+	result.v.j = -rotation->v.j;
+	result.v.k = -rotation->v.k;
+	result.w = rotation->w;
+	return result;
+}
 
 static const char* h1_name_last_component(const char* path)
 {
