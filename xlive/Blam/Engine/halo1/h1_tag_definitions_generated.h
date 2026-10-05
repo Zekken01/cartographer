@@ -4896,4 +4896,20 @@ struct h1_matg
 };
 ASSERT_STRUCT_SIZE(h1_matg, 0x1ac);
 
+struct h1_pphy
+{
+	uint32 flags; // 0x0
+	real32 mass_over_radius_cubed; // 0x4
+	real32 water_gravity_scale; // 0x8
+	real32 air_gravity_scale; // 0xc
+	int8 pad_10[16];
+	real32 density; // 0x20
+	real32 air_friction; // 0x24
+	real32 water_friction; // 0x28
+	real32 surface_friction; // 0x2c
+	real32 elasticity; // 0x30
+	int8 pad_34[12];
+};
+ASSERT_STRUCT_SIZE(h1_pphy, 0x40);
+
 #pragma pack(pop)

@@ -3,6 +3,7 @@
 
 #include "h1_bitmaps.h"
 #include "h1_cache_file.h"
+#include "h1_effects.h"
 #include "h1_fog.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
@@ -115,6 +116,7 @@ void h1_render_structure_opaque(void)
 	if (frame->window_bound_index == 0)
 	{
 		h1_sound_listener_set(&frame->camera);
+		h1_effects_update();
 	}
 
 	h1_fog_update();
@@ -151,6 +153,7 @@ void h1_render_structure_transparent(void)
 		h1_render_model_draw(instance.model_index, instance.permutation, &instance.matrix, &instance.lighting, _h1_render_pass_transparent, false, game_time);
 	}
 	h1_objects_render(_h1_render_pass_transparent, game_time);
+	h1_effects_render();
 
 	h1_render_end();
 	return;
@@ -223,6 +226,7 @@ void h1_render_dispose(void)
 	g_h1_render.state_block = NULL;
 	std::vector<s_h1_structure_draw>().swap(g_h1_render.draws);
 	h1_fog_reset();
+	h1_effects_reset();
 	std::vector<s_h1_scenery_instance>().swap(g_h1_render.scenery);
 	std::vector<s_h1_lighting_triangle>().swap(g_h1_render.lighting_triangles);
 	std::vector<s_h1_lighting_material>().swap(g_h1_render.lighting_materials);

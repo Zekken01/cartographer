@@ -18,6 +18,9 @@ void h1_objects_bind(datum h2_definition_index, datum h1_definition_index);
 // halo 2 definitions bound so far (for the simulation definition table)
 int32 h1_objects_bound_definitions(datum* out_definitions, int32 maximum_count);
 
+// the halo 1 definition a halo 2 definition was built from, NONE if it wasn't
+datum h1_objects_h1_definition_get(datum h2_definition_index);
+
 // true for halo 2 definitions built from halo 1 objects
 bool h1_objects_definition_bound(datum definition_index);
 

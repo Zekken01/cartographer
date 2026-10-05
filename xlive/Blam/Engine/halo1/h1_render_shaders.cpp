@@ -202,6 +202,67 @@ PS_OUTPUT main(PS_INPUT input)
 }
 )";
 
+// halo 1 particles (shader_effect, rasterizer_xbox_transparent_geometry.c): the sprite texture tinted by the particle color,
+// then the stage appended for the framebuffer blend function faded by fog (transparent effect vertex shader) and the fade
+static const char k_h1_particle_pixel_shader[] = H1_PIXEL_SHADER_COMMON R"(
+sampler2D map0 : register(s0);
+sampler2D map1 : register(s1);
+
+float4 particle_settings : register(c0);	// framebuffer blend function, nonlinear tint, has secondary map
+float4 secondary_transform[2] : register(c1);
+
+PS_OUTPUT main(PS_INPUT input)
+{
+	// the particle color comes in the normal, its alpha (fade) in the lightmap coordinates
+	float3 tint = input.normal;
+	float vertex_alpha = input.lightmap_texcoord.x;
+	float4 t0 = tex2D(map0, input.texcoord);
+
+	float3 color;
+	if (particle_settings.y > 0.5f)
+	{
+		float3 t4 = t0.rgb * t0.rgb;
+		t4 *= t4;
+		color = (1.0f - tint) * t4 + tint * t0.rgb;
+	}
+	else
+	{
+		color = t0.rgb * tint;
+	}
+	float alpha = t0.a;
+
+	if (particle_settings.z > 0.5f)
+	{
+		float2 uv = input.texcoord * secondary_transform[0].xy + secondary_transform[0].zw;
+		float4 t1 = tex2D(map1, uv);
+		color *= t1.rgb;
+		alpha *= t1.a;
+	}
+
+	float4 result = float4(color, alpha);
+	float f = saturate(fog_transmittance(input.world) * vertex_alpha);
+	float blend = particle_settings.x;
+	if (blend < 0.5f)
+		result.a = result.a * f;
+	else if (blend < 1.5f || abs(blend - 5.0f) < 0.5f)
+		result.rgb = result.rgb * f + (1.0f - f);
+	else if (blend < 2.5f)
+		result.rgb = result.rgb * f + 0.5f * (1.0f - f);
+	else if (blend < 6.5f)
+		result.rgb = result.rgb * f;
+	else
+	{
+		result.rgb = result.rgb * f;
+		result.a = result.a * f;
+	}
+
+	PS_OUTPUT output;
+	output.color = saturate(result);
+	output.depth = float4(0.0f, 0.0f, 0.0f, 0.0f);
+	return output;
+}
+)";
+
 // halo 1 environment fog: a pass over the opaque structure, blended one / inverse source alpha where the depth is equal
 static const char k_h1_environment_fog_pixel_shader[] = H1_PIXEL_SHADER_COMMON R"(
 sampler2D atmospheric_fog_density : register(s0);
@@ -569,6 +630,7 @@ static IDirect3DPixelShader9* g_h1_chicago_shader = NULL;
 static IDirect3DPixelShader9* g_h1_water_shader = NULL;
 static IDirect3DPixelShader9* g_h1_glass_shader = NULL;
 static IDirect3DPixelShader9* g_h1_environment_fog_shader = NULL;
+static IDirect3DPixelShader9* g_h1_particle_shader = NULL;
 static IDirect3DTexture9* g_h1_default_textures[4] = {};
 static bool g_h1_fog_context_fogged = false;
 static bool g_h1_fog_context_has_centroid = false;
@@ -619,6 +681,7 @@ bool h1_render_shaders_initialize(void)
 	g_h1_water_shader = h1_compile_pixel_shader(k_h1_water_pixel_shader, "transparent water");
 	g_h1_glass_shader = h1_compile_pixel_shader(k_h1_glass_pixel_shader, "transparent glass");
 	g_h1_environment_fog_shader = h1_compile_pixel_shader(k_h1_environment_fog_pixel_shader, "environment fog");
+	g_h1_particle_shader = h1_compile_pixel_shader(k_h1_particle_pixel_shader, "particle");
 
 	g_h1_default_textures[0] = h1_solid_texture(0xFFFFFFFF);
 	g_h1_default_textures[1] = h1_solid_texture(0xFF808080);
@@ -878,6 +941,34 @@ void h1_render_shader_fog_context_set(bool fogged, const real_point3d* centroid)
 	g_h1_fog_context_has_centroid = centroid != NULL;
 	g_h1_fog_context_centroid = centroid ? *centroid : real_point3d{};
 	return;
+}
+
+bool h1_render_particle_shader_bind(int16 framebuffer_blend_function, bool nonlinear_tint, uint16 primary_map_flags, IDirect3DBaseTexture9* texture,
+	IDirect3DBaseTexture9* secondary_texture, uint16 secondary_map_flags)
+{
+	if (!g_h1_particle_shader)
+	{
+		return false;
+	}
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	device->SetPixelShader(g_h1_particle_shader);
+	device->SetTexture(0, texture ? texture : g_h1_default_textures[0]);
+	// map flags: point sampled, u clamped, v clamped
+	h1_set_sampler_addressing(0, TEST_BIT(primary_map_flags, 1), TEST_BIT(primary_map_flags, 2), TEST_BIT(primary_map_flags, 0));
+	if (secondary_texture)
+	{
+		device->SetTexture(1, secondary_texture);
+		h1_set_sampler_addressing(1, TEST_BIT(secondary_map_flags, 1), TEST_BIT(secondary_map_flags, 2), TEST_BIT(secondary_map_flags, 0));
+	}
+	const real32 settings[4] = { (real32)framebuffer_blend_function, nonlinear_tint ? 1.f : 0.f, secondary_texture ? 1.f : 0.f, 0.f };
+	device->SetPixelShaderConstantF(0, settings, 1);
+	const real32 secondary_transform[2][4] = { { 1.f, 1.f, 0.f, 0.f }, { 1.f, 0.f, 0.f, 0.f } };
+	device->SetPixelShaderConstantF(1, &secondary_transform[0][0], 2);
+	device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+	h1_bind_framebuffer_blend(framebuffer_blend_function);
+	device->SetRenderState(D3DRS_COLORWRITEENABLE, D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
+	h1_fog_set_shader_constants(h1_fog_active() ? _h1_fog_shader_mode_transparent : _h1_fog_shader_mode_none, NULL);
+	return true;
 }
 
 bool h1_render_environment_fog_bind(void)

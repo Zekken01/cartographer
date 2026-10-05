@@ -20,5 +20,8 @@ void h1_sound_dispose(void);
 // the camera the sounds are heard from (first window of the frame)
 void h1_sound_listener_set(const render_camera* camera);
 
+// plays a halo 1 sound once at a point (effect parts, particles)
+void h1_sound_impulse(datum sound_index, const real_point3d* position, real32 scale);
+
 // called every main loop iteration
 void h1_sound_update(void);

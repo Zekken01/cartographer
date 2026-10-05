@@ -123,6 +123,7 @@ struct s_h1_detail_voice
 	std::shared_ptr<s_h1_voice> voice;
 	real_point3d position;
 	real32 gain;
+	real32 maximum_distance = FLT_MAX;
 };
 
 struct s_h1_sound_globals
@@ -347,7 +348,7 @@ void h1_sound_update(void)
 			continue;
 		}
 		real32 left, right;
-		h1_sound_spatialize(&detail->position, detail->voice->sound->minimum_distance, FLT_MAX, detail->gain, &left, &right);
+		h1_sound_spatialize(&detail->position, detail->voice->sound->minimum_distance, detail->maximum_distance, detail->gain, &left, &right);
 		h1_sound_voice_set_gain(detail->voice.get(), left, right);
 		i++;
 	}
@@ -362,6 +363,29 @@ void h1_sound_update(void)
 		}
 		i++;
 	}
+	return;
+}
+
+void h1_sound_impulse(datum sound_index, const real_point3d* position, real32 scale)
+{
+	if (!g_h1_sound.active || sound_index == NONE)
+	{
+		return;
+	}
+
+	std::lock_guard<std::mutex> lock(g_h1_sound.voices_lock);
+	std::shared_ptr<s_h1_voice> voice = h1_sound_voice_new(sound_index, false);
+	if (!voice)
+	{
+		return;
+	}
+
+	s_h1_detail_voice impulse;
+	impulse.voice = voice;
+	impulse.gain = voice->sound->gain * scale;
+	impulse.position = *position;
+	impulse.maximum_distance = voice->sound->maximum_distance > 0.f ? voice->sound->maximum_distance : FLT_MAX;
+	g_h1_sound.detail_voices.push_back(impulse);
 	return;
 }
 

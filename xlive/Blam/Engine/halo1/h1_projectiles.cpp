@@ -2,6 +2,7 @@
 #include "h1_projectiles.h"
 
 #include "h1_cache_file.h"
+#include "h1_effects.h"
 #include "h1_items.h"
 #include "h1_log.h"
 #include "h1_object_tags.h"
@@ -175,10 +176,13 @@ datum h1_projectile_definition_build(datum h1_projectile_index)
 	projectile->maximum_range = h1_projectile->maximum_range;
 	projectile->detonation_noise = h1_projectile->detonation_noise;
 	h1_reference_none(&projectile->detonation_started);
-	h1_reference_none(&projectile->airborne_detonation_effect);
-	h1_reference_none(&projectile->ground_detonation_effect);
+	// halo 2 calls for its detonation effect only when it has one: the stub stands in for the halo 1 effect (h1_effects)
+	const datum stub_effect = h1_projectile->effect.index != NONE ? h1_effects_stub_effect_get() : NONE;
+	h1_runtime_reference_set(&projectile->airborne_detonation_effect, stub_effect != NONE ? 'effe' : (tag_group)NONE, stub_effect);
+	h1_runtime_reference_set(&projectile->ground_detonation_effect, stub_effect != NONE ? 'effe' : (tag_group)NONE, stub_effect);
 	h1_reference_none(&projectile->attached_detonation_damage);
-	h1_reference_none(&projectile->super_detonation);
+	const datum super_stub_effect = h1_projectile->super_detonation.index != NONE ? h1_effects_stub_effect_get() : NONE;
+	h1_runtime_reference_set(&projectile->super_detonation, super_stub_effect != NONE ? 'effe' : (tag_group)NONE, super_stub_effect);
 	h1_reference_none(&projectile->super_detonation_damage);
 	h1_reference_none(&projectile->detonation_sound);
 	h1_reference_none(&projectile->attached_super_detonation_damage);

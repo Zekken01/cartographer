@@ -66,6 +66,12 @@ int32 h1_objects_bound_definitions(datum* out_definitions, int32 maximum_count)
 	return count;
 }
 
+datum h1_objects_h1_definition_get(datum h2_definition_index)
+{
+	auto found = g_h1_object_bindings.find(h2_definition_index);
+	return found != g_h1_object_bindings.end() ? found->second.h1_definition_index : NONE;
+}
+
 bool h1_objects_definition_bound(datum definition_index)
 {
 	return g_h1_object_bindings.find(definition_index) != g_h1_object_bindings.end();
