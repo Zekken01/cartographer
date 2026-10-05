@@ -3560,10 +3560,13 @@ static void h1_lens_flare_occlusion_test(s_h1_light* light, const real_point3d* 
 	device->GetViewport(&viewport);
 	if (light->first_person)
 	{
+		// tested against the first person weapon as it's drawn: its depth range and clip distances
 		D3DVIEWPORT9 first_person_viewport = viewport;
 		first_person_viewport.MinZ = 0.f;
 		first_person_viewport.MaxZ = k_h1_first_person_depth_range;
 		device->SetViewport(&first_person_viewport);
+		h1_render_set_first_person_projection(true);
+		h1_render_set_camera_constants(NULL, false);
 	}
 	device->SetRenderState(D3DRS_COLORWRITEENABLE, 0);
 	device->SetRenderState(D3DRS_COLORWRITEENABLE1, 0);
@@ -3581,6 +3584,11 @@ static void h1_lens_flare_occlusion_test(s_h1_light* light, const real_point3d* 
 	device->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
 	device->SetRenderState(D3DRS_COLORWRITEENABLE, D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
 	device->SetViewport(&viewport);
+	if (light->first_person)
+	{
+		h1_render_set_first_person_projection(false);
+		h1_render_set_camera_constants(NULL, false);
+	}
 	query->light_id = light->id;
 	query->pending = true;
 	return;
