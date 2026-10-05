@@ -372,10 +372,11 @@ static IDirect3DBaseTexture9* h1_bitmap_texture_create(const h1_bitm_bitmaps* bi
 			target = staging;
 		}
 
-		// faces are stored one after another, each with its full mip chain
-		const uint8* source = pixels;
+		// faces are stored one after another, each with its full mip chain, each face's start aligned (the pixels split evenly)
+		const uint32 face_stride = (uint32)bitmap->pixels_size / face_count;
 		for (uint32 face = 0; face < face_count; face++)
 		{
+			const uint8* source = pixels + face * face_stride;
 			for (uint32 level = 0; level < level_count; level++)
 			{
 				const uint32 level_size = MAX(1u, width >> level);
