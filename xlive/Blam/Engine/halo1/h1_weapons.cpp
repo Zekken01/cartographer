@@ -134,6 +134,7 @@ static void h1_reference_none(tag_reference* reference);
 static datum h1_damage_effect_reference(const h1_tag_reference* reference);
 static const s_h1_weapon_class* h1_weapon_class_get(const char* label);
 static void h1_weapon_effect_at_marker(datum object_index, const char* marker_name, const h1_tag_reference* effect);
+static bool h1_trigger_slow_automatic(const h1_weap_triggers* trigger);
 
 /* public code */
 
@@ -348,7 +349,9 @@ datum h1_weapon_definition_build(datum h1_weapon_index)
 		trigger->input = (int16)i;
 		trigger->primary_barrel_index = (int16)i;
 		trigger->secondary_barrel_index = NONE;
-		trigger->behavior = TEST_BIT(h1_trigger->flags, _h1_trigger_does_not_repeat_automatically_bit) ? (int16)_h2_trigger_behavior_latch : (int16)_h2_trigger_behavior_spew;
+		// slow automatic triggers latch like halo 2's shotgun and magnum, h1_weapons_update repeats them
+		trigger->behavior = TEST_BIT(h1_trigger->flags, _h1_trigger_does_not_repeat_automatically_bit) || h1_trigger_slow_automatic(h1_trigger) ?
+			(int16)_h2_trigger_behavior_latch : (int16)_h2_trigger_behavior_spew;
 		trigger->prediction = 1;
 		if (charging)
 		{
@@ -391,7 +394,9 @@ datum h1_weapon_definition_build(datum h1_weapon_index)
 		// halo 2 fires semi-automatic barrels (a halo 1 rate of fire of 0, or a trigger that doesn't repeat) one shot per pull with
 		// no rate of fire, the halo 1 rate becoming the recovery between shots
 		const bool no_rate = h1_trigger->rounds_per_second.upper <= 0.f;
-		const bool semi_automatic = no_rate || TEST_BIT(h1_trigger->flags, _h1_trigger_does_not_repeat_automatically_bit);
+		// slow automatic triggers (the shotgun, the pistol) fire one shot per recovery like halo 2's shotgun: as a halo 2 rate of
+		// fire a tap owes the barrel a second shot that fires after the trigger is released
+		const bool semi_automatic = no_rate || h1_trigger_slow_automatic(h1_trigger) || TEST_BIT(h1_trigger->flags, _h1_trigger_does_not_repeat_automatically_bit);
 		if (semi_automatic)
 		{
 			barrel->rounds_per_second = { 0.f, 0.f };
@@ -410,7 +415,7 @@ datum h1_weapon_definition_build(datum h1_weapon_index)
 		barrel->minimum_rounds_loaded = h1_trigger->minimum_rounds_loaded;
 		barrel->rounds_between_tracers = h1_trigger->rounds_between_tracers;
 		barrel->optional_barrel_marker_name = _string_id_empty_string;
-		barrel->prediction_type = h1_trigger->rounds_per_second.upper > 0.f && !TEST_BIT(h1_trigger->flags, _h1_trigger_does_not_repeat_automatically_bit) ? 1 : 2;
+		barrel->prediction_type = semi_automatic ? 2 : 1;
 		barrel->firing_noise = h1_trigger->firing_noise;
 		barrel->acceleration_time_2 = h1_trigger->acceleration_time_2;
 		barrel->deceleration_time_2 = h1_trigger->deceleration_time_2;
@@ -561,7 +566,6 @@ void h1_weapons_update(void)
 	{
 		entry.second.seen = false;
 	}
-
 	object_iterator iterator;
 	object_iterator_new(&iterator, _object_mask_weapon, 0);
 	while (weapon_datum* weapon = (weapon_datum*)object_iterator_next(&iterator))
@@ -590,6 +594,14 @@ void h1_weapons_update(void)
 		for (int32 i = 0; i < k_h1_maximum_weapon_triggers && i < h1_weapon->triggers.count; i++)
 		{
 			const h1_weap_triggers* trigger = g_h1_cache_file->block_get(h1_weapon->triggers, i);
+			// weapons.c weapon_trigger_can_fire: a held automatic trigger fires again once its rate of fire allows. halo 2 latches
+			// the slow ones (h1_weapon_definition_build), so release the latch once the barrel has recovered (its recovery is the
+			// halo 1 rate of fire)
+			if (h1_trigger_slow_automatic(trigger) && i < k_weapon_trigger_count &&
+				weapon->weapon.barrels[i].state == _weapon_barrel_state_idle)
+			{
+				weapon->weapon.triggers[i].flags.set(_weapon_trigger_released_since_last_shot_bit, true);
+			}
 			const char* marker = i == 0 ? "primary trigger" : "secondary trigger";
 			const weapon_barrel* barrel = &weapon->weapon.barrels[i];
 			const h1_weap_triggers_firing_effects* firing_effect = trigger->firing_effects.count > 0 ?
@@ -708,4 +720,11 @@ static void h1_weapon_effect_at_marker(datum object_index, const char* marker_na
 		h1_effect_new_on_object(effect->index, object_index);
 	}
 	return;
+}
+
+// a halo 1 automatic trigger with a slow constant rate of fire (the shotgun, the pistol)
+static bool h1_trigger_slow_automatic(const h1_weap_triggers* trigger)
+{
+	return !TEST_BIT(trigger->flags, _h1_trigger_does_not_repeat_automatically_bit) && trigger->rounds_per_second.upper > 0.f &&
+		trigger->rounds_per_second.lower == trigger->rounds_per_second.upper && trigger->rounds_per_second.upper <= 4.f;
 }
