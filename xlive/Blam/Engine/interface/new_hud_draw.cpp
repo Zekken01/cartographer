@@ -1032,7 +1032,8 @@ static void __cdecl render_ingame_user_interface_hud_indicators_element_hook(int
 	return;
 }
 
-// halo 1 maps draw halo 1's motion sensor (h1_hud.cpp): halo 2's sweep and blips go
+// halo 2 draws its motion sensor when the game variant has one: halo 1 maps draw halo 1's then (h1_hud.cpp) instead of its
+// sweep and blips
 static void __cdecl draw_hud_motion_sensor(int32 user_index, int32 unused, const point2d* point)
 {
 	if (h1_hud_hides_halo2_motion_sensor())

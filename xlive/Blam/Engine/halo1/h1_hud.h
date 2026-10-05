@@ -12,5 +12,6 @@ void h1_hud_render_screen_effect(void);
 void h1_hud_dispose(void);
 // halo 2's hud widgets halo 1's hud replaces on halo 1 maps (the shield, health and grenades)
 bool h1_hud_hides_halo2_widget(string_id name);
-// halo 2's motion sensor (its sweep and blips): halo 1's draws instead
+// halo 2's motion sensor (its sweep and blips): halo 1's draws instead, when halo 2 would draw its own (the game variant's
+// motion sensor setting)
 bool h1_hud_hides_halo2_motion_sensor(void);

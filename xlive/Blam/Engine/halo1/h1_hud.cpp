@@ -656,6 +656,8 @@ static IDirect3DPixelShader9* g_h1_hud_screen_effect_shader = NULL;
 static IDirect3DTexture9* g_h1_hud_screen_copy = NULL;
 static IDirect3DTexture9* g_h1_motion_sensor_target = NULL;
 static s_h1_motion_sensor g_h1_motion_sensor = {};
+// halo 2 drew (or on halo 1 maps would have drawn) its motion sensor this frame: the game variant has one
+static bool g_h1_hud_motion_sensor_shown = false;
 // the unit and weapon state of the hud being drawn (the multitexture overlays' effectors)
 static datum g_h1_hud_unit_index = NONE;
 static const s_h1_weapon_interface_state* g_h1_hud_weapon_state = NULL;
@@ -824,7 +826,7 @@ static void h1_hud_zoomed_layout_end(const real32* saved_bounds);
 static void h1_hud_set_framebuffer_blend_function(int16 function);
 static bool h1_hud_weapon_get(datum* unit_index, datum* weapon_index, const h1_weap** definition);
 static void h1_hud_render_unit(datum unit_index);
-static void h1_hud_render_motion_sensor(datum unit_index, const h1_unhi* hud);
+static void h1_hud_render_motion_sensor(datum unit_index, const h1_unhi* hud, bool shown);
 static void h1_hud_render_grenades(datum unit_index, const h1_weap* weapon_definition);
 static void h1_pixel32_to_argb(uint32 color, real32* argb);
 static uint32 h1_argb_to_pixel32(const real32* argb);
@@ -1063,6 +1065,7 @@ void h1_hud_render(void)
 	g_h1_hud.last_weapon_index = weapon_index;
 	h1_hud_render_unit(unit_index);
 	g_h1_hud_weapon_state = NULL;
+	g_h1_hud_motion_sensor_shown = false;
 	for (DWORD stage = 0; stage < k_h1_multitexture_maps; stage++)
 	{
 		device->SetTexture(stage, NULL);
@@ -2540,18 +2543,20 @@ static void h1_hud_render_unit(datum unit_index)
 		}
 	}
 
-	// hud_unit.c: the motion sensor at the bottom left (always: the game variant's radar isn't read)
+	// hud_unit.c: the motion sensor at the bottom left when the game variant has one (game_engine_hud_draw_motion_sensor: when
+	// halo 2 would draw its own)
+	const bool motion_sensor_shown = g_h1_hud_motion_sensor_shown;
 	h1_hud_absolute_placement motion_sensor_placement = {};
 	motion_sensor_placement.corner = _h1_hud_anchor_bottom_left;
-	if (hud->motion_sensor_background.interface_bitmap.index != NONE)
+	if (motion_sensor_shown && hud->motion_sensor_background.interface_bitmap.index != NONE)
 	{
 		h1_hud_draw_static(&motion_sensor_placement, &hud->motion_sensor_background, 0, NONE);
 	}
-	if (hud->motion_sensor_foreground.interface_bitmap.index != NONE)
+	if (motion_sensor_shown && hud->motion_sensor_foreground.interface_bitmap.index != NONE)
 	{
 		h1_hud_draw_static(&motion_sensor_placement, &hud->motion_sensor_foreground, 0, NONE);
 	}
-	h1_hud_render_motion_sensor(unit_index, hud);
+	h1_hud_render_motion_sensor(unit_index, hud, motion_sensor_shown);
 	return;
 }
 
@@ -2625,6 +2630,8 @@ static void h1_hud_render_grenades(datum unit_index, const h1_weap* weapon_defin
 
 bool h1_hud_hides_halo2_motion_sensor(void)
 {
+	// halo 2's interface draws before halo 1's hud: this frame's halo 1 motion sensor shows
+	g_h1_hud_motion_sensor_shown = true;
 	return h1_maps_active();
 }
 
@@ -2828,8 +2835,9 @@ static void h1_motion_sensor_quad(IDirect3DDevice9Ex* device, real32 x0, real32 
 }
 
 // motion_sensor.c render_motion_sensor and rasterizer_xbox_motion_sensor.c: the blip history drawn to a target, its sweep and
-// mask over them, then the target added to the screen around the blips' corner
-static void h1_hud_render_motion_sensor(datum unit_index, const h1_unhi* hud)
+// mask over them, then the target added to the screen around the blips' corner (the history kept when it isn't shown, as
+// motion_sensor_tick does)
+static void h1_hud_render_motion_sensor(datum unit_index, const h1_unhi* hud, bool shown)
 {
 	const h1_matg_interface_bitmaps* interface_bitmaps = h1_hud_interface_bitmaps_get();
 	if (!interface_bitmaps || interface_bitmaps->hud_globals.index == NONE)
@@ -2844,6 +2852,10 @@ static void h1_hud_render_motion_sensor(datum unit_index, const h1_unhi* hud)
 	}
 	h1_motion_sensor_update(unit_index, defaults);
 	h1_motion_sensor_follow(unit_index, defaults);
+	if (!shown)
+	{
+		return;
+	}
 
 	IDirect3DBaseTexture9* blip_texture = h1_bitmap_texture_get(interface_bitmaps->motion_sensor_blip_bitmap, 0);
 	IDirect3DBaseTexture9* sweep_texture = h1_bitmap_texture_get(interface_bitmaps->motion_sensor_sweep_bitmap, 0);
