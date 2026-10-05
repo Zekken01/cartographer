@@ -16,6 +16,7 @@
 #include "objects/object_types.h"
 #include "objects/objects.h"
 #include "physics/collisions.h"
+#include "scenario/scenario.h"
 #include "units/units.h"
 
 #include <unordered_map>
@@ -48,6 +49,8 @@ enum
 	_h1_projectile_at_rest_bit = 16,
 	_h1_projectile_under_media_bit = 17,
 	_h1_projectile_has_nonzero_angular_velocity_bit = 18,
+	// halo 2 made it in a thrower's hand (a grenade): it's thrown when it leaves it
+	_h1_projectile_in_hand_bit = 19,
 };
 
 // projectile_definitions.h
@@ -180,6 +183,7 @@ static bool h1_projectile_update_hook(datum projectile_index);
 static s_h1_projectile* h1_projectile_get(datum projectile_index, datum* h1_definition_index);
 static void h1_projectile_initialize(datum projectile_index, s_h1_projectile* projectile, const real_vector3d* velocity);
 static void h1_projectile_update(datum projectile_index, s_h1_projectile* projectile);
+static void h1_projectile_throw(datum projectile_index, s_h1_projectile* projectile);
 static void h1_projectile_set_action(s_h1_projectile* projectile, int16 action);
 static void h1_projectile_adjust_for_angular_velocity_change(s_h1_projectile* projectile);
 static void h1_projectile_calculate_deceleration(s_h1_projectile* projectile, const h1_proj* definition);
@@ -271,6 +275,9 @@ void h1_projectile_logic_area_damage(datum h1_damage_effect_index, datum owner_o
 	damage.origin = *point;
 	damage.epicenter = *point;
 	damage.direction = *forward;
+	// effects.c: the effect's location (halo 2's area of effect finds the objects near it through it)
+	real_point3d location_point = *point;
+	scenario_location_from_point(&damage.location, &location_point);
 	Memory::GetAddress<t_area_of_effect_cause_damage>(0x17868D)(&damage, NONE);
 	return;
 }
@@ -328,8 +335,57 @@ static bool h1_projectile_update_hook(datum projectile_index)
 		h1_projectile_initialize(projectile_index, projectile, &velocity);
 		h1_effects_object_attachments_new(projectile_index);
 	}
+	// units.c unit_throw_grenade_release: out of the hand, it flies along the thrower's aim at the thrower's grenade velocity
+	const object_datum* object = object_get(projectile_index);
+	if (object->object.parent_object_index != NONE)
+	{
+		SET_BIT(projectile->flags, _h1_projectile_in_hand_bit, true);
+		return true;
+	}
+	if (TEST_BIT(projectile->flags, _h1_projectile_in_hand_bit))
+	{
+		SET_BIT(projectile->flags, _h1_projectile_in_hand_bit, false);
+		h1_projectile_throw(projectile_index, projectile);
+	}
 	h1_projectile_update(projectile_index, projectile);
 	return true;
+}
+
+static void h1_projectile_throw(datum projectile_index, s_h1_projectile* projectile)
+{
+	const datum thrower_index = h1_object_owner_get(projectile_index);
+	const unit_datum* thrower = (const unit_datum*)object_try_and_get_and_verify_type(thrower_index, _object_mask_unit);
+	if (!thrower)
+	{
+		return;
+	}
+	// the thrower's halo 1 unit definition, the player's when halo 2 built it
+	datum h1_unit_index = h1_objects_h1_definition_get(thrower->definition_index);
+	if (h1_unit_index == NONE || !g_h1_cache_file->tag_get('obje', h1_unit_index))
+	{
+		const datum globals_index = g_h1_cache_file->tag_find('matg', "globals\\globals");
+		const h1_matg* globals = globals_index != NONE ? (const h1_matg*)g_h1_cache_file->tag_get('matg', globals_index) : NULL;
+		const h1_matg_player_information* player_information = globals && globals->player_information.count > 0 ?
+			g_h1_cache_file->block_get(globals->player_information, 0) : NULL;
+		h1_unit_index = player_information ? player_information->unit.index : NONE;
+	}
+	const h1_vehi* unit_definition = h1_unit_index != NONE ? (const h1_vehi*)g_h1_cache_file->tag_get('obje', h1_unit_index) : NULL;
+	if (!unit_definition)
+	{
+		return;
+	}
+	const real32 speed = unit_definition->grenade_velocity / k_h1_ticks_per_second;
+	const real_vector3d& aim = thrower->unit.aiming_vector;
+	projectile->velocity = { aim.i * speed, aim.j * speed, aim.k * speed };
+	// projectile_accelerate's tumble
+	real_vector3d axis;
+	h1_random_vector_in_cone(&aim, _pi, &axis);
+	const real32 tumble = h1_magnitude(&projectile->velocity) * h1_projectile_random() * 1.5707964f;
+	projectile->angular_velocity = { projectile->angular_velocity.i + axis.i * tumble, projectile->angular_velocity.j + axis.j * tumble, projectile->angular_velocity.k + axis.k * tumble };
+	h1_projectile_adjust_for_angular_velocity_change(projectile);
+	SET_BIT(projectile->flags, _h1_projectile_at_rest_bit, false);
+	h1_object_set_velocities(projectile_index, projectile);
+	return;
 }
 
 // the halo 1 projectile state of a halo 2 projectile built from a halo 1 projectile (made empty, its definition NONE, when new)
