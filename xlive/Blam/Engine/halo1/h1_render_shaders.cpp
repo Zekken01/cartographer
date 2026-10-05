@@ -184,18 +184,43 @@ sampler2D primary_detail_map : register(s1);
 sampler2D secondary_detail_map : register(s2);
 sampler2D micro_detail_map : register(s3);
 sampler2D lightmap : register(s4);
+sampler2D self_illumination_map : register(s5);
 
 float4 detail_scales : register(c0);	// primary, secondary, micro
 float4 modes : register(c1);			// type, detail function, micro detail function, alpha tested
 float4 ambient : register(c2);			// lightmap missing ambient color, w: has lightmap
 float4 debug_mode : register(c3);		// x: 1 flat color, 2 base map only, 3 lightmap only, 4 detail only
+float4 texture_animation : register(c4);	// u and v offsets (texture scrolling), self-illumination map scale, has self-illumination
+float4 primary_color : register(c5);		// the animated primary and secondary self-illumination colors
+float4 secondary_color : register(c6);
+float4 plasma_on_color : register(c7);		// w: the plasma animation value
+float4 plasma_off_color : register(c8);
+
+// rasterizer_xbox_environment.c lightmap pass combiners 0-5: the map's red and green light the primary and secondary colors,
+// a band of its alpha around the plasma value lights the plasma color through its blue
+float3 self_illumination(float2 texcoord)
+{
+	float4 map = tex2D(self_illumination_map, texcoord * texture_animation.z);
+	float d = plasma_on_color.w - map.a;
+	float a = clamp(0.5f + d, -1.0f, 1.0f);
+	float b = clamp(0.5f - d, -1.0f, 1.0f);
+	float q = clamp(4.0f * (a >= 0.5f ? b * b : a * a), -1.0f, 1.0f);
+	float q2 = q * q;
+	float e = 2.0f * q2 - 1.0f;
+	float plasma = q2 >= 0.5f ? clamp(e * e, -1.0f, 1.0f) : 0.0f;
+	float3 plasma_color = clamp(plasma_on_color.rgb * plasma + plasma_off_color.rgb, -1.0f, 1.0f);
+	float3 colors = clamp(map.r * primary_color.rgb + map.g * secondary_color.rgb, -1.0f, 1.0f);
+	return saturate(plasma_color * map.b + colors);
+}
 
 PS_OUTPUT main(PS_INPUT input)
 {
-	float4 base = tex2D(base_map, input.texcoord);
-	float4 primary = tex2D(primary_detail_map, input.texcoord * detail_scales.x);
-	float4 secondary = tex2D(secondary_detail_map, input.texcoord * detail_scales.y);
-	float4 micro = tex2D(micro_detail_map, input.texcoord * detail_scales.z);
+	// shader_environment_texture_animation_evaluate offsets the texture coordinates of every map
+	float2 texcoord = input.texcoord + texture_animation.xy;
+	float4 base = tex2D(base_map, texcoord);
+	float4 primary = tex2D(primary_detail_map, texcoord * detail_scales.x);
+	float4 secondary = tex2D(secondary_detail_map, texcoord * detail_scales.y);
+	float4 micro = tex2D(micro_detail_map, texcoord * detail_scales.z);
 
 	// normal: secondary alpha blends the detail maps, blended types use the base map alpha
 	float blend = modes.x < 0.5f ? secondary.a : base.a;
@@ -209,6 +234,8 @@ PS_OUTPUT main(PS_INPUT input)
 
 	float3 light = ambient.w > 0.5f ? tex2D(lightmap, input.lightmap_texcoord).rgb : ambient.rgb;
 	light += dynamic_light(input.world, normalize(input.world_normal));
+	if (texture_animation.w > 0.5f)
+		light += self_illumination(texcoord);
 
 	PS_OUTPUT output;
 	output.color = float4(fog_model(color * light, input.world), 1.0f);
@@ -1131,6 +1158,42 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 		device->SetPixelShaderConstantF(2, ambient, 1);
 		const real32 debug_mode[4] = { (real32)g_h1_render_debug_mode, 0.f, 0.f, 0.f };
 		device->SetPixelShaderConstantF(3, debug_mode, 1);
+
+		// shaders.c shader_environment_texture_animation_evaluate
+		const real32 u_offset = shader->u_animation_period != 0.f ? h1_periodic_function(shader->u_animation_function, game_time / shader->u_animation_period) * shader->u_animation_scale : 0.f;
+		const real32 v_offset = shader->v_animation_period != 0.f ? h1_periodic_function(shader->v_animation_function, game_time / shader->v_animation_period) * shader->v_animation_scale : 0.f;
+
+		// the self-illumination colors (on and off colors blended by their animation functions)
+		IDirect3DBaseTexture9* self_illumination_map = h1_bitmap_texture_get(shader->map);
+		auto animation = [game_time](int16 function, real32 period, real32 phase) -> real32
+		{
+			return period != 0.f ? h1_periodic_function(function, (game_time + phase) / period) : 0.f;
+		};
+		const real32 primary_value = animation(shader->primary_animation_function, shader->primary_animation_period, shader->primary_animation_phase);
+		const real32 secondary_value = animation(shader->secondary_animation_function, shader->secondary_animation_period, shader->secondary_animation_phase);
+		const real32 plasma_value = animation(shader->plasma_animation_function, shader->plasma_animation_period, shader->plasma_animation_phase);
+		const real32 self_illumination_constants[5][4] =
+		{
+			{ u_offset, v_offset, shader->map_scale != 0.f ? shader->map_scale : 1.f, self_illumination_map ? 1.f : 0.f },
+			{
+				shader->primary_off_color.red * (1.f - primary_value) + shader->primary_on_color.red * primary_value,
+				shader->primary_off_color.green * (1.f - primary_value) + shader->primary_on_color.green * primary_value,
+				shader->primary_off_color.blue * (1.f - primary_value) + shader->primary_on_color.blue * primary_value,
+				0.f
+			},
+			{
+				shader->secondary_off_color.red * (1.f - secondary_value) + shader->secondary_on_color.red * secondary_value,
+				shader->secondary_off_color.green * (1.f - secondary_value) + shader->secondary_on_color.green * secondary_value,
+				shader->secondary_off_color.blue * (1.f - secondary_value) + shader->secondary_on_color.blue * secondary_value,
+				0.f
+			},
+			{ shader->plasma_on_color.red, shader->plasma_on_color.green, shader->plasma_on_color.blue, plasma_value },
+			{ shader->plasma_off_color.red, shader->plasma_off_color.green, shader->plasma_off_color.blue, 0.f },
+		};
+		device->SetPixelShaderConstantF(4, &self_illumination_constants[0][0], 5);
+		device->SetTexture(5, self_illumination_map ? self_illumination_map : g_h1_default_textures[2]);
+		// self-illumination flags: unfiltered
+		h1_set_sampler_addressing(5, false, false, TEST_BIT(shader->flags_5, 0));
 		return true;
 	}
 	case 'soso':
