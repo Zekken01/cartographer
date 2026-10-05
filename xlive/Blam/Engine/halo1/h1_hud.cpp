@@ -23,6 +23,11 @@ enum
 {
 	k_h1_hud_ticks_per_second = 30,
 	k_h1_hud_window_height = 480,
+	k_h1_hud_screen_width = 640,
+	// rasterizer_xbox.c RASTERIZER_FRAME_BOUNDS: the title safe frame of the 640 by 480 screen
+	k_h1_hud_frame_bounds_x0 = 48,
+	k_h1_hud_frame_bounds_y0 = 36,
+	k_h1_hud_frame_bounds_y1 = 444,
 	k_h1_maximum_weapon_hud_depth = 16,
 	k_h1_weapon_hud_flash_references = 8,
 	k_h1_weapon_hud_real_numbers = 8,
@@ -200,7 +205,6 @@ enum
 
 enum
 {
-	k_h1_hud_zoomed_layout_width = 640,
 	k_h1_multitexture_maps = 3,
 };
 
@@ -567,6 +571,7 @@ struct s_h1_hud_window
 {
 	real32 x0, x1, y0, y1;
 	real32 pixel_scale;		// screen pixels per hud pixel
+	real32 screen_width;	// in hud pixels
 	D3DVIEWPORT9 viewport;
 };
 
@@ -947,13 +952,15 @@ void h1_hud_render(void)
 		return;
 	}
 
-	// the hud's window: 480 high, as wide as the screen's shape
+	// the hud's window: rasterizer_xbox.c's title safe frame (main.c compute_window_bounds) of a screen 480 high and as wide as
+	// the screen's shape, widened in proportion
 	device->GetViewport(&g_h1_hud_window.viewport);
 	g_h1_hud_window.pixel_scale = (real32)g_h1_hud_window.viewport.Height / (real32)k_h1_hud_window_height;
-	g_h1_hud_window.x0 = 0.f;
-	g_h1_hud_window.y0 = 0.f;
-	g_h1_hud_window.x1 = (real32)g_h1_hud_window.viewport.Width / g_h1_hud_window.pixel_scale;
-	g_h1_hud_window.y1 = (real32)k_h1_hud_window_height;
+	g_h1_hud_window.screen_width = (real32)g_h1_hud_window.viewport.Width / g_h1_hud_window.pixel_scale;
+	g_h1_hud_window.x0 = (real32)(int32)(k_h1_hud_frame_bounds_x0 * g_h1_hud_window.screen_width / k_h1_hud_screen_width);
+	g_h1_hud_window.y0 = (real32)k_h1_hud_frame_bounds_y0;
+	g_h1_hud_window.x1 = (real32)(int32)g_h1_hud_window.screen_width - g_h1_hud_window.x0;
+	g_h1_hud_window.y1 = (real32)k_h1_hud_frame_bounds_y1;
 
 	device->SetVertexDeclaration(g_h1_hud_vertex_declaration);
 	device->SetVertexShader(g_h1_hud_vertex_shader);
@@ -2051,12 +2058,13 @@ static bool h1_hud_overlays_follow_zoom(const h1_tag_block<h1_hud_multitexture_o
 	return false;
 }
 
-// hud_draw.c hud_zoomed_layout_begin: the window as it would be 640 wide, at the middle of the wide one
+// hud_draw.c hud_zoomed_layout_begin: the window as it would be on a 640 wide screen, at the middle of the wide one
 static void h1_hud_zoomed_layout_begin(real32* saved_bounds)
 {
 	saved_bounds[0] = g_h1_hud_window.x0;
 	saved_bounds[1] = g_h1_hud_window.x1;
-	const real32 inset = (real32)(int32)((g_h1_hud_window.x1 - g_h1_hud_window.x0 - k_h1_hud_zoomed_layout_width) / 2.f);
+	const real32 width = g_h1_hud_window.x1 - g_h1_hud_window.x0;
+	const real32 inset = (real32)(int32)((width - width * k_h1_hud_screen_width / g_h1_hud_window.screen_width) / 2.f);
 	g_h1_hud_window.x0 += inset;
 	g_h1_hud_window.x1 -= inset;
 	return;
