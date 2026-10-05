@@ -572,6 +572,7 @@ static bool h1_particle_system_update(s_h1_particle_system* system, real32 dt);
 static int32 h1_particle_system_particle_count(void);
 
 static void h1_light_new_unattached(datum definition_index, const real_point3d* position, const real_vector3d* forward, real32 scale);
+static real32 h1_transition_function(int16 function, real32 t);
 static void h1_lights_update(real32 dt);
 static void h1_attachments_update(real32 dt);
 static void h1_decal_new(datum definition_index, const real_point3d* origin, const real_vector3d* velocity, real32 radius_modifier);
@@ -2367,6 +2368,11 @@ static bool h1_particle_system_update(s_h1_particle_system* system, real32 dt)
 }
 
 /* lights, attachments, decals and lens flares */
+
+real32 h1_transition_function_evaluate(int16 function, real32 t)
+{
+	return h1_transition_function(function, t);
+}
 
 // periodic_functions.c transition_function_evaluate
 static real32 h1_transition_function(int16 function, real32 t)

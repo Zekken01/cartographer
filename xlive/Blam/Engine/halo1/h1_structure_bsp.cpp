@@ -5,6 +5,7 @@
 #include "h1_log.h"
 #include "h1_mopp.h"
 #include "h1_runtime.h"
+#include "h1_scenery.h"
 
 #include <unordered_map>
 #include <vector>
@@ -524,25 +525,47 @@ static void h1_structure_material_set(structure_collision_material* material, in
 	return;
 }
 
-// the collision bsp of a halo 1 collision model (node 0), the layout matches the structure collision bsp
-static const h1_sbsp_collision_bsp* h1_collision_model_bsp_get(const h1_coll* model)
+// a collision bsp of a halo 1 collision model (node 0, one per permutation), the layout matches the structure collision bsp
+static const h1_sbsp_collision_bsp* h1_collision_model_bsp_get(const h1_coll* model, int32 bsp_index = 0)
 {
 	const h1_coll_nodes* node = g_h1_cache_file->block_get(model->nodes, 0);
-	if (!node || node->bsps.count <= 0)
+	if (!node || bsp_index >= node->bsps.count)
 	{
 		return NULL;
 	}
 	static_assert(sizeof(h1_coll_nodes_bsps) == sizeof(h1_sbsp_collision_bsp));
-	return (const h1_sbsp_collision_bsp*)g_h1_cache_file->block_get(node->bsps, 0);
+	return (const h1_sbsp_collision_bsp*)g_h1_cache_file->block_get(node->bsps, bsp_index);
+}
+
+// damage.c object_permutation_shield_regions: a region missing while the shield is down has a second permutation without it
+static bool h1_collision_model_has_shield_off_bsp(const h1_coll* model)
+{
+	if (model->maximum_shield_vitality <= 0.f)
+	{
+		return false;
+	}
+	for (int32 i = 0; i < model->regions.count; i++)
+	{
+		const h1_coll_regions* region = g_h1_cache_file->block_get(model->regions, i);
+		if (TEST_BIT(region->flags, _h1_region_missing_when_shield_is_zero_bit) && region->permutations.count > 1)
+		{
+			const h1_sbsp_collision_bsp* off = h1_collision_model_bsp_get(model, 1);
+			return off && off->surfaces.count > 0;
+		}
+	}
+	return false;
 }
 
 static int32 h1_instanced_geometry_build(structure_bsp* bsp, const structure_bsp* host_bsp, int32 structure_material_count, std::vector<real_rectangle3d>& out_instance_bounds)
 {
 	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
 
-	struct s_placement { datum model; real_matrix4x3 matrix; };
+	struct s_placement { datum model; real_matrix4x3 matrix; int32 placement_index; };
+	struct s_definition_source { int32 model_slot; int32 bsp_index; };
 	std::vector<datum> models;
-	std::unordered_map<datum, int32> model_definitions;
+	std::unordered_map<datum, int32> model_definitions;	// the definition of the model's first bsp
+	std::unordered_map<datum, int32> model_shield_off_definitions;
+	std::vector<s_definition_source> definition_sources;
 	std::vector<s_placement> placements;
 
 	for (int32 i = 0; i < scenario->scenery.count; i++)
@@ -558,12 +581,20 @@ static int32 h1_instanced_geometry_build(structure_bsp* bsp, const structure_bsp
 
 		if (model_definitions.find(scenery->collision_model.index) == model_definitions.end())
 		{
-			model_definitions[scenery->collision_model.index] = (int32)models.size();
+			const int32 model_slot = (int32)models.size();
+			model_definitions[scenery->collision_model.index] = (int32)definition_sources.size();
+			definition_sources.push_back({ model_slot, 0 });
+			if (h1_collision_model_has_shield_off_bsp(model))
+			{
+				model_shield_off_definitions[scenery->collision_model.index] = (int32)definition_sources.size();
+				definition_sources.push_back({ model_slot, 1 });
+			}
 			models.push_back(scenery->collision_model.index);
 		}
 
 		s_placement entry;
 		entry.model = scenery->collision_model.index;
+		entry.placement_index = i;
 		h1_matrix_from_euler(&placement->rotation, &placement->position, &entry.matrix);
 		placements.push_back(entry);
 	}
@@ -617,17 +648,29 @@ static int32 h1_instanced_geometry_build(structure_bsp* bsp, const structure_bsp
 	}
 
 	// definitions
-	const int32 definition_count = (int32)models.size();
+	const int32 definition_count = (int32)definition_sources.size();
 	structure_instanced_geometry_definition* definitions = h1_runtime_block_new(&bsp->instanced_geometry_definitions, definition_count);
 	for (int32 i = 0; i < definition_count; i++)
 	{
-		const h1_coll* model = (const h1_coll*)g_h1_cache_file->tag_get('coll', models[i]);
+		const s_definition_source& source = definition_sources[i];
+		const h1_coll* model = (const h1_coll*)g_h1_cache_file->tag_get('coll', models[source.model_slot]);
 		structure_instanced_geometry_definition* definition = &definitions[i];
 
 		definition->render_info.block.block_offset = NONE;
 		definition->render_info.block.geometry_cache_index = NONE;
-		definition->checksum = (int32)models[i];
-		h1_collision_bsp_build(&definition->collision_info, h1_collision_model_bsp_get(model), material_offsets[i]);
+		definition->checksum = (int32)models[source.model_slot] ^ (source.bsp_index << 30);
+		h1_collision_bsp_build(&definition->collision_info, h1_collision_model_bsp_get(model, source.bsp_index), material_offsets[source.model_slot]);
+
+		// scenery that takes damage: halo 2 hands hits on breakable surfaces to the breakable surface damage (h1_scenery)
+		if (model->maximum_shield_vitality > 0.f || model->maximum_body_vitality > 0.f)
+		{
+			for (int32 j = 0; j < definition->collision_info.surfaces.count; j++)
+			{
+				collision_surface* surface = (collision_surface*)tag_block_get_element_with_size((const s_tag_block*)&definition->collision_info.surfaces, j, sizeof(collision_surface));
+				surface->flags |= FLAG(_collision_surface_breakable_bit);
+				surface->breakable_surface_index = NONE;
+			}
+		}
 
 		real_rectangle3d bounds;
 		h1_mopp_collision_bsp_bounds(&definition->collision_info, NULL, &bounds);
@@ -695,6 +738,11 @@ static int32 h1_instanced_geometry_build(structure_bsp* bsp, const structure_bsp
 		world_center->y = center.x * m.n[0][1] + center.y * m.n[1][1] + center.z * m.n[2][1] + m.n[3][1];
 		world_center->z = center.x * m.n[0][2] + center.y * m.n[1][2] + center.z * m.n[2][2] + m.n[3][2];
 		*(real32*)((uint8*)instance + 0x48) = definitions[definition_index].bounding_sphere_radius;
+
+		auto shield_off = model_shield_off_definitions.find(placement->model);
+		h1_scenery_instance_register(i, placement->placement_index, (int16)definition_index,
+			shield_off != model_shield_off_definitions.end() ? (int16)shield_off->second : NONE,
+			material_offsets[definition_sources[definition_index].model_slot]);
 	}
 
 	return definition_count;

@@ -8,6 +8,12 @@
 // the halo 2 damage effect built from a halo 1 damage effect, NONE on failure
 datum h1_damage_effect_build(datum h1_damage_effect_index);
 
+// the halo 1 damage effect a halo 2 damage effect was built from, NONE for halo 2's own
+datum h1_damage_effect_h1_get(datum h2_damage_effect_index);
+
+// forgets the damage effects built (a new map is being built)
+void h1_projectiles_reset(void);
+
 // the halo 2 projectile built from a halo 1 projectile, NONE on failure
 datum h1_projectile_definition_build(datum h1_projectile_index);
 

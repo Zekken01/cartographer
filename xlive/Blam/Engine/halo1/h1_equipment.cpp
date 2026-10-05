@@ -7,6 +7,8 @@
 #include "h1_log.h"
 #include "h1_objects.h"
 #include "h1_projectiles.h"
+#include "h1_scenery.h"
+#include "h1_projectiles.h"
 #include "h1_runtime.h"
 #include "h2_tag_definitions_generated.h"
 
@@ -87,6 +89,8 @@ void h1_equipment_build(scenario* h2_scenario, const h1_scnr* h1_scenario)
 	g_h1_collection_classification.clear();
 	h1_objects_reset();
 	h1_effects_reset();
+	h1_scenery_reset();
+	h1_projectiles_reset();
 
 	const int32 h1_item_count = h1_scenario->netgame_equipment.count;
 

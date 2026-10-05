@@ -10,6 +10,7 @@
 #include "h1_render_models.h"
 #include "h1_render_shaders.h"
 #include "h1_objects.h"
+#include "h1_scenery.h"
 #include "h1_runtime.h"
 #include "h1_sound.h"
 
@@ -49,6 +50,7 @@ struct s_h1_scenery_instance
 	real_matrix4x3 matrix;
 	s_h1_render_lighting lighting;
 	real_rgb_color change_colors[4];
+	int32 placement_index;
 };
 
 // cpu copy of the lightmapped structure, used to light objects from the surface below them
@@ -118,6 +120,7 @@ void h1_render_structure_opaque(void)
 	{
 		h1_sound_listener_set(&frame->camera);
 		h1_effects_update();
+		h1_scenery_update();
 	}
 
 	h1_fog_update();
@@ -132,7 +135,12 @@ void h1_render_structure_opaque(void)
 	const real32 game_time = h1_render_game_time();
 	for (const s_h1_scenery_instance& instance : g_h1_render.scenery)
 	{
-		h1_render_model_draw(instance.model_index, instance.permutation, &instance.matrix, &instance.lighting, _h1_render_pass_opaque, false, game_time, instance.change_colors);
+		const real32* function_values;
+		const real_rgb_color* change_colors;
+		const int16* region_permutations;
+		h1_scenery_render_state(instance.placement_index, &function_values, &change_colors, &region_permutations);
+		h1_render_model_draw(instance.model_index, instance.permutation, &instance.matrix, &instance.lighting, _h1_render_pass_opaque, false, game_time,
+			change_colors ? change_colors : instance.change_colors, function_values, region_permutations);
 	}
 	h1_objects_render(_h1_render_pass_opaque, game_time);
 
@@ -152,7 +160,12 @@ void h1_render_structure_transparent(void)
 	const real32 game_time = h1_render_game_time();
 	for (const s_h1_scenery_instance& instance : g_h1_render.scenery)
 	{
-		h1_render_model_draw(instance.model_index, instance.permutation, &instance.matrix, &instance.lighting, _h1_render_pass_transparent, false, game_time, instance.change_colors);
+		const real32* function_values;
+		const real_rgb_color* change_colors;
+		const int16* region_permutations;
+		h1_scenery_render_state(instance.placement_index, &function_values, &change_colors, &region_permutations);
+		h1_render_model_draw(instance.model_index, instance.permutation, &instance.matrix, &instance.lighting, _h1_render_pass_transparent, false, game_time,
+			change_colors ? change_colors : instance.change_colors, function_values, region_permutations);
 	}
 	h1_objects_render(_h1_render_pass_transparent, game_time);
 	h1_effects_render();
@@ -572,6 +585,7 @@ static void h1_render_scenery_initialize(void)
 		h1_matrix_from_euler(&placement->rotation, &placement->position, &instance.matrix);
 		h1_render_lighting_at(&placement->position, &instance.lighting);
 		h1_object_change_colors_choose(palette->name.index, &placement->position, instance.change_colors);
+		instance.placement_index = i;
 		g_h1_render.scenery.push_back(instance);
 	}
 

@@ -4,6 +4,7 @@
 #include "h1_cache_file.h"
 #include "h1_effects.h"
 #include "h1_log.h"
+#include "h1_render_shaders.h"
 #include "h1_render.h"
 #include "h1_render_models.h"
 
@@ -12,6 +13,7 @@
 #include "objects/objects.h"
 #include "objects/object_placement.h"
 #include "game/game.h"
+#include "game/game_time.h"
 
 #include <unordered_map>
 
@@ -30,23 +32,20 @@ struct s_h1_object_binding
 	datum h1_model_index;
 };
 
-struct s_h1_object_change_colors
-{
-	real_rgb_color colors[4];
-};
+
 
 /* globals */
 
 static std::unordered_map<datum, s_h1_object_binding> g_h1_object_bindings;
-// the change colors each object was given when it was first drawn (where it was created)
-static std::unordered_map<datum, s_h1_object_change_colors> g_h1_object_change_colors;
+// the functions of each object, its change colors chosen when it was first drawn (where it was created)
+static std::unordered_map<datum, s_h1_object_functions> g_h1_object_functions;
 
 /* public code */
 
 void h1_objects_reset(void)
 {
 	g_h1_object_bindings.clear();
-	g_h1_object_change_colors.clear();
+	g_h1_object_functions.clear();
 	return;
 }
 
@@ -172,14 +171,230 @@ void h1_objects_render(e_h1_render_pass pass, real32 game_time)
 
 		s_h1_render_lighting lighting;
 		h1_render_lighting_at(&node_matrices[0].position, &lighting);
-		auto colors = g_h1_object_change_colors.find(object_index);
-		if (colors == g_h1_object_change_colors.end())
+		auto found_functions = g_h1_object_functions.find(object_index);
+		if (found_functions == g_h1_object_functions.end())
 		{
-			s_h1_object_change_colors chosen;
-			h1_object_change_colors_choose(binding->h1_definition_index, &object->object.position, chosen.colors);
-			colors = g_h1_object_change_colors.insert({ object_index, chosen }).first;
+			s_h1_object_functions created;
+			h1_object_functions_new(binding->h1_definition_index, &object->object.position, &created);
+			found_functions = g_h1_object_functions.insert({ object_index, created }).first;
 		}
-		h1_render_model_draw_skinned(binding->h1_model_index, 0, skinning_matrices, node_count, &lighting, pass, game_time, colors->second.colors);
+		s_h1_object_functions* functions = &found_functions->second;
+		if (pass == _h1_render_pass_opaque)
+		{
+			// halo 2 keeps the object's vitality and damage
+			s_h1_object_vitality vitality;
+			vitality.body_vitality = object->object.body_vitality;
+			vitality.shield_vitality = object->object.shield_vitality;
+			vitality.current_body_damage = object->object.current_body_damage;
+			vitality.current_shield_damage = object->object.current_shield_damage;
+			vitality.dead = false;
+			h1_object_functions_export(binding->h1_definition_index, &vitality, functions);
+			h1_object_functions_update(binding->h1_definition_index, DATUM_INDEX_TO_ABSOLUTE_INDEX(object_index), functions);
+		}
+		h1_render_model_draw_skinned(binding->h1_model_index, 0, skinning_matrices, node_count, &lighting, pass, game_time, functions->colors, functions->outgoing);
+	}
+	return;
+}
+
+// objects.c OBJECT_INCOMING_FUNCTION_GET_VALUE: 1 to 4 are the incoming values, past them halo 1 reads on into the outgoing values
+static real32 h1_object_function_value(const s_h1_object_functions* functions, int16 index)
+{
+	if (index >= 1 && index <= 4)
+	{
+		return functions->incoming[index - 1];
+	}
+	if (index >= 5 && index <= 8)
+	{
+		return functions->outgoing[index - 5];
+	}
+	return 0.f;
+}
+
+void h1_object_functions_new(datum h1_definition_index, const real_point3d* position, s_h1_object_functions* functions)
+{
+	memset(functions, 0, sizeof(*functions));
+	h1_object_change_colors_choose(h1_definition_index, position, functions->base_colors);
+	memcpy(functions->colors, functions->base_colors, sizeof(functions->colors));
+	return;
+}
+
+// objects.c object_export_function_values
+void h1_object_functions_export(datum h1_definition_index, const s_h1_object_vitality* vitality, s_h1_object_functions* functions)
+{
+	const h1_scen* definition = h1_definition_index != NONE ? (const h1_scen*)g_h1_cache_file->tag_get('obje', h1_definition_index) : NULL;
+	if (!definition)
+	{
+		return;
+	}
+	const int16 modes[4] = { definition->a_in, definition->b_in, definition->c_in, definition->d_in };
+	for (int32 i = 0; i < 4; i++)
+	{
+		real32 value = 0.f;
+		switch (modes[i])
+		{
+		case _h1_object_function_none:
+			continue;
+		case _h1_object_function_body_vitality:
+			value = vitality->body_vitality;
+			break;
+		case _h1_object_function_shield_vitality:
+			value = MIN(vitality->shield_vitality, 1.f);
+			break;
+		case _h1_object_function_recent_body_damage:
+			value = vitality->current_body_damage;
+			break;
+		case _h1_object_function_recent_shield_damage:
+			value = vitality->current_shield_damage;
+			break;
+		case _h1_object_function_random_constant:
+			if (functions->incoming[i] == 1.f)
+			{
+				value = (real32)rand() / (real32)RAND_MAX;
+			}
+			break;
+		case _h1_object_function_alive:
+			value = vitality->dead ? 0.f : 1.f;
+			break;
+		case _h1_object_function_compass:
+			// the object's heading isn't tracked, the value stays
+			value = functions->incoming[i];
+			break;
+		default:
+			// umbrella shields, shield stun and region damage
+			value = 0.f;
+			break;
+		}
+		functions->incoming[i] = value;
+	}
+	return;
+}
+
+// objects.c object_compute_function_values and object_compute_change_colors
+void h1_object_functions_update(datum h1_definition_index, int32 absolute_index, s_h1_object_functions* functions)
+{
+	const h1_scen* definition = h1_definition_index != NONE ? (const h1_scen*)g_h1_cache_file->tag_get('obje', h1_definition_index) : NULL;
+	if (!definition)
+	{
+		return;
+	}
+
+	// halo 1 game time is in 30 hz ticks, halo 2's in 60 hz ones
+	const real32 game_ticks = (real32)game_time_get() * 0.5f;
+	const real32 huh = (57.f * (real32)absolute_index + game_ticks) * 0.033333335f;
+	for (int32 function_index = 0; function_index < definition->functions.count && function_index < 4; function_index++)
+	{
+		const h1_scen_functions* function = g_h1_cache_file->block_get(definition->functions, function_index);
+		bool function_is_active = true;
+		real32 period = function->inverse_period;
+		if (function->scale_period_by)
+		{
+			const real32 function_value = h1_object_function_value(functions, function->scale_period_by);
+			if (function_value > 0.f)
+			{
+				period = period / function_value;
+			}
+		}
+
+		real32 value = h1_periodic_function_evaluate(function->function, huh * period);
+		if (function->scale_function_by)
+		{
+			value *= h1_object_function_value(functions, function->scale_function_by);
+		}
+		if (TEST_BIT(function->flags, _h1_object_function_invert_bit))
+		{
+			value = 1.f - value;
+		}
+		if (function->wobble_magnitude != 0.f)
+		{
+			const real32 wobble = h1_periodic_function_evaluate(function->wobble_function, huh * function->wobble_period);
+			value += 2.f * function->wobble_magnitude * (wobble - 0.5f);
+		}
+		if (function->square_wave_threshold != 0.f)
+		{
+			value = value > function->square_wave_threshold ? 1.f : 0.f;
+		}
+		if (function->step_count > 1)
+		{
+			value = floorf((real32)function->step_count * value) * function->inverse_step;
+		}
+		if (function->inverse_sawtooth > 0.f)
+		{
+			value = fmodf(value, function->inverse_sawtooth);
+		}
+		if (function->add)
+		{
+			value = MIN(value + h1_object_function_value(functions, function->add), 1.f);
+		}
+		if (function->scale_result_by)
+		{
+			value *= h1_object_function_value(functions, function->scale_result_by);
+		}
+
+		real32 output = h1_transition_function_evaluate(function->map_to, value);
+		if (function->scale_by > 0.f)
+		{
+			output *= function->scale_by;
+		}
+		if (function->bounds_mode == _h1_object_function_scale_to_fit_bounds)
+		{
+			output = output * (function->bounds.upper - function->bounds.lower) + function->bounds.lower;
+			if (function->bounds.lower + k_real_epsilon >= output)
+			{
+				function_is_active = TEST_BIT(function->flags, _h1_object_function_does_not_deactivate_below_lower_bound_bit);
+			}
+		}
+		else
+		{
+			if (function->bounds.lower + k_real_epsilon >= output)
+			{
+				output = function->bounds.lower;
+				function_is_active = TEST_BIT(function->flags, _h1_object_function_does_not_deactivate_below_lower_bound_bit);
+			}
+			if (output > function->bounds.upper)
+			{
+				output = function->bounds.upper;
+			}
+			if (function->bounds_mode == _h1_object_function_clip_to_bounds_and_normalize)
+			{
+				output = (output - function->bounds.lower) * function->inverse_bounds;
+			}
+		}
+		if (function->turn_off_with_index != NONE && VALID_INDEX(function->turn_off_with_index, 32) && !TEST_BIT(functions->active_flags, function->turn_off_with_index))
+		{
+			function_is_active = false;
+		}
+		// halo 1 tests the additive flag with the bounds mode's value
+		if (TEST_BIT(function->flags, _h1_object_function_clip_to_bounds_and_normalize))
+		{
+			output = fmodf(output + functions->outgoing[function_index], 1.f);
+		}
+		functions->outgoing[function_index] = output;
+		SET_BIT(functions->active_flags, function_index, function_is_active);
+	}
+
+	// change colors scaled or darkened by a function (each update starts from the colors the object was given)
+	memcpy(functions->colors, functions->base_colors, sizeof(functions->colors));
+	if (TEST_BIT(definition->runtime_flags, _h1_object_runtime_scaled_change_colors_bit))
+	{
+		for (int32 i = 0; i < definition->change_colors.count && i < 4; i++)
+		{
+			const h1_scen_change_colors* change_color = g_h1_cache_file->block_get(definition->change_colors, i);
+			if (change_color->scale_by)
+			{
+				h1_rgb_colors_interpolate(&functions->colors[i], change_color->scale_flags, &change_color->color_lower_bound, &change_color->color_upper_bound,
+					h1_object_function_value(functions, change_color->scale_by));
+			}
+			if (change_color->darken_by)
+			{
+				const real32 scale = h1_object_function_value(functions, change_color->darken_by);
+				functions->colors[i].red *= scale;
+				functions->colors[i].green *= scale;
+				functions->colors[i].blue *= scale;
+			}
+			functions->colors[i].red = PIN(functions->colors[i].red, 0.f, 1.f);
+			functions->colors[i].green = PIN(functions->colors[i].green, 0.f, 1.f);
+			functions->colors[i].blue = PIN(functions->colors[i].blue, 0.f, 1.f);
+		}
 	}
 	return;
 }

@@ -66,6 +66,9 @@ bool h1_render_environment_fog_bind(void);
 // restores the default opaque render state after a bound shader
 void h1_render_shader_unbind(void);
 
+// periodic_functions.c periodic_function_evaluate over x (in periods)
+real32 h1_periodic_function_evaluate(int16 function, real32 x);
+
 IDirect3DTexture9* h1_render_default_texture(int32 index);	// 0 white, 1 gray, 2 black, 3 flat normal
 IDirect3DVertexDeclaration9* h1_render_vertex_declaration(void);
 IDirect3DVertexShader9* h1_render_vertex_shader(void);

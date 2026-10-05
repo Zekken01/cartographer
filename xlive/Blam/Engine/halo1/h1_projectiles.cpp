@@ -13,6 +13,8 @@
 
 #include "game/game_globals.h"
 
+#include <unordered_map>
+
 /* constants */
 
 enum
@@ -31,7 +33,22 @@ static int16 h1_projectile_response_get(int16 h1_response);
 static datum h1_effect_first_damage_effect(datum h1_effect_index);
 static void h1_reference_none(tag_reference* reference);
 
+// the halo 1 damage effect of each halo 2 damage effect built
+static std::unordered_map<datum, datum> g_h1_damage_effects;
+
 /* public code */
+
+void h1_projectiles_reset(void)
+{
+	g_h1_damage_effects.clear();
+	return;
+}
+
+datum h1_damage_effect_h1_get(datum h2_damage_effect_index)
+{
+	auto found = g_h1_damage_effects.find(h2_damage_effect_index);
+	return found != g_h1_damage_effects.end() ? found->second : NONE;
+}
 
 datum h1_damage_effect_build(datum h1_damage_effect_index)
 {
@@ -46,6 +63,7 @@ datum h1_damage_effect_build(datum h1_damage_effect_index)
 	const datum existing = h1_runtime_tag_find('jpt!', name);
 	if (existing != NONE)
 	{
+		g_h1_damage_effects[existing] = h1_damage_effect_index;
 		return existing;
 	}
 
@@ -55,6 +73,7 @@ datum h1_damage_effect_build(datum h1_damage_effect_index)
 	{
 		return NONE;
 	}
+	g_h1_damage_effects[damage_index] = h1_damage_effect_index;
 
 	// both games keep the same side effects, categories and the halo 1 flags as the first halo 2 flags
 	damage->radius = h1_damage->radius;

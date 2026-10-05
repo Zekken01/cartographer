@@ -249,7 +249,7 @@ static const real32 k_h1_object_function_values[4] = { 0.f, 0.f, 0.f, 0.f };
 static const real_rgb_color k_h1_object_change_colors[4] = { { 1.f, 1.f, 1.f }, { 1.f, 1.f, 1.f }, { 1.f, 1.f, 1.f }, { 1.f, 1.f, 1.f } };
 
 void h1_render_model_draw(datum model_tag_index, int16 permutation, const real_matrix4x3* object_to_world, const s_h1_render_lighting* lighting, e_h1_render_pass pass, bool sky, real32 game_time,
-	const real_rgb_color* change_colors)
+	const real_rgb_color* change_colors, const real32* function_values, const int16* region_permutations)
 {
 	auto found = g_h1_models.find(model_tag_index);
 	if (found == g_h1_models.end() || !g_h1_model_vertex_buffer)
@@ -279,7 +279,8 @@ void h1_render_model_draw(datum model_tag_index, int16 permutation, const real_m
 		{
 			continue;
 		}
-		const int16 permutation_index = (int16)PIN(permutation, 0, region->permutations.count - 1);
+		const int16 desired_permutation = region_permutations && r < 8 ? region_permutations[r] : permutation;
+		const int16 permutation_index = (int16)PIN(desired_permutation, 0, region->permutations.count - 1);
 		const h1_mode_regions_permutations* region_permutation = g_h1_cache_file->block_get(region->permutations, permutation_index);
 		const int32 geometry_index = region_permutation->super_high_index;
 		if (!VALID_INDEX(geometry_index, entry->geometry_count))
@@ -299,7 +300,7 @@ void h1_render_model_draw(datum model_tag_index, int16 permutation, const real_m
 
 			if (!sky)
 			{
-				h1_render_shader_object_animation_set(k_h1_object_function_values, change_colors ? change_colors : k_h1_object_change_colors);
+				h1_render_shader_object_animation_set(function_values ? function_values : k_h1_object_function_values, change_colors ? change_colors : k_h1_object_change_colors);
 			}
 			for (int32 subpass = 0; subpass < h1_render_shader_subpass_count(shader_reference->shader.group_tag); subpass++)
 			{
@@ -316,7 +317,7 @@ void h1_render_model_draw(datum model_tag_index, int16 permutation, const real_m
 }
 
 void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, const real_matrix4x3* node_matrices, int32 node_count, const s_h1_render_lighting* lighting, e_h1_render_pass pass, real32 game_time,
-	const real_rgb_color* change_colors)
+	const real_rgb_color* change_colors, const real32* function_values)
 {
 	auto found = g_h1_models.find(model_tag_index);
 	if (found == g_h1_models.end() || !g_h1_skinned_vertex_buffer || node_count <= 0)
@@ -408,7 +409,7 @@ void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, cons
 			g_h1_skinned_vertex_buffer->Unlock();
 
 			device->SetStreamSource(0, g_h1_skinned_vertex_buffer, 0, sizeof(s_h1_model_vertex));
-			h1_render_shader_object_animation_set(k_h1_object_function_values, change_colors ? change_colors : k_h1_object_change_colors);
+			h1_render_shader_object_animation_set(function_values ? function_values : k_h1_object_function_values, change_colors ? change_colors : k_h1_object_change_colors);
 			for (int32 subpass = 0; subpass < h1_render_shader_subpass_count(shader_reference->shader.group_tag); subpass++)
 			{
 				if (h1_render_shader_bind(shader_reference->shader.group_tag, shader_reference->shader.index, lighting, NULL, game_time, subpass))

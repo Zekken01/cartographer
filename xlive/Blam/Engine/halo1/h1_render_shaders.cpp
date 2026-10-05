@@ -1532,6 +1532,11 @@ static void h1_bind_framebuffer_blend(int16 function)
 	return;
 }
 
+real32 h1_periodic_function_evaluate(int16 function, real32 x)
+{
+	return h1_periodic_function(function, x);
+}
+
 // Halo 1 periodic functions over x (in periods)
 static real32 h1_periodic_function(int16 function, real32 x)
 {
