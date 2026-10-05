@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "halo1/h1_hud.h"
 #include "new_hud_draw.h"
 
 #include "hud.h"
@@ -424,7 +425,7 @@ static void __cdecl draw_hud_bitmap_widget(
 	s_hud_bitmap_widget_definition* bitmap_widget,
 	s_draw_hud_widget_input_results* widget_function_results)
 {
-	if (bitmap_widget->bitmap.index == NONE || bitmap_widget->shader.index == NONE)
+	if (bitmap_widget->bitmap.index == NONE || bitmap_widget->shader.index == NONE || h1_hud_hides_halo2_widget(bitmap_widget->name))
 		return;
 
 	real_rectangle2d bitmap_bounds;
@@ -874,6 +875,10 @@ static void __cdecl draw_hud_text_widget(
 	s_hud_text_widget_definition* text_widget,
 	s_draw_hud_widget_input_results* widget_function_results)
 {
+	if (h1_hud_hides_halo2_widget(text_widget->name))
+	{
+		return;
+	}
 	if (!text_widget->string != 0 || text_widget->shader.index == NONE)
 		return;
 

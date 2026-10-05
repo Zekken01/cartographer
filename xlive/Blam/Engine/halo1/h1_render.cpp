@@ -12,6 +12,7 @@
 #include "h1_objects.h"
 #include "h1_scenery.h"
 #include "h1_first_person.h"
+#include "h1_hud.h"
 #include "h1_weapons.h"
 #include "h1_runtime.h"
 #include "h1_sound.h"
@@ -239,6 +240,7 @@ bool h1_render_sky(void)
 
 void h1_render_dispose(void)
 {
+	h1_hud_dispose();
 	if (g_h1_render.vertex_buffer) g_h1_render.vertex_buffer->Release();
 	if (g_h1_render.index_buffer) g_h1_render.index_buffer->Release();
 	if (g_h1_render.state_block) g_h1_render.state_block->Release();

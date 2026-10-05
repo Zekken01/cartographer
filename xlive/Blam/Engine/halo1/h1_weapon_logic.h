@@ -28,6 +28,24 @@ enum e_h1_first_person_weapon_message : int16
 	k_h1_first_person_weapon_message_count
 };
 
+// weapons.h weapon_interface_state: what the hud shows of a weapon
+struct s_h1_weapon_interface_state
+{
+	real32 heat;
+	real32 age;
+	bool overheated;
+	int16 magazine_count;
+	struct
+	{
+		bool reloading;
+		bool can_fire;
+		int16 rounds_loaded;
+		int16 rounds_loaded_maximum;
+		int16 rounds_remaining;
+		int16 rounds_remaining_maximum;
+	} magazines[2];
+};
+
 // the halo 2 weapon update runs halo 1's for the halo 1 weapons, halo 2's magazine update skips them
 void h1_weapon_logic_apply_patches(void);
 // forgets every weapon's halo 1 state (a new map)
@@ -36,3 +54,5 @@ void h1_weapon_logic_reset(void);
 real32 h1_weapon_logic_charged_fraction(datum weapon_index, int16 trigger_index);
 // the first_person_weapons.c messages a weapon sent since the last call, oldest first: the count written
 int32 h1_weapon_logic_first_person_messages_take(datum weapon_index, e_h1_first_person_weapon_message* messages, int32 maximum_count);
+// weapons.c weapon_build_weapon_interface_state, false for weapons without halo 1 state
+bool h1_weapon_logic_interface_state(datum weapon_index, s_h1_weapon_interface_state* state);

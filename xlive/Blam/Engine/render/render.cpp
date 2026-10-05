@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "render.h"
 
+#include "halo1/h1_hud.h"
 #include "halo1/h1_render.h"
 
 #include "render_contrails.h"
@@ -856,6 +857,8 @@ static void render_view(
 			rasterizer_dx9_perf_event_begin("interface", NULL);
 			rasterizer_dx9_set_stencil_mode(0);
 			interface_draw_screen();
+			// the halo 1 weapon hud of halo 1 maps
+			h1_hud_render();
 			rasterizer_dx9_render_screen_flash();
 			render_menu_user_interface(controller_index, (e_user_interface_render_window)NONE, &camera->viewport_bounds);
 			rasterizer_dx9_perf_event_end("interface");

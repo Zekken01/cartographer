@@ -14,6 +14,7 @@
 #include "items/weapons.h"
 #include "math/real_math.h"
 #include "objects/object_placement.h"
+#include "objects/damage.h"
 #include "objects/object_types.h"
 #include "objects/objects.h"
 #include "tag_files/tag_groups.h"
@@ -305,6 +306,7 @@ static void h1_weapon_trigger_overload(s_h1_weapon_logic_context* context, int16
 static void h1_weapon_trigger_release_charge(s_h1_weapon_logic_context* context, int16 trigger_index);
 static void h1_weapon_trigger_overcharged(s_h1_weapon_logic_context* context, int16 trigger_index);
 static void h1_weapon_trigger_create_projectiles(s_h1_weapon_logic_context* context, int16 trigger_index);
+static void h1_weapon_damage_owner(datum owner_object_index, datum h1_damage_effect_index);
 
 static real32 h1_weapon_random_real(void);
 static int32 h1_weapon_random_range(int32 lower, int32 upper);
@@ -359,6 +361,34 @@ real32 h1_weapon_logic_charged_fraction(datum weapon_index, int16 trigger_index)
 		return 1.f;
 	}
 	return 0.f;
+}
+
+bool h1_weapon_logic_interface_state(datum weapon_index, s_h1_weapon_interface_state* interface_state)
+{
+	s_h1_weapon_logic_context context;
+	csmemset(interface_state, 0, sizeof(*interface_state));
+	if (!h1_weapon_context_get(weapon_index, &context))
+	{
+		return false;
+	}
+	// weapons.c weapon_build_weapon_interface_state
+	interface_state->heat = context.state->heat;
+	interface_state->age = context.state->age;
+	interface_state->overheated = TEST_BIT(context.state->flags, _h1_weapon_overheated_bit);
+	interface_state->magazine_count = (int16)MIN(context.definition->magazines.count, (int32)k_h1_maximum_magazines);
+	for (int16 i = 0; i < interface_state->magazine_count; i++)
+	{
+		const s_h1_weapon_logic_magazine* magazine = &context.state->magazines[i];
+		const weapon_magazine* rounds = &context.weapon->weapon.magazines[i];
+		const h1_weap_magazines* magazine_definition = h1_magazine_definition_get(&context, i);
+		interface_state->magazines[i].reloading = magazine->state == _h1_magazine_reloading || magazine->state == _h1_magazine_chambering;
+		interface_state->magazines[i].can_fire = magazine->state == _h1_magazine_idle;
+		interface_state->magazines[i].rounds_loaded = rounds->rounds_loaded;
+		interface_state->magazines[i].rounds_loaded_maximum = magazine_definition->rounds_loaded_maximum;
+		interface_state->magazines[i].rounds_remaining = rounds->rounds_inventory;
+		interface_state->magazines[i].rounds_remaining_maximum = magazine_definition->rounds_total_maximum;
+	}
+	return true;
 }
 
 int32 h1_weapon_logic_first_person_messages_take(datum weapon_index, e_h1_first_person_weapon_message* messages, int32 maximum_count)
@@ -1450,6 +1480,7 @@ static void h1_weapon_trigger_fire(s_h1_weapon_logic_context* context, int16 tri
 	const h1_weap_triggers* trigger_definition = h1_trigger_definition_get(context, trigger_index);
 	const bool belongs_to_player = h1_weapon_belongs_to_player(context);
 	const h1_tag_reference* effect = NULL;
+	const h1_tag_reference* damage_effect = NULL;
 	real32 effect_scale = 0.f;
 	real32 effect_error = 0.f;
 	bool fired = false;
@@ -1539,16 +1570,19 @@ static void h1_weapon_trigger_fire(s_h1_weapon_logic_context* context, int16 tri
 		if (!fired)
 		{
 			effect = &firing_effect->empty_effect;
+			damage_effect = &firing_effect->empty_damage;
 			effect_scale = 1.f;
 		}
 		else if (misfired)
 		{
 			effect = &firing_effect->misfire_effect;
+			damage_effect = &firing_effect->misfire_damage;
 			effect_scale = trigger->rate_of_fire;
 		}
 		else
 		{
 			effect = &firing_effect->firing_effect;
+			damage_effect = &firing_effect->firing_damage;
 			effect_scale = trigger->rate_of_fire;
 			effect_error = definition->overheated_threshold == 0.f ? 0.f : state->heat / definition->overheated_threshold;
 		}
@@ -1595,6 +1629,13 @@ static void h1_weapon_trigger_fire(s_h1_weapon_logic_context* context, int16 tri
 			{
 				h1_weapon_trigger_create_projectiles(context, trigger_index);
 			}
+		}
+
+		// the firing damage on the owner: its camera impulse and shaking (the recoil)
+		const datum owner_object_index = h1_weapon_owner_object_index(context);
+		if (owner_object_index != NONE && damage_effect && damage_effect->index != NONE)
+		{
+			h1_weapon_damage_owner(owner_object_index, damage_effect->index);
 		}
 
 		if (definition->weapon_type == _h1_weapon_type_plasma_pistol && trigger_index == 1)
@@ -1933,5 +1974,29 @@ static void h1_projectile_distribute(real_vector3d* forward, const real_vector3d
 	{
 		rotate_vector_about_axis(forward, up, sinf(angle), cosf(angle));
 	}
+	return;
+}
+
+// weapons.c weapon_trigger_fire: damage_data_new with the firing damage, from the weapon, back along the aiming vector at the
+// owner's center (halo 2's damage_data_new FUN_00575bac and damage owner FUN_00575c14)
+static void h1_weapon_damage_owner(datum owner_object_index, datum h1_damage_effect_index)
+{
+	typedef void(__cdecl* t_damage_data_new)(s_damage_data* damage, datum definition_index);
+	typedef void(__cdecl* t_damage_owner_from_object)(datum object_index, s_damage_owner* owner);
+
+	const datum definition_index = h1_damage_effect_build(h1_damage_effect_index);
+	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(owner_object_index, _object_mask_unit);
+	if (definition_index == NONE || !unit)
+	{
+		return;
+	}
+	s_damage_data damage;
+	Memory::GetAddress<t_damage_data_new>(0x175BAC)(&damage, definition_index);
+	damage.flags = (e_damage_data_flags)(damage.flags | FLAG(_damage_from_weapon_bit));
+	Memory::GetAddress<t_damage_owner_from_object>(0x175C14)(owner_object_index, &damage.owner);
+	damage.direction = { -unit->unit.aiming_vector.i, -unit->unit.aiming_vector.j, -unit->unit.aiming_vector.k };
+	damage.epicenter = unit->object.center;
+	damage.origin = damage.epicenter;
+	object_cause_damage(&damage, owner_object_index, NONE, NONE, NONE, NULL);
 	return;
 }
