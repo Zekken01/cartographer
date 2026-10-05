@@ -3,7 +3,6 @@
 
 #include "h1_cache_file.h"
 #include "h1_log.h"
-#include "h1_physics.h"
 #include "h1_render.h"
 #include "h1_runtime.h"
 #include "h1_scenario.h"
@@ -86,7 +85,6 @@ void h1_maps_apply_patches(void)
 	PatchCall(Memory::GetAddress(0x64B68), h1_custom_map_cache_file_open);
 	// the custom map load compares a hash of the file against the map id, Halo 1 entries carry our own hash
 	PatchCall(Memory::GetAddress(0x64B44), h1_custom_map_hash_verify);
-	h1_physics_apply_patches();
 	return;
 }
 
