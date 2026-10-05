@@ -33,6 +33,9 @@ void h1_render_shaders_dispose(void);
 // world to clip and view depth constants for the current halo 2 camera
 // if sky is set the geometry is moved with the camera and pushed to the far plane
 void h1_render_set_camera_constants(const real_matrix4x3* object_to_world, bool sky);
+// render_camera_hack_frustum_z: the first person weapon's near and far clip (rasterizer_globals' first person weapon clip
+// distances) for the camera constants set while enabled
+void h1_render_set_first_person_projection(bool enabled);
 
 // the pass a shader draws in
 e_h1_render_pass h1_render_shader_pass(uint32 shader_group);

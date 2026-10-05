@@ -764,6 +764,10 @@ PS_OUTPUT main(PS_INPUT input)
 
 int32 g_h1_render_debug_mode = 0;
 bool g_h1_render_debug_camera = false;
+// rasterizer.c rasterizer_global_defaults: the first person weapon's clip distances
+static const real32 k_h1_first_person_near_clip_distance = 0.01171875f;
+static const real32 k_h1_first_person_far_clip_distance = 1024.f;
+static bool g_h1_render_first_person_projection = false;
 real_point3d g_h1_render_debug_camera_position = {};
 real32 g_h1_render_debug_camera_yaw = 0.f;
 real32 g_h1_render_debug_camera_pitch = 0.f;
@@ -889,12 +893,29 @@ IDirect3DVertexShader9* h1_render_vertex_shader(void)
 	return g_h1_vertex_shader;
 }
 
+void h1_render_set_first_person_projection(bool enabled)
+{
+	g_h1_render_first_person_projection = enabled;
+	return;
+}
+
 void h1_render_set_camera_constants(const real_matrix4x3* object_to_world, bool sky)
 {
 	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
 	const s_frame* frame = global_window_parameters_get();
 	const real_matrix4x3* view = &frame->projection.world_to_view;
-	const real32(*projection)[4] = frame->projection.projection_matrix.matrix;
+	real32 projection[4][4];
+	csmemcpy(projection, frame->projection.projection_matrix.matrix, sizeof(projection));
+	if (g_h1_render_first_person_projection)
+	{
+		// render_camera_hack_frustum_z with direct3d's zero to one depth of a view looking down -z
+		const real32 z_near = k_h1_first_person_near_clip_distance;
+		const real32 z_far = k_h1_first_person_far_clip_distance;
+		projection[0][2] = 0.f;
+		projection[1][2] = 0.f;
+		projection[2][2] = z_far / (z_near - z_far);
+		projection[3][2] = z_near * z_far / (z_near - z_far);
+	}
 
 	// halo 4x3 matrices transform row vectors: rows are forward, left, up (scaled) and position
 	real32 world_to_view[4][4] =

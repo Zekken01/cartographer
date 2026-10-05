@@ -9,6 +9,7 @@
 #include "h1_objects.h"
 #include "h1_render.h"
 #include "h1_render_models.h"
+#include "h1_render_shaders.h"
 #include "h1_runtime.h"
 #include "h2_tag_definitions_generated.h"
 
@@ -161,6 +162,7 @@ void h1_first_person_render(real32 game_time)
 	s_h1_render_lighting lighting;
 	h1_render_lighting_at(&global_window_parameters_get()->camera.point, &lighting);
 
+	h1_render_set_first_person_projection(true);
 	for (int32 pass = _h1_render_pass_opaque; pass <= _h1_render_pass_transparent; pass++)
 	{
 		for (const s_h1_first_person_model& model : g_h1_first_person_frame)
@@ -179,6 +181,7 @@ void h1_first_person_render(real32 game_time)
 		}
 	}
 
+	h1_render_set_first_person_projection(false);
 	device->SetViewport(&viewport);
 	return;
 }
