@@ -41,6 +41,7 @@
 #include "rasterizer/rasterizer_transparent_geometry.h"
 #include "scenario/scenario_fog.h"
 #include "structures/structures.h"
+#include "structures/structure_bsp_definitions.h"
 #include "widgets/liquid.h"
 
 #include "H2MOD/Modules/Shell/Config.h"
@@ -272,6 +273,17 @@ void __cdecl render_window(window_bound* window, bool is_texture_camera)
 	{
 		*get_global_window_out_cluster_index(window->window_bound_index) = cluster_index;
 		*get_global_window_out_leaf_index(window->window_bound_index) = leaf_index;
+	}
+
+	// the cluster kept from earlier frames can belong to the previous map (a camera outside the new structure
+	// bsp keeps it), and cluster lookups like the visible sky don't check the index
+	const structure_bsp* structure = global_structure_bsp_get();
+	if (!structure || !VALID_INDEX(cluster_index, structure->clusters.count))
+	{
+		cluster_index = NONE;
+		leaf_index = NONE;
+		*get_global_window_out_cluster_index(window->window_bound_index) = NONE;
+		*get_global_window_out_leaf_index(window->window_bound_index) = NONE;
 	}
 
 	int32 visible_sky_index;
