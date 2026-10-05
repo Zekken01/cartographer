@@ -5,6 +5,7 @@
 #include "h1_animations.h"
 #include "h1_effects.h"
 #include "h1_first_person.h"
+#include "math/matrix_math.h"
 #include "h1_items.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
@@ -377,8 +378,11 @@ datum h1_weapon_definition_build(datum h1_weapon_index)
 		barrel->deceleration_time = h1_trigger->deceleration_time;
 		barrel->barrel_spin_scale = 1.f;
 		barrel->blurred_rate_of_fire = h1_trigger->blurred_rate_of_fire;
-		barrel->shots_per_fire = { 0, 0 };
-		barrel->magazine_index = h1_trigger->magazine_index;
+		const bool semi_automatic = h1_trigger->rounds_per_second.upper <= 0.f;
+		barrel->shots_per_fire = semi_automatic ? short_bounds{ 1, 1 } : short_bounds{ 0, 0 };
+		barrel->fire_recovery_time = semi_automatic ? (i == 0 ? 0.05f : 0.1f) : 0.f;
+		barrel->soft_recovery_fraction = semi_automatic && i == 0 ? 1.f : 0.f;
+		barrel->magazine_index = VALID_INDEX(h1_trigger->magazine_index, h1_weapon->magazines.count) ? h1_trigger->magazine_index : (int16)NONE;
 		barrel->rounds_per_shot = h1_trigger->rounds_per_shot;
 		barrel->minimum_rounds_loaded = h1_trigger->minimum_rounds_loaded;
 		barrel->rounds_between_tracers = h1_trigger->rounds_between_tracers;
@@ -647,7 +651,13 @@ static void h1_weapon_effect_at_marker(datum object_index, const char* marker_na
 	}
 	real_point3d point = object->object.position;
 	real_vector3d forward = object->object.forward;
-	if (marker_name && marker_name[0])
+	real_matrix4x3 first_person_marker;
+	if (marker_name && marker_name[0] && h1_first_person_marker_get(object_index, marker_name, &first_person_marker))
+	{
+		point = first_person_marker.position;
+		forward = first_person_marker.vectors.forward;
+	}
+	else if (marker_name && marker_name[0])
 	{
 		char name[32];
 		strncpy_s(name, marker_name, _TRUNCATE);

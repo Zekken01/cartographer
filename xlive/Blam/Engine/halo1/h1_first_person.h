@@ -18,6 +18,9 @@ void h1_first_person_model_register(datum h2_render_model_index, datum h1_model_
 // ones are kept for h1_first_person_render and taken out of the list, the count of the models left for halo 2 is returned
 int32 h1_first_person_models_submit(int32 user_index, s_first_person_model_data* models, int32 model_count);
 
+// the world matrix of a marker of the halo 1 first person model of an object (the local player's weapon), false if it has none
+bool h1_first_person_marker_get(datum object_index, const char* marker_name, real_matrix4x3* out_matrix);
+
 // draws the halo 1 first person models in front of the scene (after the transparent geometry)
 void h1_first_person_render(real32 game_time);
 

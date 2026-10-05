@@ -99,6 +99,40 @@ int32 h1_first_person_models_submit(int32 user_index, s_first_person_model_data*
 	return kept_count;
 }
 
+bool h1_first_person_marker_get(datum object_index, const char* marker_name, real_matrix4x3* out_matrix)
+{
+	for (const s_h1_first_person_model& model : g_h1_first_person_frame)
+	{
+		if (model.object_index != object_index)
+		{
+			continue;
+		}
+		const h1_mode* h1_model = (const h1_mode*)g_h1_cache_file->tag_get('mode', model.h1_model_index);
+		for (int32 i = 0; h1_model && i < h1_model->markers.count; i++)
+		{
+			const h1_mode_markers* marker = g_h1_cache_file->block_get(h1_model->markers, i);
+			if (_stricmp(marker->name, marker_name) != 0 || marker->instances.count <= 0)
+			{
+				continue;
+			}
+			const h1_mode_markers_instances* instance = g_h1_cache_file->block_get(marker->instances, 0);
+			if (!VALID_INDEX(instance->node_index, model.node_count))
+			{
+				continue;
+			}
+			// halo 1 quaternions build matrices from their conjugate
+			const real_quaternion rotation = { -instance->rotation.v.i, -instance->rotation.v.j, -instance->rotation.v.k, instance->rotation.w };
+			real_matrix4x3 local;
+			matrix4x3_rotation_from_quaternion(&local, &rotation);
+			local.scale = 1.f;
+			local.position = instance->translation;
+			matrix4x3_multiply(&model.nodes[instance->node_index], &local, out_matrix);
+			return true;
+		}
+	}
+	return false;
+}
+
 void h1_first_person_render(real32 game_time)
 {
 	if (g_h1_first_person_frame.empty())
