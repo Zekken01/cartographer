@@ -13,7 +13,9 @@
 #include "h1_sound.h"
 
 #include "cache/cache_files.h"
+#include "effects/player_effects.h"
 #include "game/game.h"
+#include "game/game_time.h"
 #include "game/game_options.h"
 #include "main/main_game.h"
 #include "main/map_repository.h"
@@ -235,6 +237,19 @@ void h1_maps_update(void)
 {
 	h1_sound_update();
 
+	// a halo 2 campaign game starts faded to black for its scripts to fade in; until halo 1's scripts run, the level fades in once
+	// its first tick has run
+	static bool s_campaign_faded_in = false;
+	if (!h1_maps_active() || !game_in_progress() || !game_is_campaign())
+	{
+		s_campaign_faded_in = false;
+	}
+	else if (!s_campaign_faded_in && game_time_get() > 0)
+	{
+		s_campaign_faded_in = true;
+		scripted_player_effect_screen_fade_in(0.f, 0.f, 0.f, 30);
+	}
+
 	if (g_h1_autolaunch_done)
 	{
 		return;
@@ -303,8 +318,18 @@ void h1_maps_update(void)
 	h1_log("autolaunch: launching %ws (%s)", found->file_path, variant_name);
 
 	game_options_new(&g_main_game_launch_options);
-	main_game_launch_set_multiplayer_variant(variant_name);
-	g_main_game_launch_options.game_mode = _game_mode_multiplayer;
+	if (!csstricmp(variant_name, "campaign"))
+	{
+		// "<map> campaign": a campaign game on normal
+		main_game_launch_set_difficulty(1);
+		g_main_game_launch_options.campaign_id = 1;
+		g_main_game_launch_options.coop = false;
+	}
+	else
+	{
+		main_game_launch_set_multiplayer_variant(variant_name);
+		g_main_game_launch_options.game_mode = _game_mode_multiplayer;
+	}
 	g_main_game_launch_options.game_simulation = _game_simulation_local;
 	g_main_game_launch_options.is_custom_map = true;
 	csmemcpy(g_main_game_launch_options.custom_map_id.hash, found->hash, sizeof(found->hash));
