@@ -80,7 +80,17 @@ datum h1_object_render_model_build(const h1_mode* h1_model, const char* name)
 	for (int32 i = 0; i < h1_model->markers.count; i++)
 	{
 		const h1_mode_markers* h1_marker = g_h1_cache_file->block_get(h1_model->markers, i);
-		groups[i].name = h1_string_id(h1_marker->name);
+		// halo 2 looks markers up by its own names, which spell halo 1's spaces as underscores ("ground_point")
+		char marker_name[32];
+		strncpy_s(marker_name, h1_marker->name, _TRUNCATE);
+		for (char* c = marker_name; *c; c++)
+		{
+			if (*c == ' ')
+			{
+				*c = '_';
+			}
+		}
+		groups[i].name = h1_string_id(marker_name);
 		h2x_mode_marker_groups_markers* markers = h1_runtime_block_new(&groups[i].markers, h1_marker->instances.count);
 		for (int32 j = 0; j < h1_marker->instances.count; j++)
 		{

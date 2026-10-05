@@ -75,6 +75,7 @@ static datum h1_item_collection_get(datum h1_collection_index, int8* out_classif
 static void h1_simulation_definition_table_extend(scenario* h2_scenario);
 static datum h1_vehicle_collection_get(const char* h1_vehicle_name, int8* out_classification);
 static e_item_spawn_game_type h1_equipment_game_type(int16 h1_game_type);
+static bool h1_netgame_item_rest_pose(datum h1_collection_index, const real_point3d* point, real_point3d* out_position, real_euler_angles3d* out_orientation);
 
 /* public code */
 
@@ -122,7 +123,13 @@ void h1_equipment_build(scenario* h2_scenario, const h1_scnr* h1_scenario)
 		item->spawn_time = source->spawn_time;
 		item->classification = classification;
 		item->position = source->position;
-		item->orientation.yaw = RADIANS_TO_DEGREES(source->facing);
+		item->orientation.yaw = source->facing;
+		// halo 1 drops a netgame item that isn't created at rest and lays its ground point marker on the surface below,
+		// halo 2 leaves it standing where it was placed: place it as it comes to rest
+		if (!TEST_BIT(source->flags, 0))
+		{
+			h1_netgame_item_rest_pose(source->item_collection.index, &source->position, &item->position, &item->orientation);
+		}
 		h1_runtime_reference_set(&item->item_vehicle_collection, classification == _h2_classification_grenade || classification == _h2_classification_powerup || classification == _h2_classification_weapon ? 'itmc' : 'vehc', collection);
 	}
 
@@ -151,9 +158,9 @@ void h1_equipment_build(scenario* h2_scenario, const h1_scnr* h1_scenario)
 		item->team_index = vehicle->multiplayer_team_index;
 		item->classification = classification;
 		item->position = vehicle->position;
-		item->orientation.yaw = RADIANS_TO_DEGREES(vehicle->rotation.yaw);
-		item->orientation.pitch = RADIANS_TO_DEGREES(vehicle->rotation.pitch);
-		item->orientation.roll = RADIANS_TO_DEGREES(vehicle->rotation.roll);
+		item->orientation.yaw = vehicle->rotation.yaw;
+		item->orientation.pitch = vehicle->rotation.pitch;
+		item->orientation.roll = vehicle->rotation.roll;
 		h1_runtime_reference_set(&item->item_vehicle_collection, 'vehc', collection);
 	}
 	h2_scenario->netgame_equipment.count = count;
@@ -366,4 +373,183 @@ static void h1_simulation_definition_table_extend(scenario* h2_scenario)
 	csmemcpy(destination, elements.data(), elements.size() * sizeof(s_scenario_simulation_definition_table_element));
 	h1_log("equipment: simulation definition table %d -> %d", old_count, (int32)elements.size());
 	return;
+}
+
+// a frame as halo 1 stores it: forward, left and up axes and a position
+struct s_h1_frame
+{
+	real_vector3d axes[3];
+	real_point3d position;
+};
+
+static real_vector3d h1_frame_rotate(const s_h1_frame* frame, const real_vector3d* vector)
+{
+	real_vector3d result;
+	result.i = frame->axes[0].i * vector->i + frame->axes[1].i * vector->j + frame->axes[2].i * vector->k;
+	result.j = frame->axes[0].j * vector->i + frame->axes[1].j * vector->j + frame->axes[2].j * vector->k;
+	result.k = frame->axes[0].k * vector->i + frame->axes[1].k * vector->j + frame->axes[2].k * vector->k;
+	return result;
+}
+
+static s_h1_frame h1_frame_multiply(const s_h1_frame* a, const s_h1_frame* b)
+{
+	s_h1_frame result;
+	for (int32 i = 0; i < 3; i++)
+	{
+		result.axes[i] = h1_frame_rotate(a, &b->axes[i]);
+	}
+	const real_vector3d position = { b->position.x, b->position.y, b->position.z };
+	const real_vector3d offset = h1_frame_rotate(a, &position);
+	result.position = { a->position.x + offset.i, a->position.y + offset.j, a->position.z + offset.k };
+	return result;
+}
+
+// halo 1 builds its rotation matrices from the conjugate of the quaternion
+static s_h1_frame h1_frame_from_quaternion(const real_quaternion* rotation, const real_point3d* position)
+{
+	const real32 x = -rotation->v.i, y = -rotation->v.j, z = -rotation->v.k, w = rotation->w;
+	s_h1_frame frame;
+	frame.axes[0] = { 1.f - 2.f * (y * y + z * z), 2.f * (x * y + z * w), 2.f * (x * z - y * w) };
+	frame.axes[1] = { 2.f * (x * y - z * w), 1.f - 2.f * (x * x + z * z), 2.f * (y * z + x * w) };
+	frame.axes[2] = { 2.f * (x * z + y * w), 2.f * (y * z - x * w), 1.f - 2.f * (x * x + y * y) };
+	frame.position = *position;
+	return frame;
+}
+
+static real_vector3d h1_cross(const real_vector3d* a, const real_vector3d* b)
+{
+	return { a->j * b->k - a->k * b->j, a->k * b->i - a->i * b->k, a->i * b->j - a->j * b->i };
+}
+
+static void h1_normalize(real_vector3d* vector)
+{
+	const real32 length = sqrtf(vector->i * vector->i + vector->j * vector->j + vector->k * vector->k);
+	if (length > 0.0001f)
+	{
+		vector->i /= length;
+		vector->j /= length;
+		vector->k /= length;
+	}
+	return;
+}
+
+// the pose halo 1 gives an item resting on flat ground at the point (item_align_to_normal_and_point): the ground point marker
+// turned the shortest way onto the ground normal and moved onto the point, the object following the marker
+static bool h1_netgame_item_rest_pose(datum h1_collection_index, const real_point3d* point, real_point3d* out_position, real_euler_angles3d* out_orientation)
+{
+	const h1_itmc* collection = (const h1_itmc*)g_h1_cache_file->tag_get('itmc', h1_collection_index);
+	if (!collection || collection->item_permutations.count <= 0)
+	{
+		return false;
+	}
+
+	// every item of the collection has to rest the same way
+	const h1_eqip* equipment = NULL;
+	for (int32 i = 0; i < collection->item_permutations.count; i++)
+	{
+		const h1_itmc_item_permutations* permutation = g_h1_cache_file->block_get(collection->item_permutations, i);
+		const h1_cache_file_tag_instance* instance = g_h1_cache_file->tag_instance_get(permutation->item.index);
+		if (!instance || instance->group_tag != 'eqip')
+		{
+			return false;
+		}
+		const h1_eqip* candidate = (const h1_eqip*)g_h1_cache_file->tag_get('eqip', permutation->item.index);
+		if (!candidate || (equipment && (candidate->model.index != equipment->model.index || candidate->scale != equipment->scale)))
+		{
+			return false;
+		}
+		equipment = candidate;
+	}
+
+	const h1_mode* model = (const h1_mode*)g_h1_cache_file->tag_get('mode', equipment->model.index);
+	if (!model)
+	{
+		return false;
+	}
+	const h1_mode_markers_instances* marker = NULL;
+	for (int32 i = 0; i < model->markers.count && !marker; i++)
+	{
+		const h1_mode_markers* group = g_h1_cache_file->block_get(model->markers, i);
+		if (_stricmp(group->name, "ground point") == 0 && group->instances.count > 0)
+		{
+			marker = g_h1_cache_file->block_get(group->instances, 0);
+		}
+	}
+	if (!marker || marker->node_index < 0 || marker->node_index >= model->nodes.count)
+	{
+		return false;
+	}
+
+	// the marker in object space: its node's default pose (through the parents), then the marker, scaled with the item
+	s_h1_frame marker_frame = h1_frame_from_quaternion(&marker->rotation, &marker->translation);
+	int16 node_index = marker->node_index;
+	for (int32 depth = 0; node_index >= 0 && node_index < model->nodes.count && depth < model->nodes.count; depth++)
+	{
+		const h1_mode_nodes* node = g_h1_cache_file->block_get(model->nodes, node_index);
+		const s_h1_frame node_frame = h1_frame_from_quaternion(&node->default_rotation, &node->default_translation);
+		marker_frame = h1_frame_multiply(&node_frame, &marker_frame);
+		node_index = node->parent_node_index;
+	}
+	const real32 scale = equipment->scale != 0.f ? equipment->scale : 1.f;
+	marker_frame.position = { marker_frame.position.x * scale, marker_frame.position.y * scale, marker_frame.position.z * scale };
+
+	// the marker's up turned the shortest way onto the ground normal carries its forward along
+	const real_vector3d normal = { 0.f, 0.f, 1.f };
+	const real_vector3d marker_forward = marker_frame.axes[0];
+	const real_vector3d marker_up = marker_frame.axes[2];
+	real_vector3d forward;
+	const real32 half_angle_scale = sqrtf(2.f * (marker_up.k + 1.f));
+	if (half_angle_scale > 0.01f)
+	{
+		real_vector3d axis = h1_cross(&marker_up, &normal);
+		axis = { axis.i / half_angle_scale, axis.j / half_angle_scale, axis.k / half_angle_scale };
+		const real32 w = half_angle_scale * 0.5f;
+		const real_vector3d a = h1_cross(&axis, &marker_forward);
+		const real_vector3d b = h1_cross(&axis, &a);
+		forward = { marker_forward.i + 2.f * (w * a.i + b.i), marker_forward.j + 2.f * (w * a.j + b.j), marker_forward.k + 2.f * (w * a.k + b.k) };
+	}
+	else
+	{
+		const real_vector3d cross = h1_cross(&normal, &marker_forward);
+		forward = h1_cross(&cross, &normal);
+	}
+	h1_normalize(&forward);
+
+	s_h1_frame ground_frame;
+	ground_frame.axes[0] = forward;
+	ground_frame.axes[1] = h1_cross(&normal, &forward);
+	ground_frame.axes[2] = normal;
+	ground_frame.position = *point;
+
+	// object = ground * inverse(marker)
+	s_h1_frame inverse_marker;
+	inverse_marker.axes[0] = { marker_frame.axes[0].i, marker_frame.axes[1].i, marker_frame.axes[2].i };
+	inverse_marker.axes[1] = { marker_frame.axes[0].j, marker_frame.axes[1].j, marker_frame.axes[2].j };
+	inverse_marker.axes[2] = { marker_frame.axes[0].k, marker_frame.axes[1].k, marker_frame.axes[2].k };
+	const real_vector3d marker_position = { marker_frame.position.x, marker_frame.position.y, marker_frame.position.z };
+	const real_vector3d inverse_position = h1_frame_rotate(&inverse_marker, &marker_position);
+	inverse_marker.position = { -inverse_position.i, -inverse_position.j, -inverse_position.k };
+	const s_h1_frame object = h1_frame_multiply(&ground_frame, &inverse_marker);
+
+	// halo 2 orients netgame items by yaw, pitch and roll in radians (z, then y negated, then x)
+	const real_vector3d& f = object.axes[0];
+	const real_vector3d& l = object.axes[1];
+	const real_vector3d& u = object.axes[2];
+	const real32 pitch = asinf(f.k < -1.f ? -1.f : (f.k > 1.f ? 1.f : f.k));
+	real32 yaw, roll;
+	if (cosf(pitch) > 0.0001f)
+	{
+		yaw = atan2f(f.j, f.i);
+		roll = atan2f(l.k, u.k);
+	}
+	else
+	{
+		yaw = atan2f(-l.i, l.j);
+		roll = 0.f;
+	}
+	*out_position = object.position;
+	out_orientation->yaw = yaw;
+	out_orientation->pitch = pitch;
+	out_orientation->roll = roll;
+	return true;
 }
