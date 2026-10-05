@@ -60,6 +60,9 @@ void h1_weapon_logic_reset(void);
 // weapons.c weapon_trigger_get_charged_fraction, 0 for weapons without halo 1 state
 real32 h1_weapon_logic_charged_fraction(datum weapon_index, int16 trigger_index);
 // the first_person_weapons.c messages a weapon sent since the last call, oldest first: the count written
+// weapon_datum flags: the weapon is overheated (until its heat drops below the recovery threshold) and is leaving it
+bool h1_weapon_logic_overheated(datum weapon_index, bool* out_overheated_exit);
+
 int32 h1_weapon_logic_first_person_messages_take(datum weapon_index, struct s_h1_first_person_weapon_message* messages, int32 maximum_count);
 // weapons.c weapon_build_weapon_interface_state, false for weapons without halo 1 state
 bool h1_weapon_logic_interface_state(datum weapon_index, s_h1_weapon_interface_state* state);

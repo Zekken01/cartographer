@@ -443,6 +443,17 @@ bool h1_weapon_logic_interface_state(datum weapon_index, s_h1_weapon_interface_s
 	return true;
 }
 
+bool h1_weapon_logic_overheated(datum weapon_index, bool* out_overheated_exit)
+{
+	auto found = g_h1_weapon_logic.find(weapon_index);
+	const uint32 flags = found != g_h1_weapon_logic.end() ? found->second.flags : 0;
+	if (out_overheated_exit)
+	{
+		*out_overheated_exit = TEST_BIT(flags, _h1_weapon_overheated_exit_bit);
+	}
+	return TEST_BIT(flags, _h1_weapon_overheated_bit);
+}
+
 int32 h1_weapon_logic_first_person_messages_take(datum weapon_index, s_h1_first_person_weapon_message* messages, int32 maximum_count)
 {
 	auto found = g_h1_weapon_logic.find(weapon_index);

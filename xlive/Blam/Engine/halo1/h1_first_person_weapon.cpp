@@ -465,7 +465,7 @@ static void h1_fp_set_state(int16 new_state)
 	const weapon_datum* weapon = g_h1_fp.weapon_index != NONE ?
 		(const weapon_datum*)object_try_and_get_and_verify_type(g_h1_fp.weapon_index, _object_mask_weapon) : NULL;
 	const h1_weap* definition = weapon ? h1_fp_weapon_definition(g_h1_fp.weapon_index) : NULL;
-	const bool overheated = weapon && weapon->weapon.heat > 0.f && definition && weapon->weapon.heat >= definition->overheated_threshold;
+	const bool overheated = weapon && h1_weapon_logic_overheated(g_h1_fp.weapon_index, NULL);
 
 	if (overheated)
 	{
@@ -705,11 +705,12 @@ static void h1_fp_tick(void)
 		return;
 	}
 
-	const bool overheated = weapon->weapon.heat > 0.f && weapon->weapon.heat >= definition->overheated_threshold;
+	// the weapon's overheated and overheated exit flags
+	bool overheated_exit;
+	const bool overheated = h1_weapon_logic_overheated(g_h1_fp.weapon_index, &overheated_exit);
 	if (g_h1_fp.state == _h1_fp_state_overheated || g_h1_fp.state == _h1_fp_state_overheating)
 	{
-		if (overheated && definition->heat_loss_per_second > 0.f &&
-			(weapon->weapon.heat - definition->heat_recovery_threshold) / (definition->heat_loss_per_second / k_h1_ticks_per_second) <= 1.f)
+		if (overheated_exit)
 		{
 			h1_fp_set_state(_h1_fp_state_overheated_exit);
 		}
