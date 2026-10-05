@@ -17,6 +17,7 @@
 #include "math/matrix_math.h"
 #include "rasterizer/dx9/rasterizer_dx9_main.h"
 #include "render/render.h"
+#include "units/units.h"
 
 #include <unordered_map>
 #include <vector>
@@ -139,6 +140,12 @@ bool h1_first_person_marker_get(datum object_index, const char* marker_name, rea
 void h1_first_person_render(real32 game_time)
 {
 	if (g_h1_first_person_frame.empty())
+	{
+		return;
+	}
+	// first_person_weapon_render_update: hidden while zoomed
+	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(h1_first_person_weapon_unit_get(), _object_mask_unit);
+	if (unit && unit->unit.current_zoom_level != NONE)
 	{
 		return;
 	}

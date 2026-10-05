@@ -6,6 +6,8 @@
 
 // hud_render_weapon_interface for the local player
 void h1_hud_render(void);
+// interface_draw_screen's screen effect of the local player's weapon hud (the sniper rifle's scope), before the interface
+void h1_hud_render_screen_effect(void);
 // releases the hud's shaders
 void h1_hud_dispose(void);
 // halo 2's hud widgets halo 1's hud replaces on halo 1 maps (the shield, health and grenades)

@@ -13,6 +13,7 @@
 #include "items/weapons.h"
 #include "objects/objects.h"
 #include "rasterizer/dx9/rasterizer_dx9_main.h"
+#include "render/render.h"
 #include "tag_files/tag_groups.h"
 #include "units/units.h"
 
@@ -24,6 +25,7 @@ enum
 	k_h1_hud_window_height = 480,
 	k_h1_maximum_weapon_hud_depth = 16,
 	k_h1_weapon_hud_flash_references = 8,
+	k_h1_weapon_hud_real_numbers = 8,
 	k_h1_crosshair_states = 19,
 };
 
@@ -138,6 +140,70 @@ enum
 	_h1_bitmap_group_type_interface_bitmaps = 4,
 };
 
+// hud_draw.c multitexture overlays
+enum
+{
+	_h1_multitexture_effector_type_tint = 0,
+	_h1_multitexture_effector_type_horizontal_offset,
+	_h1_multitexture_effector_type_vertical_offset,
+	_h1_multitexture_effector_type_alpha,
+};
+
+enum
+{
+	_h1_multitexture_effector_destination_geometry_offset = 0,
+	_h1_multitexture_effector_destination_primary_map,
+	_h1_multitexture_effector_destination_secondary_map,
+	_h1_multitexture_effector_destination_tertiary_map,
+};
+
+enum
+{
+	_h1_multitexture_effector_source_player_pitch = 0,
+	_h1_multitexture_effector_source_player_pitch_tangent,
+	_h1_multitexture_effector_source_player_yaw,
+	_h1_multitexture_effector_source_weapon_ammo_loaded,
+	_h1_multitexture_effector_source_weapon_ammo_total,
+	_h1_multitexture_effector_source_weapon_heat,
+	_h1_multitexture_effector_source_explicit,
+	_h1_multitexture_effector_source_zoom_level,
+};
+
+enum
+{
+	_h1_multitexture_blend_function_add = 0,
+	_h1_multitexture_blend_function_subtract,
+	_h1_multitexture_blend_function_multiply,
+	_h1_multitexture_blend_function_multiply2x,
+	_h1_multitexture_blend_function_dot,
+};
+
+// shader framebuffer blend functions
+enum
+{
+	_h1_framebuffer_blend_function_alpha_blend = 0,
+	_h1_framebuffer_blend_function_multiply,
+	_h1_framebuffer_blend_function_double_multiply,
+	_h1_framebuffer_blend_function_add,
+	_h1_framebuffer_blend_function_subtract,
+	_h1_framebuffer_blend_function_component_min,
+	_h1_framebuffer_blend_function_component_max,
+	_h1_framebuffer_blend_function_alpha_multiply_add,
+	k_h1_framebuffer_blend_function_count
+};
+
+// interface.c hud screen effect flags (bit 0 of each: only when zoomed)
+enum
+{
+	_h1_hud_screen_effect_only_when_zoomed_bit = 0,
+};
+
+enum
+{
+	k_h1_hud_zoomed_layout_width = 640,
+	k_h1_multitexture_maps = 3,
+};
+
 // halo 2's unit control flags (unit +0x24)
 enum : uint32
 {
@@ -179,6 +245,76 @@ struct h1_hud_color
 };
 static_assert(sizeof(h1_hud_color) == 0x20);
 
+// hud_draw.c multitexture_overlay_hud_element_effector_definition
+struct h1_hud_multitexture_effector
+{
+	int32 unused0[16];
+	int16 destination_type;
+	int16 destination;
+	int16 source;
+	uint16 pad46;
+	real32 in_bounds[2];
+	real32 out_bounds[2];
+	int32 unused58[16];
+	real_rgb_color tint_color_lower_bound;
+	real_rgb_color tint_color_upper_bound;
+	int16 periodic_function;
+	uint16 padB2;
+	real32 periodic_function_period;
+	real32 periodic_function_phase;
+	int32 unusedBC[8];
+};
+static_assert(sizeof(h1_hud_multitexture_effector) == 0xDC);
+
+// hud_draw.c multitexture_overlay_hud_element_definition
+struct h1_hud_multitexture_overlay
+{
+	uint16 flags;
+	int16 type;
+	int16 framebuffer_blend_function;
+	uint16 pad06;
+	int32 unused08[8];
+	uint16 map_flags[3];
+	int16 map_blending_function[2];
+	int16 pad32;
+	real_vector2d map_scale[3];
+	real_vector2d map_offset[3];
+	h1_tag_reference map[3];
+	int16 map_clamp[3];	// the wrap mode: wrapped when set
+	int16 pad9A;
+	int32 unused9C[46];
+	h1_tag_block<h1_hud_multitexture_effector> functions;
+	int32 unused160[32];
+};
+static_assert(sizeof(h1_hud_multitexture_overlay) == 0x1E0);
+
+// hud_definitions.h hud_screen_effect_definition
+struct h1_hud_screen_effect
+{
+	int32 unused1;
+	uint16 mask_flags;
+	uint16 mask_pad;
+	int32 mask_unused[4];
+	h1_tag_reference mask_fullscreen;
+	h1_tag_reference mask_splitscreen;
+	int32 unused2[2];
+	uint16 convolution_flags;
+	uint16 convolution_pad;
+	real32 convolution_radius_in_bounds[2];
+	real32 convolution_radius_out_bounds[2];
+	int32 unused3[6];
+	uint16 light_enhancement_flags;
+	int16 light_enhancement_script_source;
+	real32 light_enhancement_intensity;
+	int32 unused4[6];
+	uint16 desaturation_flags;
+	int16 desaturation_script_source;
+	real32 desaturation_intensity;
+	real_rgb_color desaturation_tint;
+	int32 unused5[6];
+};
+static_assert(sizeof(h1_hud_screen_effect) == 0xB8);
+
 struct h1_hud_static_element
 {
 	h1_hud_placement placement;
@@ -186,7 +322,7 @@ struct h1_hud_static_element
 	h1_hud_color colors;
 	int16 sequence_index;
 	int16 pad;
-	h1_tag_block<uint8> multitexture_overlays;
+	h1_tag_block<h1_hud_multitexture_overlay> multitexture_overlays;
 	int32 unused;
 };
 static_assert(sizeof(h1_hud_static_element) == 0x68);
@@ -208,7 +344,7 @@ struct h1_hud_meter_element
 	real32 opacity;
 	real32 fade;
 	uint32 disabled_color;
-	h1_tag_block<uint8> multitexture_overlays;
+	h1_tag_block<h1_hud_multitexture_overlay> multitexture_overlays;
 	int32 unused;
 };
 static_assert(sizeof(h1_hud_meter_element) == 0x68);
@@ -325,7 +461,7 @@ struct h1_wphi
 	h1_tag_block<h1_wphi_overlays> overlays;
 	uint32 valid_crosshair_types_flags;
 	h1_tag_block<uint8> warning_sounds;
-	h1_tag_block<uint8> screen_effects;
+	h1_tag_block<h1_hud_screen_effect> screen_effects;
 	int32 unused1[33];
 	uint8 messaging_icon[16];
 	int32 unused2[12];
@@ -443,6 +579,12 @@ static IDirect3DVertexShader9* g_h1_hud_vertex_shader = NULL;
 static IDirect3DPixelShader9* g_h1_hud_pixel_shader = NULL;
 static IDirect3DPixelShader9* g_h1_hud_meter_shader = NULL;
 static IDirect3DVertexDeclaration9* g_h1_hud_vertex_declaration = NULL;
+static IDirect3DPixelShader9* g_h1_hud_multitexture_shader = NULL;
+static IDirect3DPixelShader9* g_h1_hud_screen_effect_shader = NULL;
+static IDirect3DTexture9* g_h1_hud_screen_copy = NULL;
+// the unit and weapon state of the hud being drawn (the multitexture overlays' effectors)
+static datum g_h1_hud_unit_index = NONE;
+static const s_h1_weapon_interface_state* g_h1_hud_weapon_state = NULL;
 
 static const char k_h1_hud_vertex_shader[] = R"(
 struct VS_INPUT { float4 position : POSITION; float2 texcoord : TEXCOORD0; float4 color : COLOR0; };
@@ -497,6 +639,84 @@ float4 main(float2 texcoord : TEXCOORD0) : COLOR0
 }
 )";
 
+// rasterizer_xbox_dynavobgeom.c _rasterizer_psuedo_dynamic_screen_quad_draw with up to three maps: each map times its tint and
+// fade, the first times the vertex color, then the second and the third combined by the overlay's map blending functions
+static const char k_h1_hud_multitexture_shader[] = R"(
+sampler2D map0 : register(s0);
+sampler2D map1 : register(s1);
+sampler2D map2 : register(s2);
+float4 map_transform[3] : register(c0);	// xy: scale, zw: offset of the texture coordinates
+float4 map_color[3] : register(c3);		// rgb: tint, a: fade
+float4 settings : register(c6);			// x: has map 1, y: has map 2, z: map 0 to 1 blend function, w: map 1 to 2 blend function
+float4 blend(float4 r0, float4 t, float function)
+{
+	float4 result;
+	if (function < 0.5f)		// alpha blend: r0 + t
+		result = r0 + t;
+	else if (function < 1.5f)	// multiply
+		result = r0 * t;
+	else if (function < 2.5f)	// double multiply: r0 - t
+		result = r0 - t;
+	else if (function < 3.5f)	// add: 2 r0 t
+		result = 2.0f * r0 * t;
+	else						// subtract: the dot product of the colors, the product of the alphas
+		result = float4(dot(r0.rgb, t.rgb).xxx, r0.a * t.a);
+	return clamp(result, -1.0f, 1.0f);
+}
+float4 main(float2 texcoord : TEXCOORD0, float4 color : COLOR0) : COLOR0
+{
+	float4 t0 = tex2D(map0, texcoord * map_transform[0].xy + map_transform[0].zw) * map_color[0];
+	float4 t1 = tex2D(map1, texcoord * map_transform[1].xy + map_transform[1].zw) * map_color[1];
+	float4 t2 = tex2D(map2, texcoord * map_transform[2].xy + map_transform[2].zw) * map_color[2];
+	float4 r0 = t0 * color;
+	if (settings.x > 0.5f)
+		r0 = blend(r0, t1, settings.z);
+	if (settings.y > 0.5f)
+		r0 = blend(r0, t2, settings.w);
+	return saturate(r0);
+}
+)";
+
+// rasterizer_xbox_screen_effect.c _rasterizer_screen_effect with a mask and a warp, its two passes in one: each pass averages the
+// screen with it scaled in and out by the warp's radius about the middle where the mask's alpha is, and the second darkens it
+// by the mask's blue (the light enhancement and the desaturation are the flashlight's, which halo 2's units don't have)
+static const char k_h1_hud_screen_effect_shader[] = R"(
+sampler2D screen : register(s0);
+sampler2D mask : register(s1);
+float4 screen_transform : register(c0);	// xy: one over the screen's size, zw: the middle of the viewport
+float4 mask_transform : register(c1);	// xy: one over the mask's size in screen pixels
+float4 warp : register(c2);				// xy: the radius over the viewport's size
+float4 mask_at(float2 p)
+{
+	return tex2Dlod(mask, float4((p - screen_transform.zw) * mask_transform.xy + 0.5f, 0.0f, 0.0f));
+}
+float3 source(float2 p)
+{
+	return tex2Dlod(screen, float4(p * screen_transform.xy, 0.0f, 0.0f)).rgb;
+}
+float2 inward(float2 p)
+{
+	return screen_transform.zw + (p - screen_transform.zw) * (1.0f - warp.xy);
+}
+float2 outward(float2 p)
+{
+	return screen_transform.zw + (p - screen_transform.zw) * (1.0f + warp.xy);
+}
+float3 first_pass(float2 p)
+{
+	float3 s = source(p);
+	return lerp(s, (s + source(inward(p)) + source(outward(p))) / 3.0f, mask_at(p).a);
+}
+float4 main(float2 position : VPOS) : COLOR0
+{
+	float2 p = position + 0.5f;
+	float4 m = mask_at(p);
+	float3 s = first_pass(p);
+	float3 color = lerp(s, (s + first_pass(inward(p)) + first_pass(outward(p))) / 3.0f, m.a);
+	return float4(color * (1.0f - m.b), 1.0f);
+}
+)";
+
 /* prototypes */
 
 static bool h1_hud_initialize(void);
@@ -522,6 +742,13 @@ static void h1_hud_draw_numbers(const h1_hud_absolute_placement* absolute_placem
 	int16 draw_flags, int32 flash_reference_time);
 static void h1_hud_draw_overlays(const h1_hud_absolute_placement* absolute_placement, const h1_wphi_overlays* overlays, int32 type_flags,
 	int32 reference_time, int16 draw_flags);
+static void h1_hud_draw_multitexture_overlay(const h1_hud_multitexture_overlay* overlay, const real_point2d* point, const real_rectangle2d* clip,
+	const real_rectangle2d* bounds, const real_vector2d* xy_scale, uint32 color);
+static bool h1_hud_overlays_follow_zoom(const h1_tag_block<h1_hud_multitexture_overlay>* overlays);
+static void h1_hud_zoomed_layout_begin(real32* saved_bounds);
+static void h1_hud_zoomed_layout_end(const real32* saved_bounds);
+static void h1_hud_set_framebuffer_blend_function(int16 function);
+static bool h1_hud_weapon_get(datum* unit_index, datum* weapon_index, const h1_weap** definition);
 static void h1_hud_render_unit(datum unit_index);
 static void h1_hud_render_grenades(datum unit_index, const h1_weap* weapon_definition);
 static void h1_pixel32_to_argb(uint32 color, real32* argb);
@@ -535,10 +762,162 @@ void h1_hud_dispose(void)
 	if (g_h1_hud_pixel_shader) g_h1_hud_pixel_shader->Release();
 	if (g_h1_hud_meter_shader) g_h1_hud_meter_shader->Release();
 	if (g_h1_hud_vertex_declaration) g_h1_hud_vertex_declaration->Release();
+	if (g_h1_hud_multitexture_shader) g_h1_hud_multitexture_shader->Release();
+	if (g_h1_hud_screen_effect_shader) g_h1_hud_screen_effect_shader->Release();
+	if (g_h1_hud_screen_copy) g_h1_hud_screen_copy->Release();
 	g_h1_hud_vertex_shader = NULL;
 	g_h1_hud_pixel_shader = NULL;
 	g_h1_hud_meter_shader = NULL;
 	g_h1_hud_vertex_declaration = NULL;
+	g_h1_hud_multitexture_shader = NULL;
+	g_h1_hud_screen_effect_shader = NULL;
+	g_h1_hud_screen_copy = NULL;
+	return;
+}
+
+// interface.c interface_draw_screen: the weapon hud's screen effect (the sniper rifle's scope mask and warp)
+void h1_hud_render_screen_effect(void)
+{
+	if (!h1_maps_active() || !g_h1_cache_file)
+	{
+		return;
+	}
+	datum unit_index;
+	datum weapon_index;
+	const h1_weap* definition;
+	if (!h1_hud_weapon_get(&unit_index, &weapon_index, &definition))
+	{
+		return;
+	}
+	const h1_wphi* hud_definition = h1_wphi_get(definition->hud_interface.index);
+	if (!hud_definition || hud_definition->screen_effects.count <= 0)
+	{
+		return;
+	}
+	const h1_hud_screen_effect* screen_effect = g_h1_cache_file->block_get(hud_definition->screen_effects, 0);
+	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(unit_index, _object_mask_unit);
+	const bool zoomed = unit->unit.current_zoom_level != NONE;
+
+	datum mask_tag_index = NONE;
+	if (zoomed || !TEST_BIT(screen_effect->mask_flags, _h1_hud_screen_effect_only_when_zoomed_bit))
+	{
+		mask_tag_index = screen_effect->mask_fullscreen.index;
+	}
+	real32 convolution_radius = 0.f;
+	if (zoomed || !TEST_BIT(screen_effect->convolution_flags, _h1_hud_screen_effect_only_when_zoomed_bit))
+	{
+		const real32* in_bounds = screen_effect->convolution_radius_in_bounds;
+		const real32* out_bounds = screen_effect->convolution_radius_out_bounds;
+		if (in_bounds[0] != in_bounds[1])
+		{
+			const real32 interpolation = PIN((render_get()->camera.vertical_field_of_view - in_bounds[0]) / (in_bounds[1] - in_bounds[0]), 0.f, 1.f);
+			convolution_radius = out_bounds[0] + (out_bounds[1] - out_bounds[0]) * interpolation;
+		}
+		else
+		{
+			convolution_radius = out_bounds[1];
+		}
+	}
+	// (a warp without a mask averages four samples, which no halo 1 hud uses)
+	const h1_bitm* mask_group = mask_tag_index != NONE ? (const h1_bitm*)g_h1_cache_file->tag_get('bitm', mask_tag_index) : NULL;
+	IDirect3DBaseTexture9* mask_texture = mask_group && mask_group->bitmaps.count > 0 ? h1_bitmap_texture_get(mask_tag_index, 0) : NULL;
+	if (!mask_texture || !h1_hud_initialize())
+	{
+		return;
+	}
+	const h1_bitm_bitmaps* mask_bitmap = g_h1_cache_file->block_get(mask_group->bitmaps, 0);
+
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	IDirect3DSurface9* target = NULL;
+	if (FAILED(device->GetRenderTarget(0, &target)))
+	{
+		return;
+	}
+	D3DSURFACE_DESC target_description;
+	target->GetDesc(&target_description);
+	if (g_h1_hud_screen_copy)
+	{
+		D3DSURFACE_DESC copy_description;
+		g_h1_hud_screen_copy->GetLevelDesc(0, &copy_description);
+		if (copy_description.Width != target_description.Width || copy_description.Height != target_description.Height ||
+			copy_description.Format != target_description.Format)
+		{
+			g_h1_hud_screen_copy->Release();
+			g_h1_hud_screen_copy = NULL;
+		}
+	}
+	if (!g_h1_hud_screen_copy &&
+		FAILED(device->CreateTexture(target_description.Width, target_description.Height, 1, D3DUSAGE_RENDERTARGET, target_description.Format,
+			D3DPOOL_DEFAULT, &g_h1_hud_screen_copy, NULL)))
+	{
+		g_h1_hud_screen_copy = NULL;
+		target->Release();
+		return;
+	}
+	IDirect3DSurface9* copy = NULL;
+	g_h1_hud_screen_copy->GetSurfaceLevel(0, &copy);
+	const HRESULT copied = device->StretchRect(target, NULL, copy, NULL, D3DTEXF_NONE);
+	copy->Release();
+	target->Release();
+	if (FAILED(copied))
+	{
+		return;
+	}
+
+	IDirect3DStateBlock9* state_block = NULL;
+	if (FAILED(device->CreateStateBlock(D3DSBT_ALL, &state_block)))
+	{
+		return;
+	}
+	D3DVIEWPORT9 viewport;
+	device->GetViewport(&viewport);
+	const real32 pixel_scale = (real32)viewport.Height / (real32)k_h1_hud_window_height;
+	const real32 radius = convolution_radius * pixel_scale;
+	const real32 constants[3][4] =
+	{
+		{ 1.f / (real32)target_description.Width, 1.f / (real32)target_description.Height,
+			(real32)viewport.X + (real32)viewport.Width * 0.5f, (real32)viewport.Y + (real32)viewport.Height * 0.5f },
+		// the mask a texel a pixel of halo 1's 480 high screen, at its middle
+		{ 1.f / (MAX((real32)mask_bitmap->width, 1.f) * pixel_scale), 1.f / (MAX((real32)mask_bitmap->height, 1.f) * pixel_scale), 0.f, 0.f },
+		{ radius / (real32)viewport.Width, radius / (real32)viewport.Height, 0.f, 0.f },
+	};
+	const s_h1_hud_vertex vertices[4] =
+	{
+		{ -1.f, 1.f, 0.f, 1.f, 0.f, 0.f, 0xFFFFFFFF },
+		{ 1.f, 1.f, 0.f, 1.f, 1.f, 0.f, 0xFFFFFFFF },
+		{ 1.f, -1.f, 0.f, 1.f, 1.f, 1.f, 0xFFFFFFFF },
+		{ -1.f, -1.f, 0.f, 1.f, 0.f, 1.f, 0xFFFFFFFF },
+	};
+	device->SetVertexDeclaration(g_h1_hud_vertex_declaration);
+	device->SetVertexShader(g_h1_hud_vertex_shader);
+	device->SetPixelShader(g_h1_hud_screen_effect_shader);
+	device->SetPixelShaderConstantF(0, &constants[0][0], 3);
+	device->SetTexture(0, g_h1_hud_screen_copy);
+	device->SetTexture(1, mask_texture);
+	for (DWORD stage = 0; stage < 2; stage++)
+	{
+		device->SetSamplerState(stage, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+		device->SetSamplerState(stage, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+		device->SetSamplerState(stage, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+		device->SetSamplerState(stage, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+		device->SetSamplerState(stage, D3DSAMP_MIPFILTER, D3DTEXF_POINT);
+		device->SetSamplerState(stage, D3DSAMP_SRGBTEXTURE, FALSE);
+	}
+	device->SetRenderState(D3DRS_ZENABLE, FALSE);
+	device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+	device->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+	device->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+	device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+	device->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+	device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+	device->SetRenderState(D3DRS_COLORWRITEENABLE, D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
+	device->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+	device->SetRenderState(D3DRS_FOGENABLE, FALSE);
+	device->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, 2, vertices, sizeof(s_h1_hud_vertex));
+	device->SetTexture(0, NULL);
+	device->SetTexture(1, NULL);
+	state_block->Apply();
+	state_block->Release();
 	return;
 }
 
@@ -548,19 +927,11 @@ void h1_hud_render(void)
 	{
 		return;
 	}
-	const datum unit_index = h1_first_person_weapon_unit_get();
-	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(unit_index, _object_mask_unit);
-	if (!unit || unit->unit.weapon_indices[0] == NONE)
-	{
-		return;
-	}
-	const datum weapon_index = unit_inventory_get_weapon(unit_index, unit->unit.weapon_indices[0]);
-	const weapon_datum* weapon = (const weapon_datum*)object_try_and_get_and_verify_type(weapon_index, _object_mask_weapon);
-	const datum h1_weapon_index = weapon ? h1_weapon_h1_get(weapon->definition_index) : NONE;
-	const h1_weap* definition = h1_weapon_index != NONE ? (const h1_weap*)g_h1_cache_file->tag_get('weap', h1_weapon_index) : NULL;
+	datum unit_index;
+	datum weapon_index;
+	const h1_weap* definition;
 	s_h1_weapon_interface_state weapon_state;
-	if (!definition || definition->hud_interface.index == NONE || !h1_wphi_get(definition->hud_interface.index) ||
-		!h1_weapon_logic_interface_state(weapon_index, &weapon_state))
+	if (!h1_hud_weapon_get(&unit_index, &weapon_index, &definition) || !h1_weapon_logic_interface_state(weapon_index, &weapon_state))
 	{
 		return;
 	}
@@ -603,12 +974,19 @@ void h1_hud_render(void)
 	device->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, FALSE);
 
 	// hud_update_weapon and hud_render_weapon_interface
+	g_h1_hud_unit_index = unit_index;
+	g_h1_hud_weapon_state = &weapon_state;
 	h1_hud_update(unit_index, weapon_index, h1_wphi_get(definition->hud_interface.index), &weapon_state);
 	h1_hud_crosshairs_draw(unit_index, weapon_index, definition->hud_interface.index, &weapon_state);
 	h1_hud_render_weapon(definition->hud_interface.index, definition, &weapon_state, NULL, NULL, NULL);
 	h1_hud_render_grenades(unit_index, definition);
 	g_h1_hud.last_weapon_index = weapon_index;
 	h1_hud_render_unit(unit_index);
+	g_h1_hud_weapon_state = NULL;
+	for (DWORD stage = 0; stage < k_h1_multitexture_maps; stage++)
+	{
+		device->SetTexture(stage, NULL);
+	}
 
 	state_block->Apply();
 	state_block->Release();
@@ -619,7 +997,8 @@ void h1_hud_render(void)
 
 static bool h1_hud_initialize(void)
 {
-	if (g_h1_hud_vertex_shader && g_h1_hud_pixel_shader && g_h1_hud_meter_shader && g_h1_hud_vertex_declaration)
+	if (g_h1_hud_vertex_shader && g_h1_hud_pixel_shader && g_h1_hud_meter_shader && g_h1_hud_vertex_declaration && g_h1_hud_multitexture_shader &&
+		g_h1_hud_screen_effect_shader)
 	{
 		return true;
 	}
@@ -657,6 +1036,18 @@ static bool h1_hud_initialize(void)
 		device->CreatePixelShader((const DWORD*)code->GetBufferPointer(), &g_h1_hud_meter_shader);
 		code->Release();
 	}
+	code = compile(k_h1_hud_multitexture_shader, "ps_3_0");
+	if (code)
+	{
+		device->CreatePixelShader((const DWORD*)code->GetBufferPointer(), &g_h1_hud_multitexture_shader);
+		code->Release();
+	}
+	code = compile(k_h1_hud_screen_effect_shader, "ps_3_0");
+	if (code)
+	{
+		device->CreatePixelShader((const DWORD*)code->GetBufferPointer(), &g_h1_hud_screen_effect_shader);
+		code->Release();
+	}
 	const D3DVERTEXELEMENT9 elements[] =
 	{
 		{ 0, 0, D3DDECLTYPE_FLOAT4, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0 },
@@ -665,7 +1056,24 @@ static bool h1_hud_initialize(void)
 		D3DDECL_END()
 	};
 	device->CreateVertexDeclaration(elements, &g_h1_hud_vertex_declaration);
-	return g_h1_hud_vertex_shader && g_h1_hud_pixel_shader && g_h1_hud_meter_shader && g_h1_hud_vertex_declaration;
+	return g_h1_hud_vertex_shader && g_h1_hud_pixel_shader && g_h1_hud_meter_shader && g_h1_hud_vertex_declaration && g_h1_hud_multitexture_shader &&
+		g_h1_hud_screen_effect_shader;
+}
+
+// the local player's unit, its weapon and the weapon's halo 1 definition, when it has a weapon hud
+static bool h1_hud_weapon_get(datum* unit_index, datum* weapon_index, const h1_weap** definition)
+{
+	*unit_index = h1_first_person_weapon_unit_get();
+	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(*unit_index, _object_mask_unit);
+	if (!unit || unit->unit.weapon_indices[0] == NONE)
+	{
+		return false;
+	}
+	*weapon_index = unit_inventory_get_weapon(*unit_index, unit->unit.weapon_indices[0]);
+	const weapon_datum* weapon = (const weapon_datum*)object_try_and_get_and_verify_type(*weapon_index, _object_mask_weapon);
+	const datum h1_weapon_index = weapon ? h1_weapon_h1_get(weapon->definition_index) : NONE;
+	*definition = h1_weapon_index != NONE ? (const h1_weap*)g_h1_cache_file->tag_get('weap', h1_weapon_index) : NULL;
+	return *definition && (*definition)->hud_interface.index != NONE && h1_wphi_get((*definition)->hud_interface.index);
 }
 
 // halo 1 ticks of the game time (the hud's flash references and frame rates)
@@ -942,6 +1350,8 @@ static void h1_hud_render_weapon(datum hud_index, const h1_weap* weapon_definiti
 	int16 state_flags[k_h1_weapon_hud_flash_references] = {};
 	int16 overlay_flags[k_h1_weapon_hud_flash_references] = {};
 	int16 number_values[k_h1_weapon_hud_flash_references] = {};
+	real32 numbers_real[k_h1_weapon_hud_real_numbers] = {};
+	bool numbers_real_valid[k_h1_weapon_hud_real_numbers] = {};
 
 	if (TEST_BIT(definition->flash_flags, 0) && new_state_flags && new_overlay_flags && new_numbers)
 	{
@@ -1010,6 +1420,23 @@ static void h1_hud_render_weapon(datum hud_index, const h1_weap* weapon_definiti
 		number_values[3] = (int16)((1.f - weapon_state->age) * 100.f);
 		number_values[4] = magazine1->rounds_remaining;
 		number_values[5] = magazine1->rounds_loaded;
+
+		// the range finder: the distance to the aim assist's target and its height, in meters, while fully auto aimed at it
+		const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(g_h1_hud_unit_index, _object_mask_unit);
+		const datum target_object_index = unit ? unit->unit.target_info.target_object : NONE;
+		if (unit && unit->unit.target_info.primary_auto_aim_level >= 1.f && object_try_and_get(target_object_index))
+		{
+			real_point3d position;
+			real_point3d target_position;
+			unit_get_camera_position(g_h1_hud_unit_index, &position);
+			object_get_origin_interpolated(target_object_index, &target_position);
+			const real32 dx = position.x - target_position.x;
+			const real32 dy = position.y - target_position.y;
+			const real32 dz = position.z - target_position.z;
+			numbers_real[6] = sqrtf(dx * dx + dy * dy + dz * dz) * 3.0480001f;
+			numbers_real[7] = (target_position.z - position.z) * 3.0480001f;
+			numbers_real_valid[6] = numbers_real_valid[7] = true;
+		}
 	}
 
 	if (definition->parent_hud.index != NONE)
@@ -1025,7 +1452,18 @@ static void h1_hud_render_weapon(datum hud_index, const h1_weap* weapon_definiti
 		if (!TEST_BIT(element->header.runtime_flags, 0) && TEST_BIT(map_type_flags, element->header.use_on_map_type) &&
 			VALID_INDEX(state_index, k_h1_weapon_hud_flash_references))
 		{
+			// (the zoomed view's, at the middle: hud_zoomed_layout_begin)
+			real32 window_bounds[2];
+			const bool zoomed_layout = h1_hud_overlays_follow_zoom(&element->static_element.multitexture_overlays);
+			if (zoomed_layout)
+			{
+				h1_hud_zoomed_layout_begin(window_bounds);
+			}
 			h1_hud_draw_static(&definition->absolute_placement, &element->static_element, state_flags[state_index], g_h1_hud.last_weapon_flash_time[state_index]);
+			if (zoomed_layout)
+			{
+				h1_hud_zoomed_layout_end(window_bounds);
+			}
 		}
 	}
 	for (int32 i = 0; i < definition->meters.count; i++)
@@ -1035,8 +1473,18 @@ static void h1_hud_render_weapon(datum hud_index, const h1_weap* weapon_definiti
 		if (!TEST_BIT(element->header.runtime_flags, 0) && TEST_BIT(map_type_flags, element->header.use_on_map_type) &&
 			VALID_INDEX(state_index, k_h1_weapon_hud_flash_references))
 		{
+			real32 window_bounds[2];
+			const bool zoomed_layout = h1_hud_overlays_follow_zoom(&element->meter_element.multitexture_overlays);
+			if (zoomed_layout)
+			{
+				h1_hud_zoomed_layout_begin(window_bounds);
+			}
 			h1_hud_draw_meter(&definition->absolute_placement, &element->meter_element, (uint8)number_values[state_index], (uint8)number_values[state_index],
 				state_flags[state_index], (real32)g_h1_hud.last_weapon_flash_time[state_index], 0.f);
+			if (zoomed_layout)
+			{
+				h1_hud_zoomed_layout_end(window_bounds);
+			}
 		}
 	}
 	for (int32 i = 0; i < definition->numbers.count; i++)
@@ -1048,18 +1496,36 @@ static void h1_hud_render_weapon(datum hud_index, const h1_weap* weapon_definiti
 		{
 			continue;
 		}
-		if (element->number_element.fractional_digits)
-		{
-			// the range finder's distances need the aim assist target: none
-			continue;
-		}
 		int16 magazine_size = 1;
 		if (TEST_BIT(element->weapon_flags, 0) && weapon_definition->magazines.count > 0)
 		{
 			magazine_size = MAX(g_h1_cache_file->block_get(weapon_definition->magazines, 0)->rounds_loaded_maximum, (int16)1);
 		}
-		h1_hud_draw_numbers(&definition->absolute_placement, &element->number_element, (int16)(number_values[state_index] / magazine_size), NONE,
-			state_flags[state_index], g_h1_hud.last_weapon_flash_time[state_index]);
+		int16 value = (int16)(number_values[state_index] / magazine_size);
+		int16 decimal_value = NONE;
+		if (element->number_element.fractional_digits)
+		{
+			// the range finder's distances: none without a target
+			if (!VALID_INDEX(state_index, k_h1_weapon_hud_real_numbers) || !numbers_real_valid[state_index])
+			{
+				continue;
+			}
+			const real32 scale = 10000.f;
+			decimal_value = (int16)fmodf(fabsf(numbers_real[state_index] * scale), scale);
+			value = (int16)(numbers_real[state_index] / magazine_size);
+		}
+		real32 window_bounds[2];
+		const bool zoomed_layout = TEST_BIT(element->number_element.number_flags, _h1_hud_number_show_only_when_zoomed_bit);
+		if (zoomed_layout)
+		{
+			h1_hud_zoomed_layout_begin(window_bounds);
+		}
+		h1_hud_draw_numbers(&definition->absolute_placement, &element->number_element, value, decimal_value, state_flags[state_index],
+			g_h1_hud.last_weapon_flash_time[state_index]);
+		if (zoomed_layout)
+		{
+			h1_hud_zoomed_layout_end(window_bounds);
+		}
 	}
 	for (int32 i = 0; i < definition->overlays.count; i++)
 	{
@@ -1296,7 +1762,7 @@ static void h1_hud_draw_bitmap_placed(datum bitmap_tag_index, int16 sequence_ind
 	return;
 }
 
-// hud_draw.c hud_draw_static_element (the multitexture overlays aren't drawn)
+// hud_draw.c hud_draw_static_element
 static void h1_hud_draw_static(const h1_hud_absolute_placement* absolute_placement, const h1_hud_static_element* element, int16 draw_flags, int32 flash_reference_time)
 {
 	uint32 color;
@@ -1313,6 +1779,293 @@ static void h1_hud_draw_static(const h1_hud_absolute_placement* absolute_placeme
 		color = element->colors.color;
 	}
 	h1_hud_draw_bitmap_placed(element->interface_bitmap.index, element->sequence_index, 0, absolute_placement, &element->placement, 1.f, color, NULL, true);
+
+	// the multitexture overlays over the bitmap's bounds
+	int16 bitmap_index;
+	real_rectangle2d clip_storage;
+	const real_rectangle2d* clip;
+	if (element->multitexture_overlays.count <= 0 ||
+		!h1_hud_bitmap_get(element->interface_bitmap.index, element->sequence_index, 0, &bitmap_index, &clip, &clip_storage))
+	{
+		return;
+	}
+	const h1_bitm* group = (const h1_bitm*)g_h1_cache_file->tag_get('bitm', element->interface_bitmap.index);
+	const h1_bitm_bitmaps* bitmap = g_h1_cache_file->block_get(group->bitmaps, bitmap_index);
+	const bool interface_bitmap = group->type == _h1_bitmap_group_type_interface_bitmaps;
+	const real_rectangle2d default_clip = { 0.f, interface_bitmap ? (real32)bitmap->width : 1.f, 0.f, interface_bitmap ? (real32)bitmap->height : 1.f };
+	if (!clip)
+	{
+		clip = &default_clip;
+	}
+	real_point2d point;
+	real_rectangle2d bounds;
+	h1_hud_calculate_point(absolute_placement, &element->placement, &point);
+	h1_hud_bitmap_bounds(absolute_placement->corner, clip, (real32)bitmap->width, (real32)bitmap->height, interface_bitmap, &bounds);
+	for (int32 overlay_index = 0; overlay_index < element->multitexture_overlays.count; overlay_index++)
+	{
+		h1_hud_draw_multitexture_overlay(g_h1_cache_file->block_get(element->multitexture_overlays, overlay_index), &point, clip, &bounds,
+			&element->placement.scale, color);
+	}
+	return;
+}
+
+// hud_draw.c hud_draw_multitexture_overlay: the overlay's maps over the bounds, their tints, fades and offsets (or the geometry's)
+// from its effectors
+static void h1_hud_draw_multitexture_overlay(const h1_hud_multitexture_overlay* overlay, const real_point2d* point, const real_rectangle2d* clip,
+	const real_rectangle2d* bounds, const real_vector2d* xy_scale, uint32 color)
+{
+	real_point2d texture_offset[k_h1_multitexture_maps];
+	real_rgb_color texture_tint[k_h1_multitexture_maps];
+	real32 texture_fade[k_h1_multitexture_maps];
+	real_vector2d geometry_offset = { 0.f, 0.f };
+	for (int32 i = 0; i < k_h1_multitexture_maps; i++)
+	{
+		texture_offset[i] = { overlay->map_offset[i].i, overlay->map_offset[i].j };
+		texture_tint[i] = { 1.f, 1.f, 1.f };
+		texture_fade[i] = 1.f;
+	}
+
+	for (int32 function_index = 0; function_index < overlay->functions.count; function_index++)
+	{
+		const h1_hud_multitexture_effector* effector = g_h1_cache_file->block_get(overlay->functions, function_index);
+		real32 source_value = 0.f;
+		switch (effector->source)
+		{
+		case _h1_multitexture_effector_source_player_pitch:
+		{
+			real_vector3d direction;
+			unit_get_aiming_vector(g_h1_hud_unit_index, &direction);
+			source_value = atan2f(direction.k, sqrtf(direction.i * direction.i + direction.j * direction.j));
+			break;
+		}
+		case _h1_multitexture_effector_source_weapon_ammo_loaded:
+			source_value = g_h1_hud_weapon_state ? (real32)g_h1_hud_weapon_state->magazines[0].rounds_loaded : 0.f;
+			break;
+		case _h1_multitexture_effector_source_weapon_ammo_total:
+			source_value = g_h1_hud_weapon_state ? (real32)g_h1_hud_weapon_state->magazines[0].rounds_remaining : 0.f;
+			break;
+		case _h1_multitexture_effector_source_weapon_heat:
+			source_value = g_h1_hud_weapon_state ? g_h1_hud_weapon_state->heat : 0.f;
+			break;
+		case _h1_multitexture_effector_source_explicit:
+			source_value = effector->in_bounds[0];
+			break;
+		case _h1_multitexture_effector_source_zoom_level:
+		{
+			const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(g_h1_hud_unit_index, _object_mask_unit);
+			source_value = unit ? (real32)unit->unit.current_zoom_level : (real32)NONE;
+			break;
+		}
+		default:
+			// the pitch tangent and the yaw
+			break;
+		}
+
+		real32 dest_value;
+		real_rgb_color dest_color;
+		if (effector->in_bounds[1] == effector->in_bounds[0] || effector->out_bounds[1] == effector->out_bounds[0])
+		{
+			dest_value = effector->out_bounds[0];
+			dest_color = effector->tint_color_lower_bound;
+		}
+		else
+		{
+			const real32 fraction = PIN((source_value - effector->in_bounds[0]) / (effector->in_bounds[1] - effector->in_bounds[0]), 0.f, 1.f);
+			dest_value = effector->out_bounds[0] + (effector->out_bounds[1] - effector->out_bounds[0]) * fraction;
+			const real_rgb_color& lower = effector->tint_color_lower_bound;
+			const real_rgb_color& upper = effector->tint_color_upper_bound;
+			dest_color = { lower.red + (upper.red - lower.red) * fraction, lower.green + (upper.green - lower.green) * fraction,
+				lower.blue + (upper.blue - lower.blue) * fraction };
+		}
+
+		if (effector->destination == _h1_multitexture_effector_destination_geometry_offset)
+		{
+			geometry_offset.i = effector->destination_type == _h1_multitexture_effector_type_horizontal_offset ? dest_value : 0.f;
+			geometry_offset.j = effector->destination_type == _h1_multitexture_effector_type_vertical_offset ? dest_value : 0.f;
+		}
+		else if (VALID_INDEX(effector->destination - _h1_multitexture_effector_destination_primary_map, k_h1_multitexture_maps))
+		{
+			const int32 map_index = effector->destination - _h1_multitexture_effector_destination_primary_map;
+			switch (effector->destination_type)
+			{
+			case _h1_multitexture_effector_type_tint:
+				texture_tint[map_index] = dest_color;
+				break;
+			case _h1_multitexture_effector_type_horizontal_offset:
+				texture_offset[map_index].x += dest_value;
+				break;
+			case _h1_multitexture_effector_type_vertical_offset:
+				texture_offset[map_index].y += dest_value;
+				break;
+			case _h1_multitexture_effector_type_alpha:
+				texture_fade[map_index] = dest_value;
+				break;
+			}
+		}
+	}
+
+	// the maps: their first bitmap, a texel each when not a power of two in size
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	real32 constants[7][4] = {};
+	int32 map_count = 0;
+	for (int32 map_index = 0; map_index < k_h1_multitexture_maps; map_index++)
+	{
+		const datum map_tag_index = overlay->map[map_index].index;
+		const h1_bitm* group = map_tag_index != NONE ? (const h1_bitm*)g_h1_cache_file->tag_get('bitm', map_tag_index) : NULL;
+		int16 bitmap_index = 0;
+		real_rectangle2d map_clip_storage;
+		const real_rectangle2d* map_clip;
+		if (group && !h1_hud_bitmap_get(map_tag_index, 0, 0, &bitmap_index, &map_clip, &map_clip_storage))
+		{
+			bitmap_index = 0;
+		}
+		IDirect3DBaseTexture9* texture = group && VALID_INDEX(bitmap_index, group->bitmaps.count) ? h1_bitmap_texture_get(map_tag_index, bitmap_index) : NULL;
+		if (!texture)
+		{
+			// the maps are used in order (the third needs the second)
+			break;
+		}
+		const h1_bitm_bitmaps* bitmap = g_h1_cache_file->block_get(group->bitmaps, bitmap_index);
+		const bool non_power_of_two = ((bitmap->width - 1) & bitmap->width) != 0 || ((bitmap->height - 1) & bitmap->height) != 0;
+		const bool texel_addressed = non_power_of_two || group->type == _h1_bitmap_group_type_interface_bitmaps;
+		const real_vector2d texture_scale = { texel_addressed ? 1.f / MAX((real32)bitmap->width, 1.f) : 1.f, texel_addressed ? 1.f / MAX((real32)bitmap->height, 1.f) : 1.f };
+		const real_vector2d map_scale =
+		{
+			overlay->map_scale[map_index].i == 0.f ? 1.f : 1.f / overlay->map_scale[map_index].i,
+			overlay->map_scale[map_index].j == 0.f ? 1.f : 1.f / overlay->map_scale[map_index].j
+		};
+		constants[map_index][0] = map_scale.i * texture_scale.i;
+		constants[map_index][1] = map_scale.j * texture_scale.j;
+		constants[map_index][2] = texture_offset[map_index].x * texture_scale.i;
+		constants[map_index][3] = texture_offset[map_index].y * texture_scale.j;
+		constants[3 + map_index][0] = texture_tint[map_index].red;
+		constants[3 + map_index][1] = texture_tint[map_index].green;
+		constants[3 + map_index][2] = texture_tint[map_index].blue;
+		constants[3 + map_index][3] = PIN(texture_fade[map_index], 0.f, 1.f);
+
+		const DWORD address = overlay->map_clamp[map_index] ? D3DTADDRESS_WRAP : D3DTADDRESS_CLAMP;
+		device->SetTexture(map_index, texture);
+		device->SetSamplerState(map_index, D3DSAMP_ADDRESSU, address);
+		device->SetSamplerState(map_index, D3DSAMP_ADDRESSV, address);
+		// point sampled with one local player
+		device->SetSamplerState(map_index, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+		device->SetSamplerState(map_index, D3DSAMP_MINFILTER, D3DTEXF_POINT);
+		device->SetSamplerState(map_index, D3DSAMP_MIPFILTER, D3DTEXF_POINT);
+		device->SetSamplerState(map_index, D3DSAMP_SRGBTEXTURE, FALSE);
+		map_count++;
+	}
+	if (map_count == 0)
+	{
+		return;
+	}
+	// the overlay's map blending functions as framebuffer blend functions
+	auto combiner_function = [](int16 function) -> real32
+	{
+		switch (function)
+		{
+		case _h1_multitexture_blend_function_subtract: return (real32)_h1_framebuffer_blend_function_double_multiply;
+		case _h1_multitexture_blend_function_multiply: return (real32)_h1_framebuffer_blend_function_multiply;
+		case _h1_multitexture_blend_function_multiply2x: return (real32)_h1_framebuffer_blend_function_add;
+		case _h1_multitexture_blend_function_dot: return (real32)_h1_framebuffer_blend_function_subtract;
+		default: return (real32)_h1_framebuffer_blend_function_alpha_blend;
+		}
+	};
+	constants[6][0] = map_count > 1 ? 1.f : 0.f;
+	constants[6][1] = map_count > 2 ? 1.f : 0.f;
+	constants[6][2] = combiner_function(overlay->map_blending_function[0]);
+	constants[6][3] = combiner_function(overlay->map_blending_function[1]);
+
+	const D3DVIEWPORT9& viewport = g_h1_hud_window.viewport;
+	const real32 pixel_scale = g_h1_hud_window.pixel_scale;
+	s_h1_hud_vertex vertices[4];
+	for (int32 i = 0; i < 4; i++)
+	{
+		const real32 texture_x = ((i + 1) & 2) ? clip->x1 : clip->x0;
+		const real32 texture_y = i > 1 ? clip->y1 : clip->y0;
+		const real32 bound_x = ((i + 1) & 2) ? bounds->x1 : bounds->x0;
+		const real32 bound_y = i > 1 ? bounds->y1 : bounds->y0;
+		const real32 x = (point->x + (real32)(int32)(bound_x * xy_scale->i) + geometry_offset.i) * pixel_scale;
+		const real32 y = (point->y + (real32)(int32)(bound_y * xy_scale->j) + geometry_offset.j) * pixel_scale;
+		vertices[i].x = (x - 0.5f) * 2.f / (real32)viewport.Width - 1.f;
+		vertices[i].y = 1.f - (y - 0.5f) * 2.f / (real32)viewport.Height;
+		vertices[i].z = 0.f;
+		vertices[i].w = 1.f;
+		vertices[i].u = texture_x;
+		vertices[i].v = texture_y;
+		vertices[i].color = color;
+	}
+	device->SetPixelShader(g_h1_hud_multitexture_shader);
+	device->SetPixelShaderConstantF(0, &constants[0][0], 7);
+	h1_hud_set_framebuffer_blend_function(overlay->framebuffer_blend_function);
+	device->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, 2, vertices, sizeof(s_h1_hud_vertex));
+	for (int32 map_index = 1; map_index < map_count; map_index++)
+	{
+		device->SetTexture(map_index, NULL);
+	}
+	device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+	device->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+	device->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+	return;
+}
+
+// rasterizer_xbox.c rasterizer_set_framebuffer_blend_function
+static void h1_hud_set_framebuffer_blend_function(int16 function)
+{
+	static const DWORD k_source_blend[k_h1_framebuffer_blend_function_count] =
+	{
+		D3DBLEND_SRCALPHA, D3DBLEND_DESTCOLOR, D3DBLEND_DESTCOLOR, D3DBLEND_ONE, D3DBLEND_ONE, D3DBLEND_ONE, D3DBLEND_ONE, D3DBLEND_ONE
+	};
+	static const DWORD k_destination_blend[k_h1_framebuffer_blend_function_count] =
+	{
+		D3DBLEND_INVSRCALPHA, D3DBLEND_ZERO, D3DBLEND_SRCCOLOR, D3DBLEND_ONE, D3DBLEND_ONE, D3DBLEND_ONE, D3DBLEND_ONE, D3DBLEND_INVSRCALPHA
+	};
+	static const DWORD k_blend_operation[k_h1_framebuffer_blend_function_count] =
+	{
+		D3DBLENDOP_ADD, D3DBLENDOP_ADD, D3DBLENDOP_ADD, D3DBLENDOP_ADD, D3DBLENDOP_REVSUBTRACT, D3DBLENDOP_MIN, D3DBLENDOP_MAX, D3DBLENDOP_ADD
+	};
+	if (!VALID_INDEX(function, k_h1_framebuffer_blend_function_count))
+	{
+		function = _h1_framebuffer_blend_function_alpha_blend;
+	}
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	device->SetRenderState(D3DRS_SRCBLEND, k_source_blend[function]);
+	device->SetRenderState(D3DRS_DESTBLEND, k_destination_blend[function]);
+	device->SetRenderState(D3DRS_BLENDOP, k_blend_operation[function]);
+	return;
+}
+
+// hud_draw.c hud_multitexture_overlays_follow_zoom: the zoomed view's elements (the sniper rifle's angle ticks)
+static bool h1_hud_overlays_follow_zoom(const h1_tag_block<h1_hud_multitexture_overlay>* overlays)
+{
+	for (int32 overlay_index = 0; overlay_index < overlays->count; overlay_index++)
+	{
+		const h1_hud_multitexture_overlay* overlay = g_h1_cache_file->block_get(*overlays, overlay_index);
+		for (int32 effector_index = 0; effector_index < overlay->functions.count; effector_index++)
+		{
+			if (g_h1_cache_file->block_get(overlay->functions, effector_index)->source == _h1_multitexture_effector_source_zoom_level)
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// hud_draw.c hud_zoomed_layout_begin: the window as it would be 640 wide, at the middle of the wide one
+static void h1_hud_zoomed_layout_begin(real32* saved_bounds)
+{
+	saved_bounds[0] = g_h1_hud_window.x0;
+	saved_bounds[1] = g_h1_hud_window.x1;
+	const real32 inset = (real32)(int32)((g_h1_hud_window.x1 - g_h1_hud_window.x0 - k_h1_hud_zoomed_layout_width) / 2.f);
+	g_h1_hud_window.x0 += inset;
+	g_h1_hud_window.x1 -= inset;
+	return;
+}
+
+static void h1_hud_zoomed_layout_end(const real32* saved_bounds)
+{
+	g_h1_hud_window.x0 = saved_bounds[0];
+	g_h1_hud_window.x1 = saved_bounds[1];
 	return;
 }
 
@@ -1396,12 +2149,19 @@ static void h1_hud_draw_numbers(const h1_hud_absolute_placement* absolute_placem
 		return;
 	}
 	const datum number_bitmap = hud_number->number_bitmap.index;
+	const bool kilometers = value > 999;
 	const bool negative = value < 0;
-	real32 digit_count = (real32)numbers->digits;
+	real32 digit_count = (real32)(numbers->digits + (numbers->fractional_digits && decimal_value != NONE ? MIN(numbers->fractional_digits, 4) + 1 : 0));
+	const real32 decimal_point_width = (real32)(numbers->fractional_digits ? hud_number->decimal_point_width : 0);
 	const real32 scale = 1.f;
 	if (TEST_BIT(numbers->number_flags, _h1_hud_number_show_trailing_m_bit))
 	{
 		digit_count += 1.f;
+		if (kilometers)
+		{
+			decimal_value = (int16)(value * 10);
+			value /= 1000;
+		}
 	}
 	value = (int16)abs(value);
 
@@ -1412,10 +2172,10 @@ static void h1_hud_draw_numbers(const h1_hud_absolute_placement* absolute_placem
 	{
 	case _h1_hud_anchor_top_left:
 	case _h1_hud_anchor_bottom_left:
-		cursor_x = (real32)(int32)((digit_count - 2.f) * hud_number->screen_width * scale + origin.x);
+		cursor_x = (real32)(int32)(((digit_count - 2.f) * hud_number->screen_width + decimal_point_width) * scale + origin.x);
 		break;
 	case _h1_hud_anchor_center:
-		cursor_x = (real32)(int32)((digit_count - 1.f) * hud_number->screen_width * scale * 0.5f + origin.x);
+		cursor_x = (real32)(int32)(((digit_count - 1.f) * hud_number->screen_width + decimal_point_width) * scale * 0.5f + origin.x);
 		break;
 	default:
 		cursor_x = origin.x;
@@ -1451,7 +2211,25 @@ static void h1_hud_draw_numbers(const h1_hud_absolute_placement* absolute_placem
 
 	if (TEST_BIT(numbers->number_flags, _h1_hud_number_show_trailing_m_bit))
 	{
-		draw_character(_h1_hud_number_meters_index);
+		draw_character((int16)(kilometers ? _h1_hud_number_kilometers_index : _h1_hud_number_meters_index));
+		cursor_x = (real32)(int32)(cursor_x - hud_number->screen_width * scale);
+	}
+	if (numbers->fractional_digits && decimal_value >= 0)
+	{
+		const int16 fractional_digits = MIN((int16)numbers->fractional_digits, (int16)4);
+		for (int16 digit_index = fractional_digits; digit_index < 4; digit_index++)
+		{
+			decimal_value /= 10;
+		}
+		for (int16 digit_index = 0; digit_index < fractional_digits; digit_index++)
+		{
+			draw_character((int16)(decimal_value % 10));
+			cursor_x = (real32)(int32)(cursor_x - hud_number->screen_width * scale);
+			decimal_value /= 10;
+		}
+		cursor_x = (real32)(int32)(cursor_x + hud_number->screen_width * scale);
+		cursor_x = (real32)(int32)(cursor_x - hud_number->decimal_point_width * scale);
+		draw_character(_h1_hud_number_decimal_index);
 		cursor_x = (real32)(int32)(cursor_x - hud_number->screen_width * scale);
 	}
 	for (int32 digit_index = 0; digit_index < numbers->digits; digit_index++)
@@ -1468,7 +2246,6 @@ static void h1_hud_draw_numbers(const h1_hud_absolute_placement* absolute_placem
 	{
 		draw_character(_h1_hud_number_negative_sign_index);
 	}
-	(void)decimal_value;
 	return;
 }
 

@@ -856,6 +856,8 @@ static void render_view(
 
 			rasterizer_dx9_perf_event_begin("interface", NULL);
 			rasterizer_dx9_set_stencil_mode(0);
+			// the halo 1 weapon hud's screen effect (the sniper rifle's scope) under the interface
+			h1_hud_render_screen_effect();
 			interface_draw_screen();
 			// the halo 1 weapon hud of halo 1 maps
 			h1_hud_render();
