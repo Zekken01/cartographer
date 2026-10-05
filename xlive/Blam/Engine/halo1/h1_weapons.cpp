@@ -295,7 +295,15 @@ datum h1_weapon_definition_build(datum h1_weapon_index)
 	weapon->multiplayer_weapon_type = weapon_class && strcmp(weapon_class->h1_label, "f") == 0 ? 1 : weapon_class && strcmp(weapon_class->h1_label, "b") == 0 ? 2 : 0;
 
 	// magazines
-	const int32 magazine_count = h1_weapon->magazines.count;
+	// energy weapons only have empty magazines, halo 2's have none
+	int32 magazine_count = 0;
+	for (int32 i = 0; i < h1_weapon->magazines.count; i++)
+	{
+		if (g_h1_cache_file->block_get(h1_weapon->magazines, i)->rounds_loaded_maximum > 0)
+		{
+			magazine_count = h1_weapon->magazines.count;
+		}
+	}
 	h2x_weap_magazines* magazines = h1_runtime_block_new(&weapon->magazines, magazine_count);
 	for (int32 i = 0; i < magazine_count; i++)
 	{
@@ -382,7 +390,10 @@ datum h1_weapon_definition_build(datum h1_weapon_index)
 		barrel->shots_per_fire = semi_automatic ? short_bounds{ 1, 1 } : short_bounds{ 0, 0 };
 		barrel->fire_recovery_time = semi_automatic ? (i == 0 ? 0.05f : 0.1f) : 0.f;
 		barrel->soft_recovery_fraction = semi_automatic && i == 0 ? 1.f : 0.f;
-		barrel->magazine_index = VALID_INDEX(h1_trigger->magazine_index, h1_weapon->magazines.count) ? h1_trigger->magazine_index : (int16)NONE;
+		// energy weapons (the plasma pistol) keep an empty halo 1 magazine that holds no rounds: no magazine for halo 2
+		const h1_weap_magazines* trigger_magazine = VALID_INDEX(h1_trigger->magazine_index, h1_weapon->magazines.count) ?
+			g_h1_cache_file->block_get(h1_weapon->magazines, h1_trigger->magazine_index) : NULL;
+		barrel->magazine_index = trigger_magazine && trigger_magazine->rounds_loaded_maximum > 0 ? h1_trigger->magazine_index : (int16)NONE;
 		barrel->rounds_per_shot = h1_trigger->rounds_per_shot;
 		barrel->minimum_rounds_loaded = h1_trigger->minimum_rounds_loaded;
 		barrel->rounds_between_tracers = h1_trigger->rounds_between_tracers;
