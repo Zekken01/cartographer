@@ -3,6 +3,7 @@
 
 #include "h1_bitmaps.h"
 #include "h1_cache_file.h"
+#include "h1_effects.h"
 #include "h1_fog.h"
 #include "h1_log.h"
 
@@ -140,6 +141,25 @@ float3 fog_model(float3 color, float3 world)
 	return color * (1.0f - fog_model_atmospheric.w) * (1.0f - planar) + planar * fog_model_planar.rgb + fog_model_atmospheric.rgb;
 }
 
+// halo 1 dynamic lights (h1_effects.cpp): per light the position and 1 / radius, then the color
+float4 dynamic_lights[16] : register(c110);
+
+// rasterizer_xbox_environment light pass: the 3d distance attenuation texture times n.l times the light color
+float3 dynamic_light(float3 world, float3 normal)
+{
+	float3 result = float3(0.0f, 0.0f, 0.0f);
+	for (int i = 0; i < 8; i++)
+	{
+		float3 to_light = dynamic_lights[2 * i].xyz - world;
+		float distance_squared = dot(to_light, to_light);
+		float r = saturate(sqrt(distance_squared) * dynamic_lights[2 * i].w);
+		float attenuation = saturate((((-1.8124f * r + 5.1325f) * r - 4.4503f) * r + 0.1303f) * r + 0.999f);
+		float n_dot_l = saturate(dot(normal, to_light * rsqrt(distance_squared + 1e-6f)));
+		result += dynamic_lights[2 * i + 1].rgb * (attenuation * n_dot_l);
+	}
+	return result;
+}
+
 // halo 2 reads view depth packed as r + g / 256 + b / 65536
 float4 pack_depth(float depth)
 {
@@ -188,6 +208,7 @@ PS_OUTPUT main(PS_INPUT input)
 		clip(base.a - 0.5f);
 
 	float3 light = ambient.w > 0.5f ? tex2D(lightmap, input.lightmap_texcoord).rgb : ambient.rgb;
+	light += dynamic_light(input.world, normalize(input.world_normal));
 
 	PS_OUTPUT output;
 	output.color = float4(fog_model(color * light, input.world), 1.0f);
@@ -208,7 +229,7 @@ static const char k_h1_particle_pixel_shader[] = H1_PIXEL_SHADER_COMMON R"(
 sampler2D map0 : register(s0);
 sampler2D map1 : register(s1);
 
-float4 particle_settings : register(c0);	// framebuffer blend function, nonlinear tint, has secondary map
+float4 particle_settings : register(c0);	// framebuffer blend function, nonlinear tint, has secondary map, mode (0 particle, 1 decal, 2 lens flare)
 float4 secondary_transform[2] : register(c1);
 
 PS_OUTPUT main(PS_INPUT input)
@@ -218,8 +239,28 @@ PS_OUTPUT main(PS_INPUT input)
 	float vertex_alpha = input.lightmap_texcoord.x;
 	float4 t0 = tex2D(map0, input.texcoord);
 
+	// rasterizer_xbox_widgets internal sprite: the texture times the color, alpha brightness, added
+	if (particle_settings.w > 1.5f)
+	{
+		PS_OUTPUT flare;
+		flare.color = saturate(float4(t0.rgb * tint, t0.a * vertex_alpha));
+		flare.depth = float4(0.0f, 0.0f, 0.0f, 0.0f);
+		return flare;
+	}
+
 	float3 color;
-	if (particle_settings.y > 0.5f)
+	if (particle_settings.w > 0.5f)
+	{
+		// rasterizer_xbox_decals: the multiplying decals blend from the neutral color to the map by the decal color
+		float b = particle_settings.x;
+		if ((b > 0.5f && b < 1.5f) || abs(b - 5.0f) < 0.5f)
+			color = lerp(float3(1.0f, 1.0f, 1.0f), t0.rgb, tint);
+		else if (b > 1.5f && b < 2.5f)
+			color = lerp(float3(0.5f, 0.5f, 0.5f), t0.rgb, tint);
+		else
+			color = t0.rgb * tint;
+	}
+	else if (particle_settings.y > 0.5f)
 	{
 		float3 t4 = t0.rgb * t0.rgb;
 		t4 *= t4;
@@ -326,7 +367,8 @@ PS_OUTPUT main(PS_INPUT input)
 	float3 normal = normalize(input.world_normal);
 	float3 light = ambient.rgb +
 		saturate(dot(normal, -light0_direction.xyz)) * light0_color.rgb +
-		saturate(dot(normal, -light1_direction.xyz)) * light1_color.rgb;
+		saturate(dot(normal, -light1_direction.xyz)) * light1_color.rgb +
+		dynamic_light(input.world, normal);
 
 	float self_illumination = modes.z > 0.5f ? multipurpose.g * modes.w : 0.0f;
 
@@ -944,7 +986,7 @@ void h1_render_shader_fog_context_set(bool fogged, const real_point3d* centroid)
 }
 
 bool h1_render_particle_shader_bind(int16 framebuffer_blend_function, bool nonlinear_tint, uint16 primary_map_flags, IDirect3DBaseTexture9* texture,
-	IDirect3DBaseTexture9* secondary_texture, uint16 secondary_map_flags)
+	IDirect3DBaseTexture9* secondary_texture, uint16 secondary_map_flags, e_h1_particle_shader_mode mode)
 {
 	if (!g_h1_particle_shader)
 	{
@@ -960,12 +1002,17 @@ bool h1_render_particle_shader_bind(int16 framebuffer_blend_function, bool nonli
 		device->SetTexture(1, secondary_texture);
 		h1_set_sampler_addressing(1, TEST_BIT(secondary_map_flags, 1), TEST_BIT(secondary_map_flags, 2), TEST_BIT(secondary_map_flags, 0));
 	}
-	const real32 settings[4] = { (real32)framebuffer_blend_function, nonlinear_tint ? 1.f : 0.f, secondary_texture ? 1.f : 0.f, 0.f };
+	const real32 settings[4] = { (real32)framebuffer_blend_function, nonlinear_tint ? 1.f : 0.f, secondary_texture ? 1.f : 0.f, (real32)mode };
 	device->SetPixelShaderConstantF(0, settings, 1);
 	const real32 secondary_transform[2][4] = { { 1.f, 1.f, 0.f, 0.f }, { 1.f, 0.f, 0.f, 0.f } };
 	device->SetPixelShaderConstantF(1, &secondary_transform[0][0], 2);
 	device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
 	h1_bind_framebuffer_blend(framebuffer_blend_function);
+	if (mode == _h1_particle_shader_mode_lens_flare)
+	{
+		device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+		device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
+	}
 	device->SetRenderState(D3DRS_COLORWRITEENABLE, D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
 	h1_fog_set_shader_constants(h1_fog_active() ? _h1_fog_shader_mode_transparent : _h1_fog_shader_mode_none, NULL);
 	return true;
@@ -1035,6 +1082,7 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 		}
 	}
 	h1_fog_set_shader_constants(fog_mode, g_h1_fog_context_has_centroid ? &g_h1_fog_context_centroid : NULL);
+	h1_effects_set_light_constants();
 
 	switch (shader_group)
 	{

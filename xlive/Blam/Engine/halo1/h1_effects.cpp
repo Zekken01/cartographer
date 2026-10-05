@@ -14,10 +14,13 @@
 #include "h2_tag_definitions_generated.h"
 
 #include "game/game.h"
+#include "objects/objects.h"
 #include "physics/collisions.h"
 #include "rasterizer/dx9/rasterizer_dx9_main.h"
 #include "render/render.h"
+#include "tag_files/tag_groups.h"
 
+#include <algorithm>
 #include <vector>
 
 /* constants */
@@ -34,6 +37,42 @@ enum
 	k_h1_maximum_particle_systems = 64,
 	k_h1_maximum_system_particles = 1024,
 	k_h1_maximum_sprites = 4096,
+	k_h1_maximum_lights = 64,
+	k_h1_maximum_shader_lights = 8,
+	k_h1_maximum_attachments = 512,
+	k_h1_maximum_attachment_markers = 4,
+	k_h1_maximum_decals = 256,
+	k_h1_maximum_decal_vertices = 1536,
+};
+
+// light_definitions.h
+enum
+{
+	_h1_light_dynamic_bit = 0,
+	_h1_light_no_specular_bit,
+	_h1_light_dont_light_own_object_bit,
+};
+
+// decal_definitions.h
+enum
+{
+	_h1_decal_geometry_inherited_by_next_decal_in_chain_bit = 0,
+	_h1_decal_color_interpolate_in_hsv_bit = 1,
+	_h1_decal_no_random_rotation_bit = 3,
+	_h1_decal_preserve_aspect_bit = 8,
+};
+
+// lens_flare_definitions.h
+enum
+{
+	_h1_lens_reflection_rotate_from_center_of_screen_bit = 0,
+	_h1_lens_reflection_radius_not_scaled_by_distance_bit,
+	_h1_lens_reflection_radius_scaled_by_occlusion_bit,
+};
+
+enum
+{
+	_h1_bitmap_type_sprites = 3,
 };
 
 // particle_system_definitions.h
@@ -176,6 +215,9 @@ static const real32 k_h1_air_mass_over_radius_cubed = 0.0011f * 118613.34f;
 static const real32 k_h1_ticks_per_second = 30.f;
 static const real32 k_h1_particle_collision_scale_upper = 1.5f;
 static const real32 k_h1_particle_collision_scale_lower = 0.5f;
+static const real32 k_h1_decal_offset = 1.f / 128.f;					// decals sit off their surface (the xbox pushed them 1/256 in depth)
+static const real32 k_h1_decal_maximum_wrap_angle = 80.f * (_pi / 180.f);	// surfaces turned further from the hit surface aren't decaled
+static const real32 k_h1_lens_flare_occlusion_rate = 12.f;			// lens flares fade in and out of occlusion over 1/12 second
 
 static const char* const k_h1_projectile_effect_marker_names[] = { "", "gravity" };
 
@@ -202,6 +244,8 @@ struct s_h1_effect
 	real32 last_event_fraction;
 	uint8 particle_counts[k_h1_maximum_particles_per_event];
 	std::vector<std::vector<s_h1_effect_location>> locations;
+	bool loop;		// an object's attached effect: it stops after the last event and starts again
+	bool stopped;
 };
 
 struct s_h1_particle
@@ -413,6 +457,48 @@ struct s_h1_sprite
 	s_h1_particle_vertex vertices[6];
 };
 
+// object_lights.c struct light_datum (the parts the halo 1 renderer uses)
+struct s_h1_light
+{
+	datum definition_index;
+	bool attached;				// attached lights live with their object, unattached ones for the definition's duration
+	real32 age_ticks;
+	real32 intensity_scale;
+	real_point3d position;
+	real_vector3d forward;
+	real_vector3d up;
+	// lights_preprocess_scene
+	real_rgb_color color;
+	real32 radius;
+	real32 intensity;
+	// how much of the lens flare's occlusion point the camera sees
+	real32 occlusion_fraction;
+};
+
+// an effect or a light of a halo 1 object definition's attachments, kept while the object lives (objects.c object_attachments_new)
+struct s_h1_attachment
+{
+	datum object_index;
+	int16 attachment_index;
+	uint32 group_tag;
+	bool seen;
+	s_h1_effect effect;
+	s_h1_light light;
+};
+
+// effects/decals.c struct decal_datum, its vertices drawn by the particle shader
+struct s_h1_decal
+{
+	datum definition_index;
+	datum bitmap_tag_index;
+	int16 bitmap_index;
+	real32 age;
+	real32 lifetime;
+	real32 decay_time;
+	real32 intensity;
+	std::vector<s_h1_particle_vertex> vertices;
+};
+
 struct s_h1_effects_globals
 {
 	std::vector<s_h1_effect> effects;
@@ -425,11 +511,17 @@ struct s_h1_effects_globals
 	std::vector<s_h1_particle_vertex> vertices;
 	std::vector<s_h1_particle_system> particle_systems;
 	std::vector<s_h1_sprite> sprites;
+	std::vector<s_h1_light> lights;
+	std::vector<s_h1_attachment> attachments;
+	std::vector<s_h1_decal> decals;
+	real32 attachment_leftover_ticks;
+	real32 frame_dt;
+	real32 light_constants[2 * k_h1_maximum_shader_lights][4];
 };
 
 /* globals */
 
-static s_h1_effects_globals g_h1_effects = { {}, {}, 0x1234567u, 0, 0.f, {}, NONE, {}, {}, {} };
+static s_h1_effects_globals g_h1_effects = { {}, {}, 0x1234567u, 0, 0.f, {}, NONE, {}, {}, {}, {}, {}, {}, 0.f, 0.f, {} };
 
 typedef void(__cdecl* t_projectile_detonation_effect_new)(datum definition_index, const real_point3d* point, const real_vector3d* forward, void* owner, bool super_detonation, bool airborne);
 static t_projectile_detonation_effect_new p_projectile_detonation_effect_new = NULL;
@@ -480,6 +572,13 @@ static void h1_particle_system_new(datum definition_index, const real_point3d* p
 static bool h1_particle_system_update(s_h1_particle_system* system, real32 dt);
 static int32 h1_particle_system_particle_count(void);
 
+static void h1_light_new_unattached(datum definition_index, const real_point3d* position, const real_vector3d* forward, real32 scale);
+static void h1_lights_update(real32 dt);
+static void h1_attachments_update(real32 dt);
+static void h1_decal_new(datum definition_index, const real_point3d* origin, const real_vector3d* velocity, real32 radius_modifier);
+static void h1_decals_update(real32 dt);
+static void h1_lens_flares_render(void);
+
 /* public code */
 
 void h1_effects_apply_patches(void)
@@ -494,6 +593,11 @@ void h1_effects_reset(void)
 	g_h1_effects.particles.clear();
 	g_h1_effects.particle_systems.clear();
 	g_h1_effects.sprites.clear();
+	g_h1_effects.lights.clear();
+	g_h1_effects.attachments.clear();
+	g_h1_effects.decals.clear();
+	g_h1_effects.attachment_leftover_ticks = 0.f;
+	memset(g_h1_effects.light_constants, 0, sizeof(g_h1_effects.light_constants));
 	g_h1_effects.particle_leftover_ticks = 0.f;
 	g_h1_effects.stub_effect_index = NONE;
 	QueryPerformanceCounter(&g_h1_effects.last_update);
@@ -572,7 +676,9 @@ void h1_effects_update(void)
 		return;
 	}
 	dt = PIN(dt, 0.f, 0.1f);
+	g_h1_effects.frame_dt = dt;
 
+	h1_attachments_update(dt);
 	for (size_t i = 0; i < g_h1_effects.effects.size();)
 	{
 		if (!h1_effect_update(&g_h1_effects.effects[i], dt))
@@ -606,19 +712,21 @@ void h1_effects_update(void)
 		}
 		i++;
 	}
+	h1_lights_update(dt);
+	h1_decals_update(dt);
 	return;
 }
 
 // render_particles.c render_particles and particle_systems.c particle_systems_render
 void h1_effects_render(void)
 {
-	if (g_h1_effects.particles.empty() && g_h1_effects.particle_systems.empty())
+	if (!g_h1_effects.particles.empty() || !g_h1_effects.particle_systems.empty())
 	{
-		return;
+		h1_particles_build_sprites();
+		h1_particle_systems_build_sprites();
+		h1_sprites_draw();
 	}
-	h1_particles_build_sprites();
-	h1_particle_systems_build_sprites();
-	h1_sprites_draw();
+	h1_lens_flares_render();
 	return;
 }
 
@@ -810,7 +918,7 @@ static bool h1_effect_update(s_h1_effect* effect, real32 dt)
 		return false;
 	}
 
-	for (int32 iteration = 0; dt >= 0.f && iteration < k_h1_maximum_effect_events_per_update; iteration++)
+	for (int32 iteration = 0; dt >= 0.f && iteration < k_h1_maximum_effect_events_per_update && !effect->stopped; iteration++)
 	{
 		bool event_completed;
 		if (effect->event_duration - effect->event_time <= dt)
@@ -842,6 +950,11 @@ static bool h1_effect_update(s_h1_effect* effect, real32 dt)
 			}
 			if (next_event_index >= definition->events.count)
 			{
+				if (effect->loop)
+				{
+					effect->stopped = true;
+					return true;
+				}
 				return false;
 			}
 			h1_effect_set_event(effect, next_event_index);
@@ -867,7 +980,7 @@ static bool h1_effect_update(s_h1_effect* effect, real32 dt)
 	return true;
 }
 
-// effects.c effect_generate_parts: sounds play here, damage is halo 2's, particle systems, lights, decals and objects aren't drawn yet
+// effects.c effect_generate_parts: sounds, particle systems, lights and decals; damage is halo 2's and objects aren't made
 static void h1_effect_generate_parts(s_h1_effect* effect)
 {
 	const h1_effe* definition = (const h1_effe*)g_h1_cache_file->tag_get('effe', effect->definition_index);
@@ -907,6 +1020,18 @@ static void h1_effect_generate_parts(s_h1_effect* effect)
 				velocity.k += effect->velocity.k;
 				const real_argb_color tint = { 1.f, effect->color.red, effect->color.green, effect->color.blue };
 				h1_particle_system_new(part->type.index, &point, &velocity, &tint, scale);
+				break;
+			}
+			case 'ligh':
+				h1_light_new_unattached(part->type.index, &point, &forward, scale);
+				break;
+			case 'deca':
+			{
+				real_vector3d direction, velocity;
+				h1_effect_random_translational_velocity(effect, &forward, &direction, &velocity, part->velocity_bounds.lower, part->velocity_bounds.upper,
+					part->velocity_cone_angle, part->a_scales_values, part->b_scales_values);
+				const real32 radius_modifier = h1_effects_random_range(part->radius_modifier_bounds.lower, part->radius_modifier_bounds.upper);
+				h1_decal_new(part->type.index, &point, &velocity, radius_modifier);
 				break;
 			}
 			default:
@@ -2240,4 +2365,992 @@ static bool h1_particle_system_update(s_h1_particle_system* system, real32 dt)
 	}
 	system->initializing = false;
 	return live_type_count > 0;
+}
+
+/* lights, attachments, decals and lens flares */
+
+// periodic_functions.c transition_function_evaluate
+static real32 h1_transition_function(int16 function, real32 t)
+{
+	t = PIN(t, 0.f, 1.f);
+	switch (function)
+	{
+	case 1: return sqrtf(t);									// early
+	case 2: return sqrtf(sqrtf(t));								// very early
+	case 3: return t * t;										// late
+	case 4: return (t * t) * (t * t);							// very late
+	case 5: return (sinf(t * _pi - _pi * 0.5f) + 1.f) * 0.5f;	// cosine
+	case 6: return 1.f;											// one
+	case 7: return 0.f;											// zero
+	default: return t;											// linear
+	}
+}
+
+// object_lights.c light_new_unattached: every unattached light is dynamic
+static void h1_light_new_unattached(datum definition_index, const real_point3d* position, const real_vector3d* forward, real32 scale)
+{
+	const h1_ligh* definition = definition_index != NONE ? (const h1_ligh*)g_h1_cache_file->tag_get('ligh', definition_index) : NULL;
+	if (!definition || g_h1_effects.lights.size() >= k_h1_maximum_lights)
+	{
+		return;
+	}
+	s_h1_light light = {};
+	light.definition_index = definition_index;
+	light.attached = false;
+	light.intensity_scale = scale;
+	light.position = *position;
+	light.forward = *forward;
+	h1_normalize(&light.forward);
+	light.up = h1_perpendicular(&light.forward);
+	h1_normalize(&light.up);
+	light.occlusion_fraction = -1.f;
+	g_h1_effects.lights.push_back(light);
+	return;
+}
+
+// object_lights.c lights_preprocess_scene: the light's intensity, color and radius, false once an unattached light is over
+static bool h1_light_update(s_h1_light* light, real32 ticks)
+{
+	const h1_ligh* definition = (const h1_ligh*)g_h1_cache_file->tag_get('ligh', light->definition_index);
+	if (!definition)
+	{
+		return false;
+	}
+
+	real32 intensity;
+	if (light->attached)
+	{
+		// the light's object function and change color: halo 2 objects have neither, so 1 and white
+		intensity = 1.f;
+		h1_rgb_colors_interpolate(&light->color, definition->interpolation_flags, &definition->color_lower_bound.rgb, &definition->color_upper_bound.rgb, intensity);
+		if (definition->color_lower_bound.alpha > k_real_epsilon || definition->color_upper_bound.alpha > k_real_epsilon)
+		{
+			const real32 alpha = (1.f - intensity) * definition->color_lower_bound.alpha + intensity * definition->color_upper_bound.alpha;
+			light->color.red = alpha * light->color.red + (1.f - alpha);
+			light->color.green = alpha * light->color.green + (1.f - alpha);
+			light->color.blue = alpha * light->color.blue + (1.f - alpha);
+		}
+	}
+	else
+	{
+		light->age_ticks += ticks;
+		if (light->age_ticks > definition->duration)
+		{
+			return false;
+		}
+		const real32 t = definition->duration > 0.f ? light->age_ticks / definition->duration : 0.f;
+		intensity = (1.f - h1_transition_function(definition->falloff_function, t)) * light->intensity_scale;
+		h1_rgb_colors_interpolate(&light->color, definition->interpolation_flags, &definition->color_lower_bound.rgb, &definition->color_upper_bound.rgb, intensity);
+	}
+	light->color.red = PIN(light->color.red, 0.f, 1.f);
+	light->color.green = PIN(light->color.green, 0.f, 1.f);
+	light->color.blue = PIN(light->color.blue, 0.f, 1.f);
+	light->intensity = intensity;
+	light->radius = (definition->radius_modifier.lower * (1.f - intensity) + definition->radius_modifier.upper * intensity) * definition->radius;
+	return true;
+}
+
+static bool h1_light_is_dynamic(const s_h1_light* light)
+{
+	if (!light->attached)
+	{
+		return true;
+	}
+	const h1_ligh* definition = (const h1_ligh*)g_h1_cache_file->tag_get('ligh', light->definition_index);
+	return definition && TEST_BIT(definition->flags, _h1_light_dynamic_bit);
+}
+
+// the nearest dynamic lights become the shader's lights for the frame
+static void h1_lights_build_shader_constants(void)
+{
+	memset(g_h1_effects.light_constants, 0, sizeof(g_h1_effects.light_constants));
+	const s_frame* frame = global_window_parameters_get();
+	const real_point3d camera = frame->camera.point;
+
+	std::vector<std::pair<real32, const s_h1_light*>> candidates;
+	auto consider = [&](const s_h1_light* light)
+	{
+		if (light->radius <= 0.f || (light->color.red == 0.f && light->color.green == 0.f && light->color.blue == 0.f) || !h1_light_is_dynamic(light))
+		{
+			return;
+		}
+		const real_vector3d offset = { light->position.x - camera.x, light->position.y - camera.y, light->position.z - camera.z };
+		candidates.push_back({ h1_magnitude(&offset) - light->radius, light });
+	};
+	for (const s_h1_light& light : g_h1_effects.lights)
+	{
+		consider(&light);
+	}
+	for (const s_h1_attachment& attachment : g_h1_effects.attachments)
+	{
+		if (attachment.group_tag == 'ligh')
+		{
+			consider(&attachment.light);
+		}
+	}
+	std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+
+	for (size_t i = 0; i < candidates.size() && i < k_h1_maximum_shader_lights; i++)
+	{
+		const s_h1_light* light = candidates[i].second;
+		real32* position = g_h1_effects.light_constants[2 * i];
+		real32* color = g_h1_effects.light_constants[2 * i + 1];
+		position[0] = light->position.x;
+		position[1] = light->position.y;
+		position[2] = light->position.z;
+		position[3] = 1.f / light->radius;
+		color[0] = light->color.red;
+		color[1] = light->color.green;
+		color[2] = light->color.blue;
+	}
+	return;
+}
+
+void h1_effects_set_light_constants(void)
+{
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	static const real32 k_no_lights[2 * k_h1_maximum_shader_lights][4] = {};
+	device->SetPixelShaderConstantF(110, h1_maps_active() ? &g_h1_effects.light_constants[0][0] : &k_no_lights[0][0], 2 * k_h1_maximum_shader_lights);
+	return;
+}
+
+// the halo 2 object's markers of a halo 1 marker name (halo 2 names them with underscores)
+static int16 h1_object_markers_get(datum object_index, const char* name, object_marker* markers, int16 maximum_count)
+{
+	if (!name || !name[0])
+	{
+		return 0;
+	}
+	char marker_name[32];
+	strncpy_s(marker_name, name, _TRUNCATE);
+	for (char* c = marker_name; *c; c++)
+	{
+		if (*c == ' ')
+		{
+			*c = '_';
+		}
+	}
+	return object_get_markers_by_string_id(object_index, string_id_find_or_add(marker_name), markers, maximum_count);
+}
+
+// effects.c effect_build_locations: each location at every marker of its name, the object's origin when there is none
+static void h1_attachment_effect_build_locations(s_h1_effect* effect, datum object_index, const object_datum* object, const char* attachment_marker)
+{
+	const h1_effe* definition = (const h1_effe*)g_h1_cache_file->tag_get('effe', effect->definition_index);
+	if (!definition)
+	{
+		return;
+	}
+	effect->locations.resize(definition->locations.count);
+	for (int32 i = 0; i < definition->locations.count; i++)
+	{
+		const h1_effe_locations* location = g_h1_cache_file->block_get(definition->locations, i);
+		std::vector<s_h1_effect_location>& instances = effect->locations[i];
+		instances.clear();
+
+		object_marker markers[k_h1_maximum_attachment_markers];
+		const char* marker_name = location->marker_name[0] ? location->marker_name : attachment_marker;
+		const int16 marker_count = h1_object_markers_get(object_index, marker_name, markers, k_h1_maximum_attachment_markers);
+		for (int16 j = 0; j < marker_count; j++)
+		{
+			instances.push_back({ markers[j].matrix.position, markers[j].matrix.vectors.forward, markers[j].matrix.vectors.up });
+		}
+		if (instances.empty())
+		{
+			instances.push_back({ object->object.position, object->object.forward, object->object.up });
+		}
+	}
+	return;
+}
+
+// objects.c object_attachments_new and effects.c effect_update of looping effects: the effects and lights a halo 1 object carries
+static void h1_attachments_update(real32 dt)
+{
+	g_h1_effects.attachment_leftover_ticks += dt * k_h1_ticks_per_second;
+	int32 ticks = (int32)g_h1_effects.attachment_leftover_ticks;
+	g_h1_effects.attachment_leftover_ticks -= (real32)ticks;
+	ticks = MIN(ticks, 3);
+
+	for (s_h1_attachment& attachment : g_h1_effects.attachments)
+	{
+		attachment.seen = false;
+	}
+
+	object_iterator iterator;
+	object_iterator_new(&iterator, _object_mask_all, 0);
+	while (const object_datum* object = (const object_datum*)object_iterator_next(&iterator))
+	{
+		const datum h1_definition_index = h1_objects_h1_definition_get(object->definition_index);
+		// every halo 1 object definition starts with the object fields, the attachments are at 0x140
+		const h1_proj* definition = h1_definition_index != NONE ? (const h1_proj*)g_h1_cache_file->tag_get('obje', h1_definition_index) : NULL;
+		if (!definition || definition->attachments.count <= 0)
+		{
+			continue;
+		}
+		const datum object_index = iterator.index;
+
+		for (int16 i = 0; i < definition->attachments.count; i++)
+		{
+			const h1_proj_attachments* attachment_definition = g_h1_cache_file->block_get(definition->attachments, i);
+			const uint32 group_tag = attachment_definition->type.group_tag;
+			if ((group_tag != 'effe' && group_tag != 'ligh') || attachment_definition->type.index == NONE)
+			{
+				continue;
+			}
+
+			s_h1_attachment* attachment = NULL;
+			for (s_h1_attachment& existing : g_h1_effects.attachments)
+			{
+				if (existing.object_index == object_index && existing.attachment_index == i)
+				{
+					attachment = &existing;
+					break;
+				}
+			}
+			if (!attachment)
+			{
+				if (g_h1_effects.attachments.size() >= k_h1_maximum_attachments)
+				{
+					continue;
+				}
+				s_h1_attachment created = {};
+				created.object_index = object_index;
+				created.attachment_index = i;
+				created.group_tag = group_tag;
+				if (group_tag == 'effe')
+				{
+					const h1_effe* effect_definition = (const h1_effe*)g_h1_cache_file->tag_get('effe', attachment_definition->type.index);
+					if (!effect_definition || effect_definition->events.count <= 0)
+					{
+						continue;
+					}
+					// effect_new_looping: the object's functions scale it, halo 2 objects have none so they're 1
+					created.effect.definition_index = attachment_definition->type.index;
+					created.effect.velocity = { 0.f, 0.f, 0.f };
+					created.effect.scale_a = 1.f;
+					created.effect.scale_b = 1.f;
+					created.effect.color = { 1.f, 1.f, 1.f };
+					created.effect.loop = true;
+					h1_effect_set_event(&created.effect, 0);
+				}
+				else
+				{
+					const h1_ligh* light_definition = (const h1_ligh*)g_h1_cache_file->tag_get('ligh', attachment_definition->type.index);
+					// light_new: only dynamic lights and lights with lens flares exist
+					if (!light_definition || (!TEST_BIT(light_definition->flags, _h1_light_dynamic_bit) && light_definition->lens_flare.index == NONE))
+					{
+						continue;
+					}
+					created.light.definition_index = attachment_definition->type.index;
+					created.light.attached = true;
+					created.light.intensity_scale = 1.f;
+					created.light.occlusion_fraction = -1.f;
+				}
+				g_h1_effects.attachments.push_back(std::move(created));
+				attachment = &g_h1_effects.attachments.back();
+			}
+			attachment->seen = true;
+
+			if (group_tag == 'effe')
+			{
+				for (int32 tick = 0; tick < ticks; tick++)
+				{
+					h1_attachment_effect_build_locations(&attachment->effect, object_index, object, attachment_definition->marker);
+					// halo 2 velocities are per second, halo 1's per tick
+					attachment->effect.velocity =
+					{
+						object->object.translational_velocity.i / k_h1_ticks_per_second,
+						object->object.translational_velocity.j / k_h1_ticks_per_second,
+						object->object.translational_velocity.k / k_h1_ticks_per_second
+					};
+					if (attachment->effect.stopped)
+					{
+						attachment->effect.stopped = false;
+						h1_effect_set_event(&attachment->effect, 0);
+					}
+					h1_effect_update(&attachment->effect, 1.f / k_h1_ticks_per_second);
+				}
+			}
+			else
+			{
+				object_marker marker;
+				if (h1_object_markers_get(object_index, attachment_definition->marker, &marker, 1) > 0)
+				{
+					attachment->light.position = marker.matrix.position;
+					attachment->light.forward = marker.matrix.vectors.forward;
+					attachment->light.up = marker.matrix.vectors.up;
+				}
+				else
+				{
+					attachment->light.position = object->object.position;
+					attachment->light.forward = object->object.forward;
+					attachment->light.up = object->object.up;
+				}
+			}
+		}
+	}
+
+	// the attachments of objects that are gone go with them
+	g_h1_effects.attachments.erase(std::remove_if(g_h1_effects.attachments.begin(), g_h1_effects.attachments.end(),
+		[](const s_h1_attachment& attachment) { return !attachment.seen; }), g_h1_effects.attachments.end());
+	return;
+}
+
+static void h1_lights_update(real32 dt)
+{
+	const real32 ticks = dt * k_h1_ticks_per_second;
+	for (size_t i = 0; i < g_h1_effects.lights.size();)
+	{
+		if (!h1_light_update(&g_h1_effects.lights[i], ticks))
+		{
+			g_h1_effects.lights.erase(g_h1_effects.lights.begin() + i);
+			continue;
+		}
+		i++;
+	}
+	for (s_h1_attachment& attachment : g_h1_effects.attachments)
+	{
+		if (attachment.group_tag == 'ligh')
+		{
+			h1_light_update(&attachment.light, ticks);
+		}
+	}
+	h1_lights_build_shader_constants();
+	return;
+}
+
+/* decals */
+
+struct s_h1_decal_clip_vertex
+{
+	real_point3d position;
+	real32 x;
+	real32 y;
+};
+
+// clips a polygon in decal space to one side of an axis aligned line: keeps coordinate * sign >= limit * sign
+static void h1_decal_clip(std::vector<s_h1_decal_clip_vertex>* polygon, bool y_axis, real32 limit, real32 sign)
+{
+	std::vector<s_h1_decal_clip_vertex> result;
+	const size_t count = polygon->size();
+	for (size_t i = 0; i < count; i++)
+	{
+		const s_h1_decal_clip_vertex& a = (*polygon)[i];
+		const s_h1_decal_clip_vertex& b = (*polygon)[(i + 1) % count];
+		const real32 da = ((y_axis ? a.y : a.x) - limit) * sign;
+		const real32 db = ((y_axis ? b.y : b.x) - limit) * sign;
+		if (da >= 0.f)
+		{
+			result.push_back(a);
+		}
+		if ((da >= 0.f) != (db >= 0.f))
+		{
+			const real32 t = da / (da - db);
+			s_h1_decal_clip_vertex v;
+			v.position.x = a.position.x + (b.position.x - a.position.x) * t;
+			v.position.y = a.position.y + (b.position.y - a.position.y) * t;
+			v.position.z = a.position.z + (b.position.z - a.position.z) * t;
+			v.x = a.x + (b.x - a.x) * t;
+			v.y = a.y + (b.y - a.y) * t;
+			result.push_back(v);
+		}
+	}
+	polygon->swap(result);
+	return;
+}
+
+// decals.c decal_projection_create and decal_clip_to_surface: the decal's rectangle on the structure surfaces under it, wrapping over
+// edges onto surfaces up to the wrap angle
+static void h1_decal_build_geometry(std::vector<s_h1_particle_vertex>* vertices, const real_point3d* center, const real_vector3d* normal,
+	const real_vector3d* forward, const real_vector3d* left, const real32 extent[4], const real32 bounds[4], const real_rgb_color* color)
+{
+	const real32 reach_x = MAX(fabsf(extent[0]), fabsf(extent[1]));
+	const real32 reach_y = MAX(fabsf(extent[2]), fabsf(extent[3]));
+	const real32 reach = sqrtf(reach_x * reach_x + reach_y * reach_y);
+	const real32 minimum_cosine = cosf(k_h1_decal_maximum_wrap_angle);
+	const int32 triangle_count = h1_render_structure_triangle_count();
+
+	// the triangles near the decal, and which way the structure winds: the triangle under the hit faces the surface normal
+	std::vector<int32> candidates;
+	real32 winding = 0.f;
+	for (int32 i = 0; i < triangle_count; i++)
+	{
+		const real_point3d* points = h1_render_structure_triangle_get(i);
+		bool near_center = true;
+		for (int32 axis = 0; axis < 3 && near_center; axis++)
+		{
+			const real32 c = (&center->x)[axis];
+			const real32 a = (&points[0].x)[axis], b = (&points[1].x)[axis], d = (&points[2].x)[axis];
+			near_center = MIN(MIN(a, b), d) <= c + reach && MAX(MAX(a, b), d) >= c - reach;
+		}
+		if (!near_center)
+		{
+			continue;
+		}
+		candidates.push_back(i);
+
+		if (winding == 0.f)
+		{
+			const real_vector3d ab = { points[1].x - points[0].x, points[1].y - points[0].y, points[1].z - points[0].z };
+			const real_vector3d ac = { points[2].x - points[0].x, points[2].y - points[0].y, points[2].z - points[0].z };
+			real_vector3d n = h1_cross(&ab, &ac);
+			if (h1_magnitude(&n) < 1e-6f)
+			{
+				continue;
+			}
+			h1_normalize(&n);
+			const real_vector3d to_center = { center->x - points[0].x, center->y - points[0].y, center->z - points[0].z };
+			if (fabsf(h1_dot(&to_center, &n)) > 0.05f || fabsf(h1_dot(&n, normal)) < 0.9f)
+			{
+				continue;
+			}
+			// the hit is inside the triangle
+			bool inside = true;
+			for (int32 edge = 0; edge < 3 && inside; edge++)
+			{
+				const real_point3d& p0 = points[edge];
+				const real_point3d& p1 = points[(edge + 1) % 3];
+				const real_vector3d e = { p1.x - p0.x, p1.y - p0.y, p1.z - p0.z };
+				const real_vector3d to_point = { center->x - p0.x, center->y - p0.y, center->z - p0.z };
+				const real_vector3d c = h1_cross(&e, &to_point);
+				inside = h1_dot(&c, &n) >= -1e-4f;
+			}
+			if (inside)
+			{
+				winding = h1_dot(&n, normal) > 0.f ? 1.f : -1.f;
+			}
+		}
+	}
+
+	std::vector<s_h1_decal_clip_vertex> polygon;
+	for (int32 index : candidates)
+	{
+		const real_point3d* points = h1_render_structure_triangle_get(index);
+		const real_vector3d ab = { points[1].x - points[0].x, points[1].y - points[0].y, points[1].z - points[0].z };
+		const real_vector3d ac = { points[2].x - points[0].x, points[2].y - points[0].y, points[2].z - points[0].z };
+		real_vector3d n = h1_cross(&ab, &ac);
+		if (h1_magnitude(&n) < 1e-6f)
+		{
+			continue;
+		}
+		h1_normalize(&n);
+		const real32 facing = winding != 0.f ? h1_dot(&n, normal) * winding : fabsf(h1_dot(&n, normal));
+		if (facing < minimum_cosine)
+		{
+			continue;
+		}
+		if (winding == 0.f && h1_dot(&n, normal) < 0.f)
+		{
+			n = { -n.i, -n.j, -n.k };
+		}
+		else if (winding < 0.f)
+		{
+			n = { -n.i, -n.j, -n.k };
+		}
+
+		// the decal's box: the rectangle, as deep as it is wide
+		polygon.clear();
+		bool in_front = false, behind = false;
+		for (int32 k = 0; k < 3; k++)
+		{
+			const real_vector3d offset = { points[k].x - center->x, points[k].y - center->y, points[k].z - center->z };
+			const real32 depth = h1_dot(&offset, normal);
+			in_front |= depth < reach;
+			behind |= depth > -reach;
+			polygon.push_back({ points[k], h1_dot(&offset, forward), h1_dot(&offset, left) });
+		}
+		if (!in_front || !behind)
+		{
+			continue;
+		}
+		h1_decal_clip(&polygon, false, extent[0], 1.f);
+		h1_decal_clip(&polygon, false, extent[1], -1.f);
+		h1_decal_clip(&polygon, true, extent[2], 1.f);
+		h1_decal_clip(&polygon, true, extent[3], -1.f);
+		if (polygon.size() < 3)
+		{
+			continue;
+		}
+
+		auto emit = [&](const s_h1_decal_clip_vertex& v)
+		{
+			s_h1_particle_vertex out = {};
+			out.position[0] = v.position.x + n.i * k_h1_decal_offset;
+			out.position[1] = v.position.y + n.j * k_h1_decal_offset;
+			out.position[2] = v.position.z + n.k * k_h1_decal_offset;
+			out.color[0] = color->red;
+			out.color[1] = color->green;
+			out.color[2] = color->blue;
+			out.texcoord[0] = bounds[0] + (v.x - extent[0]) / (extent[1] - extent[0]) * (bounds[1] - bounds[0]);
+			out.texcoord[1] = bounds[2] + (v.y - extent[2]) / (extent[3] - extent[2]) * (bounds[3] - bounds[2]);
+			out.alpha[0] = 1.f;
+			out.alpha[1] = 0.f;
+			vertices->push_back(out);
+		};
+		for (size_t k = 1; k + 1 < polygon.size(); k++)
+		{
+			if (vertices->size() + 3 > k_h1_maximum_decal_vertices)
+			{
+				return;
+			}
+			emit(polygon[0]);
+			emit(polygon[k]);
+			emit(polygon[k + 1]);
+		}
+	}
+	return;
+}
+
+// decals.c decal_new and decal_new_from_collision: the decal where the velocity hits the structure, then the decals chained to it
+static void h1_decal_new(datum definition_index, const real_point3d* origin, const real_vector3d* velocity, real32 radius_modifier)
+{
+	collision_result collision;
+	if (definition_index == NONE || !collision_test_vector(FLAG(_collision_test_structure_bit), origin, velocity, NONE, NONE, &collision))
+	{
+		return;
+	}
+	const real_vector3d normal = collision.fog_plane.n;
+
+	bool reuse_previous_geometry = false;
+	real_vector3d forward = {}, left = {};
+	int16 sequence_index = 0;
+	real32 radius = 0.f;
+	std::vector<s_h1_particle_vertex> previous_vertices;
+	for (int32 chain = 0; definition_index != NONE && chain < 8; chain++)
+	{
+		const h1_deca* definition = (const h1_deca*)g_h1_cache_file->tag_get('deca', definition_index);
+		const h1_bitm* bitmap_group = definition ? (const h1_bitm*)g_h1_cache_file->tag_get('bitm', definition->map.index) : NULL;
+		if (!bitmap_group || bitmap_group->bitmaps.count <= 0)
+		{
+			return;
+		}
+
+		if (!reuse_previous_geometry)
+		{
+			real_vector3d tangent, bitangent;
+			real32 cosine, sine;
+			if (TEST_BIT(definition->flags, _h1_decal_no_random_rotation_bit) && h1_dot(&normal, velocity) < -k_real_epsilon)
+			{
+				cosine = -1.f;
+				sine = 0.f;
+				tangent = h1_cross(&normal, velocity);
+				bitangent = h1_cross(&normal, &tangent);
+			}
+			else
+			{
+				const real32 angle = h1_effects_random_range(0.f, 2.f * _pi);
+				cosine = cosf(angle);
+				sine = sinf(angle);
+				tangent = h1_perpendicular(&normal);
+				bitangent = h1_cross(&normal, &tangent);
+			}
+			h1_normalize(&tangent);
+			h1_normalize(&bitangent);
+			forward = { cosine * bitangent.i - tangent.i * sine, cosine * bitangent.j - tangent.j * sine, cosine * bitangent.k - tangent.k * sine };
+			left = { tangent.i * cosine + bitangent.i * sine, tangent.j * cosine + bitangent.j * sine, tangent.k * cosine + bitangent.k * sine };
+
+			sequence_index = (int16)h1_effects_random_integer(0, MAX(bitmap_group->sequences.count, 1));
+			if (radius_modifier == 0.f)
+			{
+				radius_modifier = 1.f;
+			}
+			radius = h1_effects_random_range(definition->radius.lower, definition->radius.upper) * radius_modifier;
+		}
+
+		// decal_sprite_get_bounds: sprites keep their size relative to the largest sprite, other bitmaps cover the radius
+		int16 bitmap_index = 0;
+		real32 extent[4], bounds[4];
+		const h1_bitm_sequences* sequence = g_h1_cache_file->block_get(bitmap_group->sequences, sequence_index);
+		const h1_bitm_sequences_sprites* sprite = bitmap_group->type == _h1_bitmap_type_sprites && sequence && sequence->sprites.count > 0 ?
+			g_h1_cache_file->block_get(sequence->sprites, 0) : NULL;
+		const h1_bitm_bitmaps* sprite_bitmap = sprite ? g_h1_cache_file->block_get(bitmap_group->bitmaps, sprite->bitmap_index) : NULL;
+		if (sprite_bitmap && definition->maximum_sprite_extent > 0.f)
+		{
+			bitmap_index = sprite->bitmap_index;
+			const real32 aspect = TEST_BIT(definition->flags, _h1_decal_preserve_aspect_bit) ?
+				((sprite->right - sprite->left) / (sprite->bottom - sprite->top)) * ((real32)sprite_bitmap->height / (real32)sprite_bitmap->width) : 1.f;
+			const real32 scale = radius / definition->maximum_sprite_extent;
+			const real32 width_scale = (real32)sprite_bitmap->width * scale;
+			const real32 height_scale = (real32)sprite_bitmap->height * scale * aspect;
+			extent[0] = -sprite->registration_point.x * width_scale;
+			extent[1] = (sprite->right - sprite->registration_point.x - sprite->left) * width_scale;
+			extent[2] = -sprite->registration_point.y * height_scale;
+			extent[3] = (sprite->bottom - sprite->registration_point.y - sprite->top) * height_scale;
+			bounds[0] = sprite->left;
+			bounds[1] = sprite->right;
+			bounds[2] = sprite->top;
+			bounds[3] = sprite->bottom;
+		}
+		else
+		{
+			const h1_bitm_bitmaps* bitmap = g_h1_cache_file->block_get(bitmap_group->bitmaps, 0);
+			const real32 aspect = TEST_BIT(definition->flags, _h1_decal_preserve_aspect_bit) && bitmap->width > 0 ? (real32)bitmap->height / (real32)bitmap->width : 1.f;
+			extent[0] = -radius;
+			extent[1] = radius;
+			extent[2] = -aspect * radius;
+			extent[3] = aspect * radius;
+			bounds[0] = bounds[2] = 0.f;
+			bounds[1] = bounds[3] = 1.f;
+		}
+		if (extent[1] - extent[0] <= 0.f || extent[3] - extent[2] <= 0.f)
+		{
+			return;
+		}
+
+		s_h1_decal decal;
+		decal.definition_index = definition_index;
+		decal.bitmap_tag_index = definition->map.index;
+		decal.bitmap_index = bitmap_index;
+		decal.age = 0.f;
+		decal.lifetime = h1_effects_random_range(definition->lifetime.lower, definition->lifetime.upper);
+		decal.decay_time = h1_effects_random_range(definition->decay_time.lower, definition->decay_time.upper);
+		decal.intensity = h1_effects_random_range(definition->intensity.lower, definition->intensity.upper);
+		real_rgb_color color;
+		h1_rgb_colors_interpolate(&color, (definition->flags >> _h1_decal_color_interpolate_in_hsv_bit) & 3,
+			&definition->color_lower_bounds, &definition->color_upper_bounds, h1_effects_random_real());
+		h1_decal_build_geometry(&decal.vertices, &collision.point, &normal, &forward, &left, extent, bounds, &color);
+		if (!decal.vertices.empty())
+		{
+			if (g_h1_effects.decals.size() >= k_h1_maximum_decals)
+			{
+				g_h1_effects.decals.erase(g_h1_effects.decals.begin());
+			}
+			g_h1_effects.decals.push_back(std::move(decal));
+		}
+
+		reuse_previous_geometry = TEST_BIT(definition->flags, _h1_decal_geometry_inherited_by_next_decal_in_chain_bit);
+		definition_index = definition->next_decal_in_chain.index;
+	}
+	return;
+}
+
+// decals.c decal_update: decals fade out over their decay time at the end of their lifetime
+static void h1_decals_update(real32 dt)
+{
+	for (size_t i = 0; i < g_h1_effects.decals.size();)
+	{
+		s_h1_decal& decal = g_h1_effects.decals[i];
+		decal.age += dt;
+		if (decal.lifetime > 0.f && decal.age >= decal.lifetime)
+		{
+			g_h1_effects.decals.erase(g_h1_effects.decals.begin() + i);
+			continue;
+		}
+		real32 fade = 1.f;
+		if (decal.lifetime > 0.f && decal.decay_time > 0.f && decal.lifetime - decal.age < decal.decay_time)
+		{
+			fade = (decal.lifetime - decal.age) / decal.decay_time;
+		}
+		for (s_h1_particle_vertex& vertex : decal.vertices)
+		{
+			vertex.alpha[0] = decal.intensity * fade;
+		}
+		i++;
+	}
+	return;
+}
+
+void h1_effects_render_decals(void)
+{
+	if (!h1_maps_active() || !g_h1_cache_file || g_h1_effects.decals.empty())
+	{
+		return;
+	}
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	h1_render_set_camera_constants(NULL, false);
+	device->SetVertexDeclaration(h1_render_vertex_declaration());
+	device->SetVertexShader(h1_render_vertex_shader());
+	const real32 depth_bias = -0.000002f;
+	const real32 slope_bias = -1.f;
+	device->SetRenderState(D3DRS_DEPTHBIAS, *(const DWORD*)&depth_bias);
+	device->SetRenderState(D3DRS_SLOPESCALEDEPTHBIAS, *(const DWORD*)&slope_bias);
+
+	for (const s_h1_decal& decal : g_h1_effects.decals)
+	{
+		const h1_deca* definition = (const h1_deca*)g_h1_cache_file->tag_get('deca', decal.definition_index);
+		IDirect3DBaseTexture9* texture = definition ? h1_bitmap_texture_get(decal.bitmap_tag_index, decal.bitmap_index) : NULL;
+		if (!texture || decal.vertices.empty())
+		{
+			continue;
+		}
+		// decal maps are clamped
+		if (h1_render_particle_shader_bind(definition->framebuffer_blend_function, false, FLAG(1) | FLAG(2), texture, NULL, 0, _h1_particle_shader_mode_decal))
+		{
+			// the environment fog pass fogs the decals with the surface under them
+			h1_fog_set_shader_constants(_h1_fog_shader_mode_none, NULL);
+			device->DrawPrimitiveUP(D3DPT_TRIANGLELIST, (UINT)(decal.vertices.size() / 3), decal.vertices.data(), sizeof(s_h1_particle_vertex));
+			h1_render_shader_unbind();
+		}
+	}
+
+	device->SetRenderState(D3DRS_DEPTHBIAS, 0);
+	device->SetRenderState(D3DRS_SLOPESCALEDEPTHBIAS, 0);
+	return;
+}
+
+/* lens flares */
+
+// rasterizer_lights.c lens_flare_evaluate_corona_rotation_function, in turns
+static real32 h1_lens_flare_corona_rotation(int16 function, const real_vector3d* direction, const real_point3d* position, const render_camera* camera,
+	const real_vector3d* camera_left)
+{
+	real32 sine = 0.f, cosine = 1.f;
+	real_vector3d offset;
+	switch (function)
+	{
+	case 1:	// eye in light space
+	{
+		real_vector3d plane = h1_cross(direction, &camera->forward);
+		plane = h1_cross(&plane, direction);
+		sine = h1_dot(&plane, &camera->forward);
+		cosine = -h1_dot(direction, &camera->forward);
+		break;
+	}
+	case 2:	// light in eye space
+		offset = { -direction->i, -direction->j, -direction->k };
+		sine = h1_dot(&camera->forward, &offset);
+		cosine = -h1_dot(&camera->up, &offset);
+		break;
+	case 3:	// eye to light in light space
+	{
+		real_vector3d plane = h1_cross(direction, &camera->forward);
+		plane = h1_cross(&plane, direction);
+		offset = { position->x - camera->point.x, position->y - camera->point.y, position->z - camera->point.z };
+		sine = h1_dot(&plane, &offset);
+		cosine = -h1_dot(direction, &offset);
+		break;
+	}
+	case 4:	// eye to light in eye space
+		offset = { position->x - camera->point.x, position->y - camera->point.y, position->z - camera->point.z };
+		sine = h1_dot(&camera->forward, &offset);
+		cosine = -h1_dot(&camera->up, &offset);
+		break;
+	default:
+		return 0.f;
+	}
+	return sine != 0.f ? atan2f(sine, cosine) / (2.f * _pi) : 0.f;
+}
+
+// object_lights.c lights_preprocess_scene lens flare submit and rasterizer_lights.c rasterizer_lens_flares_draw; the occlusion test is
+// a ray to the occlusion point instead of the hardware pixel count
+static void h1_lens_flare_render(s_h1_light* light)
+{
+	const h1_ligh* definition = (const h1_ligh*)g_h1_cache_file->tag_get('ligh', light->definition_index);
+	const h1_lens* lens = definition && definition->lens_flare.index != NONE ? (const h1_lens*)g_h1_cache_file->tag_get('lens', definition->lens_flare.index) : NULL;
+	if (!lens || lens->reflections.count <= 0 || (light->color.red == 0.f && light->color.green == 0.f && light->color.blue == 0.f))
+	{
+		return;
+	}
+
+	const s_frame* frame = global_window_parameters_get();
+	const render_camera* camera = &frame->camera;
+	const real_vector3d camera_left = h1_cross(&camera->up, &camera->forward);
+	const real_point3d corona_position = light->position;
+	const real_vector3d eye_to_corona = { corona_position.x - camera->point.x, corona_position.y - camera->point.y, corona_position.z - camera->point.z };
+	const real32 depth = h1_dot(&camera->forward, &eye_to_corona);
+	if (depth <= 0.f || (lens->far_fade_distance != 0.f && depth >= lens->far_fade_distance))
+	{
+		return;
+	}
+
+	// rasterizer_lens_flares_submit_occlusion_tests
+	real_point3d occlusion_point = corona_position;
+	switch (lens->occlusion_offset_direction)
+	{
+	case 0:	// toward the viewer
+		occlusion_point.x -= camera->forward.i * lens->occlusion_radius;
+		occlusion_point.y -= camera->forward.j * lens->occlusion_radius;
+		occlusion_point.z -= camera->forward.k * lens->occlusion_radius;
+		break;
+	case 1:	// marker forward
+		occlusion_point.x += light->forward.i * lens->occlusion_radius * 1.41421356f;
+		occlusion_point.y += light->forward.j * lens->occlusion_radius * 1.41421356f;
+		occlusion_point.z += light->forward.k * lens->occlusion_radius * 1.41421356f;
+		break;
+	default:
+		break;
+	}
+	const real_vector3d to_occlusion = { occlusion_point.x - camera->point.x, occlusion_point.y - camera->point.y, occlusion_point.z - camera->point.z };
+	collision_result collision;
+	const bool occluded = collision_test_vector(FLAG(_collision_test_structure_bit), &camera->point, &to_occlusion, NONE, NONE, &collision) && collision.t < 0.999f;
+	const real32 target = occluded ? 0.f : 1.f;
+	if (light->occlusion_fraction < 0.f)
+	{
+		light->occlusion_fraction = target;
+	}
+	else
+	{
+		const real32 step = g_h1_effects.frame_dt * k_h1_lens_flare_occlusion_rate;
+		light->occlusion_fraction = target > light->occlusion_fraction ? MIN(light->occlusion_fraction + step, target) : MAX(light->occlusion_fraction - step, target);
+	}
+	const real32 occlusion_fraction = light->occlusion_fraction;
+	if (occlusion_fraction <= 0.f)
+	{
+		return;
+	}
+
+	real_vector3d corona_axis =
+	{
+		(camera->forward.i * depth - eye_to_corona.i) * 2.f,
+		(camera->forward.j * depth - eye_to_corona.j) * 2.f,
+		(camera->forward.k * depth - eye_to_corona.k) * 2.f
+	};
+	real32 light_brightness = lens->far_fade_distance > 0.f ?
+		PIN((depth - lens->far_fade_distance) / (lens->near_fade_distance - lens->far_fade_distance), 0.f, 1.f) : 1.f;
+	light_brightness *= occlusion_fraction;
+	const real32 corona_rotation = h1_lens_flare_corona_rotation(lens->rotation_function, &light->forward, &corona_position, camera, &camera_left) * lens->rotation_function_scale;
+	const real32 screen_rotation = atan2f(h1_dot(&camera->up, &eye_to_corona), h1_dot(&camera_left, &eye_to_corona)) * (180.f / _pi);
+
+	real_vector3d eye_direction = eye_to_corona;
+	h1_normalize(&eye_direction);
+	const real32 cosine_range = lens->cosine_falloff_angle - lens->cosine_cutoff_angle;
+	auto cosine_scale = [&](real32 cosine) -> real32
+	{
+		if (fabsf(cosine_range) < k_real_epsilon)
+		{
+			return cosine >= lens->cosine_cutoff_angle ? 1.f : 0.f;
+		}
+		return PIN((cosine - lens->cosine_cutoff_angle) / cosine_range, 0.f, 1.f);
+	};
+	const real32 scale_functions[4] =
+	{
+		1.f,
+		cosine_scale(-h1_dot(&camera->forward, &light->forward)),
+		cosine_scale(-h1_dot(&light->forward, &eye_direction)),
+		cosine_scale(h1_dot(&camera->forward, &eye_direction)),
+	};
+
+	const real32 light_scale = PIN(light->intensity, 0.f, 1.f);
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	for (int32 i = 0; i < lens->reflections.count; i++)
+	{
+		const h1_lens_reflections* reflection = g_h1_cache_file->block_get(lens->reflections, i);
+		const real32 brightness = (reflection->brightness.lower + (reflection->brightness.upper - reflection->brightness.lower) * light_scale) *
+			scale_functions[PIN(reflection->brightness_scaled_by, 0, 3)] * light_brightness;
+		if (i == 0)
+		{
+			light_brightness = brightness;
+		}
+		if (brightness <= 0.f)
+		{
+			continue;
+		}
+
+		real32 radius = reflection->radius.lower + (reflection->radius.upper - reflection->radius.lower) * light_scale;
+		real_rgb_color color = light->color;
+		const real_argb_color& tint = reflection->tint_color;
+		if (tint.alpha != 0.f || tint.red != 0.f || tint.green != 0.f || tint.blue != 0.f)
+		{
+			// the tint factor blends the tint from white
+			color.red = 1.f + (tint.red - 1.f) * tint.alpha;
+			color.green = 1.f + (tint.green - 1.f) * tint.alpha;
+			color.blue = 1.f + (tint.blue - 1.f) * tint.alpha;
+		}
+
+		real32 rotation;
+		real32 scale_x = 1.f, scale_y = 1.f;
+		if (i == 0)
+		{
+			rotation = corona_rotation + reflection->rotation_offset;
+			scale_x = lens->horizontal_scale != 0.f ? lens->horizontal_scale : 1.f;
+			scale_y = lens->vertical_scale != 0.f ? lens->vertical_scale : 1.f;
+		}
+		else
+		{
+			rotation = reflection->rotation_offset;
+		}
+		if (TEST_BIT(reflection->flags, _h1_lens_reflection_rotate_from_center_of_screen_bit))
+		{
+			rotation += screen_rotation;
+		}
+		if (TEST_BIT(reflection->flags, _h1_lens_reflection_radius_scaled_by_occlusion_bit))
+		{
+			radius = (occlusion_fraction + 1.f) * radius * 0.5f;
+		}
+		if (TEST_BIT(reflection->flags, _h1_lens_reflection_radius_not_scaled_by_distance_bit))
+		{
+			radius *= depth;
+		}
+		if (radius <= 0.f)
+		{
+			continue;
+		}
+
+		IDirect3DBaseTexture9* texture = h1_bitmap_texture_get(lens->bitmap.index, reflection->bitmap_index);
+		if (!texture)
+		{
+			continue;
+		}
+
+		const real_point3d point =
+		{
+			reflection->position * corona_axis.i + corona_position.x,
+			reflection->position * corona_axis.j + corona_position.y,
+			reflection->position * corona_axis.k + corona_position.z
+		};
+		const real32 sine = sinf(rotation * (_pi / 180.f));
+		const real32 cosine = cosf(rotation * (_pi / 180.f));
+		static const real32 k_corners[4][2] = { { -1.f, -1.f }, { 1.f, -1.f }, { 1.f, 1.f }, { -1.f, 1.f } };
+		s_h1_particle_vertex quad[4];
+		for (int32 k = 0; k < 4; k++)
+		{
+			const real32 x = k_corners[k][0] * scale_x * radius;
+			const real32 y = k_corners[k][1] * scale_y * radius;
+			const real32 right = x * cosine - y * sine;
+			const real32 up = x * sine + y * cosine;
+			s_h1_particle_vertex* out = &quad[k];
+			out->position[0] = point.x - camera_left.i * right + camera->up.i * up;
+			out->position[1] = point.y - camera_left.j * right + camera->up.j * up;
+			out->position[2] = point.z - camera_left.k * right + camera->up.k * up;
+			out->color[0] = color.red;
+			out->color[1] = color.green;
+			out->color[2] = color.blue;
+			out->texcoord[0] = (k_corners[k][0] + 1.f) * 0.5f;
+			out->texcoord[1] = (1.f - k_corners[k][1]) * 0.5f;
+			out->alpha[0] = PIN(brightness, 0.f, 1.f);
+			out->alpha[1] = 0.f;
+		}
+		const s_h1_particle_vertex triangles[6] = { quad[0], quad[1], quad[2], quad[0], quad[2], quad[3] };
+		if (h1_render_particle_shader_bind(0 /* alpha blend */, false, FLAG(1) | FLAG(2), texture, NULL, 0, _h1_particle_shader_mode_lens_flare))
+		{
+			device->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
+			device->DrawPrimitiveUP(D3DPT_TRIANGLELIST, 2, triangles, sizeof(s_h1_particle_vertex));
+			device->SetRenderState(D3DRS_ZENABLE, D3DZB_TRUE);
+			h1_render_shader_unbind();
+		}
+	}
+	return;
+}
+
+static void h1_lens_flares_render(void)
+{
+	bool any = false;
+	for (const s_h1_light& light : g_h1_effects.lights)
+	{
+		any |= light.radius >= 0.f;
+	}
+	for (const s_h1_attachment& attachment : g_h1_effects.attachments)
+	{
+		any |= attachment.group_tag == 'ligh';
+	}
+	if (!any)
+	{
+		return;
+	}
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	h1_render_set_camera_constants(NULL, false);
+	device->SetVertexDeclaration(h1_render_vertex_declaration());
+	device->SetVertexShader(h1_render_vertex_shader());
+	for (s_h1_light& light : g_h1_effects.lights)
+	{
+		h1_lens_flare_render(&light);
+	}
+	for (s_h1_attachment& attachment : g_h1_effects.attachments)
+	{
+		if (attachment.group_tag == 'ligh')
+		{
+			h1_lens_flare_render(&attachment.light);
+		}
+	}
+	return;
 }

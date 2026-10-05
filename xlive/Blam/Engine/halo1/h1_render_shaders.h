@@ -49,9 +49,16 @@ void h1_render_shader_object_animation_set(const real32* function_values, const 
 // what the following draws are for fog: structure (fogged, no centroid), an object (fogged, its center) or unfogged (the sky)
 void h1_render_shader_fog_context_set(bool fogged, const real_point3d* centroid);
 
-// binds the halo 1 particle shader (a particle's shader_effect), false if it can't draw
+enum e_h1_particle_shader_mode
+{
+	_h1_particle_shader_mode_particle = 0,
+	_h1_particle_shader_mode_decal,			// the multiplying blend functions blend from the neutral color by the tint
+	_h1_particle_shader_mode_lens_flare,	// texture times tint, source alpha added, unfogged
+};
+
+// binds the halo 1 particle shader (a particle's shader_effect, a decal or a lens flare), false if it can't draw
 bool h1_render_particle_shader_bind(int16 framebuffer_blend_function, bool nonlinear_tint, uint16 primary_map_flags, IDirect3DBaseTexture9* texture,
-	IDirect3DBaseTexture9* secondary_texture, uint16 secondary_map_flags);
+	IDirect3DBaseTexture9* secondary_texture, uint16 secondary_map_flags, e_h1_particle_shader_mode mode = _h1_particle_shader_mode_particle);
 
 // binds the halo 1 environment fog pass (drawn over the opaque structure with an equal depth test), false if it can't draw
 bool h1_render_environment_fog_bind(void);

@@ -19,5 +19,9 @@ bool h1_render_sky(void);
 // object lighting at a point: the lightmap material under it and its lightmap sample
 void h1_render_lighting_at(const real_point3d* point, struct s_h1_render_lighting* out_lighting);
 
+// the opaque lightmapped structure triangles (three points each), for decals
+int32 h1_render_structure_triangle_count(void);
+const real_point3d* h1_render_structure_triangle_get(int32 index);
+
 // frees every Direct3D resource built for the loaded Halo 1 map
 void h1_render_dispose(void);

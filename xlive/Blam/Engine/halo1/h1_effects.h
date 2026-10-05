@@ -13,8 +13,14 @@ void h1_effects_reset(void);
 // advances the effects and particles (once per frame)
 void h1_effects_update(void);
 
-// draws the particles (transparent pass)
+// draws the particles and lens flares (transparent pass)
 void h1_effects_render(void);
+
+// draws the decals (after the opaque structure)
+void h1_effects_render_decals(void);
+
+// the dynamic lights of the frame for the environment and model shaders (pixel shader constants c110 to c125)
+void h1_effects_set_light_constants(void);
 
 // the halo 2 hooks
 void h1_effects_apply_patches(void);

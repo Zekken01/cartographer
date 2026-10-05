@@ -123,6 +123,7 @@ void h1_render_structure_opaque(void)
 	if (g_h1_render_debug_mode != 9)
 	{
 		h1_render_structure_pass(_h1_render_pass_opaque);
+		h1_effects_render_decals();
 		h1_render_structure_fog_pass();
 	}
 
@@ -651,6 +652,16 @@ static void h1_unpack_normal(uint32 packed, real32* out)
 	return;
 }
 
+
+int32 h1_render_structure_triangle_count(void)
+{
+	return (int32)g_h1_render.lighting_triangles.size();
+}
+
+const real_point3d* h1_render_structure_triangle_get(int32 index)
+{
+	return g_h1_render.lighting_triangles[index].points;
+}
 
 // lighting from the lightmapped structure surface below a point: the material's radiosity lights scaled by the lightmap
 void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_lighting)
