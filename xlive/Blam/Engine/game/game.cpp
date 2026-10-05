@@ -26,6 +26,7 @@
 #include "objects/objects.h"
 #include "physics/havok.h"
 #include "physics/impacts.h"
+#include "render/render.h"
 #include "sapien/editor.h"
 #include "saved_games/game_state.h"
 #include "scenario/scenario.h"
@@ -451,6 +452,18 @@ void __cdecl game_initialize_for_new_map(
 
 	halo_interpolator_reset();
 	real_math_reset_precision();
+
+	// the render globals still describe the last frame of the previous map (the main menu) until this map renders,
+	// and object updates look up the visible sky with them before that
+	if (!shell_is_dedicated_server())
+	{
+		s_render* render = render_get();
+		render->cluster_index = NONE;
+		render->leaf_index = NONE;
+		render->visible_sky_model = false;
+		render->visible_sky_index = NONE;
+	}
+
 	game_globals->initializing = true;
 	game_info_initialize_for_new_map(options);
 
