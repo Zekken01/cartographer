@@ -3934,4 +3934,966 @@ struct h1_ssce
 };
 ASSERT_STRUCT_SIZE(h1_ssce, 0x1fc);
 
+struct h1_proj_attachments
+{
+	h1_tag_reference type; // 0x0
+	char marker[32]; // 0x10
+	int16 primary_scale; // 0x30
+	int16 secondary_scale; // 0x32
+	int16 change_color; // 0x34
+	int16 unknown; // 0x36
+	int8 pad_38[16];
+};
+ASSERT_STRUCT_SIZE(h1_proj_attachments, 0x48);
+
+struct h1_proj_widgets
+{
+	h1_tag_reference reference; // 0x0
+	int8 pad_10[16];
+};
+ASSERT_STRUCT_SIZE(h1_proj_widgets, 0x20);
+
+struct h1_proj_functions
+{
+	uint32 flags; // 0x0
+	real32 period; // 0x4
+	int16 scale_period_by; // 0x8
+	int16 function; // 0xa
+	int16 scale_function_by; // 0xc
+	int16 wobble_function; // 0xe
+	real32 wobble_period; // 0x10
+	real32 wobble_magnitude; // 0x14
+	real32 square_wave_threshold; // 0x18
+	int16 step_count; // 0x1c
+	int16 map_to; // 0x1e
+	int16 sawtooth_count; // 0x20
+	int16 add; // 0x22
+	int16 scale_result_by; // 0x24
+	int16 bounds_mode; // 0x26
+	real_bounds bounds; // 0x28
+	int8 pad_30[4];
+	int16 unknown; // 0x34
+	int16 turn_off_with_index; // 0x36
+	real32 scale_by; // 0x38
+	int8 pad_3c[252];
+	real32 inverse_bounds; // 0x138
+	real32 inverse_sawtooth; // 0x13c
+	real32 inverse_step; // 0x140
+	real32 inverse_period; // 0x144
+	char usage[32]; // 0x148
+};
+ASSERT_STRUCT_SIZE(h1_proj_functions, 0x168);
+
+struct h1_proj_change_colors_permutations
+{
+	real32 weight; // 0x0
+	real_rgb_color color_lower_bound; // 0x4
+	real_rgb_color color_upper_bound; // 0x10
+};
+ASSERT_STRUCT_SIZE(h1_proj_change_colors_permutations, 0x1c);
+
+struct h1_proj_change_colors
+{
+	int16 darken_by; // 0x0
+	int16 scale_by; // 0x2
+	uint32 scale_flags; // 0x4
+	real_rgb_color color_lower_bound; // 0x8
+	real_rgb_color color_upper_bound; // 0x14
+	h1_tag_block<h1_proj_change_colors_permutations> permutations; // 0x20
+};
+ASSERT_STRUCT_SIZE(h1_proj_change_colors, 0x2c);
+
+struct h1_proj_predicted_resources
+{
+	int16 type; // 0x0
+	int16 resource_index; // 0x2
+	datum tag_index; // 0x4
+};
+ASSERT_STRUCT_SIZE(h1_proj_predicted_resources, 0x8);
+
+struct h1_proj_material_responses
+{
+	uint16 flags; // 0x0
+	int16 response; // 0x2
+	h1_tag_reference effect; // 0x4
+	int8 pad_14[16];
+	int16 response_2; // 0x24
+	uint16 flags_2; // 0x26
+	real32 skip_fraction; // 0x28
+	real_bounds between; // 0x2c
+	real_bounds and; // 0x34
+	h1_tag_reference effect_2; // 0x3c
+	int8 pad_4c[16];
+	int16 scale_effects_by; // 0x5c
+	int16 unknown; // 0x5e
+	real32 angular_noise; // 0x60
+	real32 velocity_noise; // 0x64
+	h1_tag_reference detonation_effect; // 0x68
+	int8 pad_78[24];
+	real32 initial_friction; // 0x90
+	real32 maximum_distance; // 0x94
+	real32 parallel_friction; // 0x98
+	real32 perpendicular_friction; // 0x9c
+};
+ASSERT_STRUCT_SIZE(h1_proj_material_responses, 0xa0);
+
+struct h1_proj
+{
+	int16 object_type; // 0x0
+	uint16 flags; // 0x2
+	real32 bounding_radius; // 0x4
+	real_point3d bounding_offset; // 0x8
+	real_point3d origin_offset; // 0x14
+	real32 acceleration_scale; // 0x20
+	uint32 runtime_flags; // 0x24
+	h1_tag_reference model; // 0x28
+	h1_tag_reference animation_graph; // 0x38
+	int8 pad_48[40];
+	h1_tag_reference collision_model; // 0x70
+	h1_tag_reference physics; // 0x80
+	h1_tag_reference modifier_shader; // 0x90
+	h1_tag_reference creation_effect; // 0xa0
+	int8 pad_b0[84];
+	real32 render_bounding_radius; // 0x104
+	int16 a_in; // 0x108
+	int16 b_in; // 0x10a
+	int16 c_in; // 0x10c
+	int16 d_in; // 0x10e
+	int8 pad_110[44];
+	int16 hud_text_message_index; // 0x13c
+	int16 forced_shader_permutation_index; // 0x13e
+	h1_tag_block<h1_proj_attachments> attachments; // 0x140
+	h1_tag_block<h1_proj_widgets> widgets; // 0x14c
+	h1_tag_block<h1_proj_functions> functions; // 0x158
+	h1_tag_block<h1_proj_change_colors> change_colors; // 0x164
+	h1_tag_block<h1_proj_predicted_resources> predicted_resources; // 0x170
+	uint32 flags_2; // 0x17c
+	int16 detonation_timer_starts; // 0x180
+	int16 impact_noise; // 0x182
+	int16 a_in_2; // 0x184
+	int16 b_in_2; // 0x186
+	int16 c_in_2; // 0x188
+	int16 d_in_2; // 0x18a
+	h1_tag_reference super_detonation; // 0x18c
+	real32 ai_perception_radius; // 0x19c
+	real32 collision_radius; // 0x1a0
+	real32 arming_time; // 0x1a4
+	real32 danger_radius; // 0x1a8
+	h1_tag_reference effect; // 0x1ac
+	real_bounds timer; // 0x1bc
+	real32 minimum_velocity; // 0x1c4
+	real32 maximum_range; // 0x1c8
+	real32 air_gravity_scale; // 0x1cc
+	real_bounds air_damage_range; // 0x1d0
+	real32 water_gravity_scale; // 0x1d8
+	real_bounds water_damage_range; // 0x1dc
+	real32 initial_velocity; // 0x1e4
+	real32 final_velocity; // 0x1e8
+	real32 guided_angular_velocity; // 0x1ec
+	int16 detonation_noise; // 0x1f0
+	int16 unknown; // 0x1f2
+	h1_tag_reference detonation_started; // 0x1f4
+	h1_tag_reference flyby_sound; // 0x204
+	h1_tag_reference attached_detonation_damage; // 0x214
+	h1_tag_reference impact_damage; // 0x224
+	int8 pad_234[12];
+	h1_tag_block<h1_proj_material_responses> material_responses; // 0x240
+};
+ASSERT_STRUCT_SIZE(h1_proj, 0x24c);
+
+struct h1_jpt
+{
+	real_bounds radius; // 0x0
+	real32 cutoff_scale; // 0x8
+	uint32 flags; // 0xc
+	int8 pad_10[20];
+	int16 type; // 0x24
+	int16 priority; // 0x26
+	int8 pad_28[12];
+	real32 duration; // 0x34
+	int16 fade_function; // 0x38
+	int16 unknown; // 0x3a
+	int8 pad_3c[8];
+	real32 maximum_intensity; // 0x44
+	int8 pad_48[4];
+	real_argb_color color; // 0x4c
+	real32 frequency; // 0x5c
+	real32 duration_2; // 0x60
+	int16 fade_function_2; // 0x64
+	int16 unknown_2; // 0x66
+	int8 pad_68[8];
+	real32 frequency_2; // 0x70
+	real32 duration_3; // 0x74
+	int16 fade_function_3; // 0x78
+	int16 unknown_3; // 0x7a
+	int8 pad_7c[28];
+	real32 duration_4; // 0x98
+	int16 fade_function_4; // 0x9c
+	int16 unknown_4; // 0x9e
+	real32 rotation; // 0xa0
+	real32 pushback; // 0xa4
+	real_bounds jitter; // 0xa8
+	int8 pad_b0[8];
+	real32 angle; // 0xb8
+	int8 pad_bc[16];
+	real32 duration_5; // 0xcc
+	int16 falloff_function; // 0xd0
+	int16 unknown_5; // 0xd2
+	real32 random_translation; // 0xd4
+	real32 random_rotation; // 0xd8
+	int8 pad_dc[12];
+	int16 wobble_function; // 0xe8
+	int16 unknown_6; // 0xea
+	real32 wobble_function_period; // 0xec
+	real32 wobble_weight; // 0xf0
+	int8 pad_f4[32];
+	h1_tag_reference sound; // 0x114
+	int8 pad_124[112];
+	real32 forward_velocity; // 0x194
+	real32 forward_radius; // 0x198
+	real32 forward_exponent; // 0x19c
+	int8 pad_1a0[12];
+	real32 outward_velocity; // 0x1ac
+	real32 outward_radius; // 0x1b0
+	real32 outward_exponent; // 0x1b4
+	int8 pad_1b8[12];
+	int16 side_effect; // 0x1c4
+	int16 category; // 0x1c6
+	uint32 flags_2; // 0x1c8
+	real32 aoe_core_radius; // 0x1cc
+	real32 damage_lower_bound; // 0x1d0
+	real_bounds damage_upper_bound; // 0x1d4
+	real32 vehicle_passthrough_penalty; // 0x1dc
+	real32 active_camouflage_damage; // 0x1e0
+	real32 stun; // 0x1e4
+	real32 maximum_stun; // 0x1e8
+	real32 stun_time; // 0x1ec
+	int8 pad_1f0[4];
+	real32 instantaneous_acceleration; // 0x1f4
+	int8 pad_1f8[8];
+	real32 dirt; // 0x200
+	real32 sand; // 0x204
+	real32 stone; // 0x208
+	real32 snow; // 0x20c
+	real32 wood; // 0x210
+	real32 metal_hollow; // 0x214
+	real32 metal_thin; // 0x218
+	real32 metal_thick; // 0x21c
+	real32 rubber; // 0x220
+	real32 glass; // 0x224
+	real32 force_field; // 0x228
+	real32 grunt; // 0x22c
+	real32 hunter_armor; // 0x230
+	real32 hunter_skin; // 0x234
+	real32 elite; // 0x238
+	real32 jackal; // 0x23c
+	real32 jackal_energy_shield; // 0x240
+	real32 engineer; // 0x244
+	real32 engineer_force_field; // 0x248
+	real32 flood_combat_form; // 0x24c
+	real32 flood_carrier_form; // 0x250
+	real32 cyborg; // 0x254
+	real32 cyborg_energy_shield; // 0x258
+	real32 armored_human; // 0x25c
+	real32 human; // 0x260
+	real32 sentinel; // 0x264
+	real32 monitor; // 0x268
+	real32 plastic; // 0x26c
+	real32 water; // 0x270
+	real32 leaves; // 0x274
+	real32 elite_energy_shield; // 0x278
+	real32 ice; // 0x27c
+	real32 hunter_shield; // 0x280
+	int8 pad_284[28];
+};
+ASSERT_STRUCT_SIZE(h1_jpt, 0x2a0);
+
+struct h1_effe_locations
+{
+	char marker_name[32]; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_effe_locations, 0x20);
+
+struct h1_effe_events_parts
+{
+	int16 create_in; // 0x0
+	int16 violence_mode; // 0x2
+	int16 location_index; // 0x4
+	uint16 flags; // 0x6
+	int8 pad_8[12];
+	int32 runtime_base_group_tag; // 0x14
+	h1_tag_reference type; // 0x18
+	int8 pad_28[24];
+	real_bounds velocity_bounds; // 0x40
+	real32 velocity_cone_angle; // 0x48
+	real_bounds angular_velocity_bounds; // 0x4c
+	real_bounds radius_modifier_bounds; // 0x54
+	int8 pad_5c[4];
+	uint32 a_scales_values; // 0x60
+	uint32 b_scales_values; // 0x64
+};
+ASSERT_STRUCT_SIZE(h1_effe_events_parts, 0x68);
+
+struct h1_effe_events_particles
+{
+	int16 create_in; // 0x0
+	int16 violence_mode; // 0x2
+	int16 create; // 0x4
+	int16 unknown; // 0x6
+	int16 location_index; // 0x8
+	int16 unknown_2; // 0xa
+	real_euler_angles2d relative_direction; // 0xc
+	real_point3d relative_offset; // 0x14
+	real_vector3d relative_direction_vector; // 0x20
+	int8 pad_2c[40];
+	h1_tag_reference particle_type; // 0x54
+	uint32 flags; // 0x64
+	int16 distribution_function; // 0x68
+	int16 unknown_3; // 0x6a
+	short_bounds count; // 0x6c
+	real_bounds distribution_radius; // 0x70
+	int8 pad_78[12];
+	real_bounds velocity; // 0x84
+	real32 velocity_cone_angle; // 0x8c
+	real_bounds angular_velocity; // 0x90
+	int8 pad_98[8];
+	real_bounds radius; // 0xa0
+	int8 pad_a8[8];
+	real_argb_color tint_lower_bound; // 0xb0
+	real_argb_color tint_upper_bound; // 0xc0
+	int8 pad_d0[16];
+	uint32 a_scales_values; // 0xe0
+	uint32 b_scales_values; // 0xe4
+};
+ASSERT_STRUCT_SIZE(h1_effe_events_particles, 0xe8);
+
+struct h1_effe_events
+{
+	int8 pad_0[4];
+	real32 skip_fraction; // 0x4
+	real_bounds delay_bounds; // 0x8
+	real_bounds duration_bounds; // 0x10
+	int8 pad_18[20];
+	h1_tag_block<h1_effe_events_parts> parts; // 0x2c
+	h1_tag_block<h1_effe_events_particles> particles; // 0x38
+};
+ASSERT_STRUCT_SIZE(h1_effe_events, 0x44);
+
+struct h1_effe
+{
+	uint32 flags; // 0x0
+	int16 loop_start_event_index; // 0x4
+	int16 loop_stop_event_index; // 0x6
+	real32 damage_radius; // 0x8
+	int8 pad_c[28];
+	h1_tag_block<h1_effe_locations> locations; // 0x28
+	h1_tag_block<h1_effe_events> events; // 0x34
+};
+ASSERT_STRUCT_SIZE(h1_effe, 0x40);
+
+struct h1_part
+{
+	uint32 flags; // 0x0
+	h1_tag_reference bitmap; // 0x4
+	h1_tag_reference physics; // 0x14
+	h1_tag_reference collision_material_effects; // 0x24
+	int8 pad_34[4];
+	real_bounds lifespan; // 0x38
+	real32 fade_in_time; // 0x40
+	real32 fade_out_time; // 0x44
+	h1_tag_reference collision_effect; // 0x48
+	h1_tag_reference death_effect; // 0x58
+	real32 minimum_size; // 0x68
+	int8 pad_6c[8];
+	real_bounds radius_animation; // 0x74
+	int8 pad_7c[4];
+	real_bounds animation_rate; // 0x80
+	real32 contact_deterioration; // 0x88
+	real32 fade_start_size; // 0x8c
+	real32 fade_end_size; // 0x90
+	int8 pad_94[4];
+	int16 first_sequence_index; // 0x98
+	int16 initial_sequence_count; // 0x9a
+	int16 looping_sequence_count; // 0x9c
+	int16 final_sequence_count; // 0x9e
+	int8 pad_a0[8];
+	real32 sprite_size; // 0xa8
+	int16 orientation; // 0xac
+	int16 unknown; // 0xae
+	int8 pad_b0[36];
+	int32 runtime_unknown_required; // 0xd4
+	uint16 shader_flags; // 0xd8
+	int16 framebuffer_blend_function; // 0xda
+	int16 framebuffer_fade_mode; // 0xdc
+	uint16 map_flags; // 0xde
+	int8 pad_e0[28];
+	h1_tag_reference bitmap_2; // 0xfc
+	int16 anchor; // 0x10c
+	uint16 flags_2; // 0x10e
+	int16 u_animation_source; // 0x110
+	int16 u_animation_function; // 0x112
+	real32 u_animation_period; // 0x114
+	real32 u_animation_phase; // 0x118
+	real32 u_animation_scale; // 0x11c
+	int16 v_animation_source; // 0x120
+	int16 v_animation_function; // 0x122
+	real32 v_animation_period; // 0x124
+	real32 v_animation_phase; // 0x128
+	real32 v_animation_scale; // 0x12c
+	int16 rotation_animation_source; // 0x130
+	int16 rotation_animation_function; // 0x132
+	real32 rotation_animation_period; // 0x134
+	real32 rotation_animation_phase; // 0x138
+	real32 rotation_animation_scale; // 0x13c
+	real_point2d rotation_animation_center; // 0x140
+	int8 pad_148[4];
+	real32 zsprite_radius_scale; // 0x14c
+	int8 pad_150[20];
+};
+ASSERT_STRUCT_SIZE(h1_part, 0x164);
+
+struct h1_pctl_physics_constants
+{
+	real32 k; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_pctl_physics_constants, 0x4);
+
+struct h1_pctl_particle_types_physics_constants
+{
+	real32 k; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_pctl_particle_types_physics_constants, 0x4);
+
+struct h1_pctl_particle_types_states_physics_constants
+{
+	real32 k; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_pctl_particle_types_states_physics_constants, 0x4);
+
+struct h1_pctl_particle_types_states
+{
+	char name[32]; // 0x0
+	real_bounds duration_bounds; // 0x20
+	real_bounds transition_time_bounds; // 0x28
+	int8 pad_30[4];
+	real32 scale_multiplier; // 0x34
+	real32 animation_rate_multiplier; // 0x38
+	real32 rotation_rate_multiplier; // 0x3c
+	real_argb_color color_multiplier; // 0x40
+	real32 radius_multiplier; // 0x50
+	real32 minimum_particle_count; // 0x54
+	real32 particle_creation_rate; // 0x58
+	int8 pad_5c[84];
+	int16 particle_creation_physics; // 0xb0
+	int16 particle_update_physics; // 0xb2
+	h1_tag_block<h1_pctl_particle_types_states_physics_constants> physics_constants; // 0xb4
+};
+ASSERT_STRUCT_SIZE(h1_pctl_particle_types_states, 0xc0);
+
+struct h1_pctl_particle_types_particle_states_physics_constants
+{
+	real32 k; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_pctl_particle_types_particle_states_physics_constants, 0x4);
+
+struct h1_pctl_particle_types_particle_states
+{
+	char name[32]; // 0x0
+	real_bounds duration_bounds; // 0x20
+	real_bounds transition_time_bounds; // 0x28
+	h1_tag_reference bitmaps; // 0x30
+	int16 sequence_index; // 0x40
+	int16 unknown; // 0x42
+	int8 pad_44[4];
+	real_bounds scale; // 0x48
+	real_bounds animation_rate; // 0x50
+	real_bounds rotation_rate; // 0x58
+	real_argb_color color_1; // 0x60
+	real_argb_color color_2; // 0x70
+	real32 radius_multiplier; // 0x80
+	h1_tag_reference point_physics; // 0x84
+	int8 pad_94[72];
+	int32 runtime_unknown_required; // 0xdc
+	uint16 shader_flags; // 0xe0
+	int16 framebuffer_blend_function; // 0xe2
+	int16 framebuffer_fade_mode; // 0xe4
+	uint16 map_flags; // 0xe6
+	int8 pad_e8[28];
+	h1_tag_reference bitmap; // 0x104
+	int16 anchor; // 0x114
+	uint16 flags; // 0x116
+	int16 u_animation_source; // 0x118
+	int16 u_animation_function; // 0x11a
+	real32 u_animation_period; // 0x11c
+	real32 u_animation_phase; // 0x120
+	real32 u_animation_scale; // 0x124
+	int16 v_animation_source; // 0x128
+	int16 v_animation_function; // 0x12a
+	real32 v_animation_period; // 0x12c
+	real32 v_animation_phase; // 0x130
+	real32 v_animation_scale; // 0x134
+	int16 rotation_animation_source; // 0x138
+	int16 rotation_animation_function; // 0x13a
+	real32 rotation_animation_period; // 0x13c
+	real32 rotation_animation_phase; // 0x140
+	real32 rotation_animation_scale; // 0x144
+	real_point2d rotation_animation_center; // 0x148
+	int8 pad_150[4];
+	real32 zsprite_radius_scale; // 0x154
+	int8 pad_158[20];
+	h1_tag_block<h1_pctl_particle_types_particle_states_physics_constants> physics_constants; // 0x16c
+};
+ASSERT_STRUCT_SIZE(h1_pctl_particle_types_particle_states, 0x178);
+
+struct h1_pctl_particle_types
+{
+	char name[32]; // 0x0
+	uint32 flags; // 0x20
+	int16 initial_particle_count; // 0x24
+	int16 unknown; // 0x26
+	int16 complex_sprite_render_mode; // 0x28
+	int16 unknown_2; // 0x2a
+	real32 radius; // 0x2c
+	int8 pad_30[36];
+	int16 particle_creation_physics; // 0x54
+	int16 unknown_3; // 0x56
+	uint32 physics_flags; // 0x58
+	h1_tag_block<h1_pctl_particle_types_physics_constants> physics_constants; // 0x5c
+	h1_tag_block<h1_pctl_particle_types_states> states; // 0x68
+	h1_tag_block<h1_pctl_particle_types_particle_states> particle_states; // 0x74
+};
+ASSERT_STRUCT_SIZE(h1_pctl_particle_types, 0x80);
+
+struct h1_pctl
+{
+	int8 pad_0[56];
+	h1_tag_reference point_physics; // 0x38
+	int16 system_update_physics; // 0x48
+	int16 unknown; // 0x4a
+	uint32 physics_flags; // 0x4c
+	h1_tag_block<h1_pctl_physics_constants> physics_constants; // 0x50
+	h1_tag_block<h1_pctl_particle_types> particle_types; // 0x5c
+};
+ASSERT_STRUCT_SIZE(h1_pctl, 0x68);
+
+struct h1_deca
+{
+	uint16 flags; // 0x0
+	int16 type; // 0x2
+	int16 layer; // 0x4
+	int16 unknown; // 0x6
+	h1_tag_reference next_decal_in_chain; // 0x8
+	real_bounds radius; // 0x18
+	int8 pad_20[12];
+	real_bounds intensity; // 0x2c
+	real_rgb_color color_lower_bounds; // 0x34
+	real_rgb_color color_upper_bounds; // 0x40
+	int8 pad_4c[12];
+	int16 animation_loop_frame; // 0x58
+	int16 animation_speed; // 0x5a
+	int8 pad_5c[28];
+	real_bounds lifetime; // 0x78
+	real_bounds decay_time; // 0x80
+	int8 pad_88[52];
+	int16 unknown_2; // 0xbc
+	int16 unknown_3; // 0xbe
+	int16 framebuffer_blend_function; // 0xc0
+	int16 unknown_4; // 0xc2
+	int8 pad_c4[20];
+	h1_tag_reference map; // 0xd8
+	int8 pad_e8[20];
+	real32 maximum_sprite_extent; // 0xfc
+	int8 pad_100[12];
+};
+ASSERT_STRUCT_SIZE(h1_deca, 0x10c);
+
+struct h1_matg_sounds
+{
+	h1_tag_reference sound; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_matg_sounds, 0x10);
+
+struct h1_matg_camera
+{
+	h1_tag_reference default_unit_camera_track; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_matg_camera, 0x10);
+
+struct h1_matg_player_control_look_function
+{
+	real32 scale; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_matg_player_control_look_function, 0x4);
+
+struct h1_matg_player_control
+{
+	real32 magnetism_friction; // 0x0
+	real32 magnetism_adhesion; // 0x4
+	real32 inconsequential_target_scale; // 0x8
+	int8 pad_c[52];
+	real32 look_acceleration_time; // 0x40
+	real32 look_acceleration_scale; // 0x44
+	real32 look_peg_threshold_0_1; // 0x48
+	real32 look_default_pitch_rate; // 0x4c
+	real32 look_default_yaw_rate; // 0x50
+	real32 look_autolevelling_scale; // 0x54
+	int8 pad_58[20];
+	int16 minimum_weapon_swap_ticks; // 0x6c
+	int16 minimum_autolevelling_ticks; // 0x6e
+	real32 minimum_angle_for_vehicle_flipping; // 0x70
+	h1_tag_block<h1_matg_player_control_look_function> look_function; // 0x74
+};
+ASSERT_STRUCT_SIZE(h1_matg_player_control, 0x80);
+
+struct h1_matg_difficulty
+{
+	real32 easy_enemy_damage; // 0x0
+	real32 normal_enemy_damage; // 0x4
+	real32 hard_enemy_damage; // 0x8
+	real32 impossible_enemy_damage; // 0xc
+	real32 easy_enemy_vitality; // 0x10
+	real32 normal_enemy_vitality; // 0x14
+	real32 hard_enemy_vitality; // 0x18
+	real32 impossible_enemy_vitality; // 0x1c
+	real32 easy_enemy_shield; // 0x20
+	real32 normal_enemy_shield; // 0x24
+	real32 hard_enemy_shield; // 0x28
+	real32 impossible_enemy_shield; // 0x2c
+	real32 easy_enemy_recharge; // 0x30
+	real32 normal_enemy_recharge; // 0x34
+	real32 hard_enemy_recharge; // 0x38
+	real32 impossible_enemy_recharge; // 0x3c
+	real32 easy_friend_damage; // 0x40
+	real32 normal_friend_damage; // 0x44
+	real32 hard_friend_damage; // 0x48
+	real32 impossible_friend_damage; // 0x4c
+	real32 easy_friend_vitality; // 0x50
+	real32 normal_friend_vitality; // 0x54
+	real32 hard_friend_vitality; // 0x58
+	real32 impossible_friend_vitality; // 0x5c
+	real32 easy_friend_shield; // 0x60
+	real32 normal_friend_shield; // 0x64
+	real32 hard_friend_shield; // 0x68
+	real32 impossible_friend_shield; // 0x6c
+	real32 easy_friend_recharge; // 0x70
+	real32 normal_friend_recharge; // 0x74
+	real32 hard_friend_recharge; // 0x78
+	real32 impossible_friend_recharge; // 0x7c
+	real32 easy_infection_forms; // 0x80
+	real32 normal_infection_forms; // 0x84
+	real32 hard_infection_forms; // 0x88
+	real32 impossible_infection_forms; // 0x8c
+	int8 pad_90[16];
+	real32 easy_rate_of_fire; // 0xa0
+	real32 normal_rate_of_fire; // 0xa4
+	real32 hard_rate_of_fire; // 0xa8
+	real32 impossible_rate_of_fire; // 0xac
+	real32 easy_projectile_error; // 0xb0
+	real32 normal_projectile_error; // 0xb4
+	real32 hard_projectile_error; // 0xb8
+	real32 impossible_projectile_error; // 0xbc
+	real32 easy_burst_error; // 0xc0
+	real32 normal_burst_error; // 0xc4
+	real32 hard_burst_error; // 0xc8
+	real32 impossible_burst_error; // 0xcc
+	real32 easy_new_target_delay; // 0xd0
+	real32 normal_new_target_delay; // 0xd4
+	real32 hard_new_target_delay; // 0xd8
+	real32 impossible_new_target_delay; // 0xdc
+	real32 easy_burst_separation; // 0xe0
+	real32 normal_burst_separation; // 0xe4
+	real32 hard_burst_separation; // 0xe8
+	real32 impossible_burst_separation; // 0xec
+	real32 easy_target_tracking; // 0xf0
+	real32 normal_target_tracking; // 0xf4
+	real32 hard_target_tracking; // 0xf8
+	real32 impossible_target_tracking; // 0xfc
+	real32 easy_target_leading; // 0x100
+	real32 normal_target_leading; // 0x104
+	real32 hard_target_leading; // 0x108
+	real32 impossible_target_leading; // 0x10c
+	real32 easy_overcharge_chance; // 0x110
+	real32 normal_overcharge_chance; // 0x114
+	real32 hard_overcharge_chance; // 0x118
+	real32 impossible_overcharge_chance; // 0x11c
+	real32 easy_special_fire_delay; // 0x120
+	real32 normal_special_fire_delay; // 0x124
+	real32 hard_special_fire_delay; // 0x128
+	real32 impossible_special_fire_delay; // 0x12c
+	real32 easy_guidance_vs_player; // 0x130
+	real32 normal_guidance_vs_player; // 0x134
+	real32 hard_guidance_vs_player; // 0x138
+	real32 impossible_guidance_vs_player; // 0x13c
+	real32 easy_melee_delay_base; // 0x140
+	real32 normal_melee_delay_base; // 0x144
+	real32 hard_melee_delay_base; // 0x148
+	real32 impossible_melee_delay_base; // 0x14c
+	real32 easy_melee_delay_scale; // 0x150
+	real32 normal_melee_delay_scale; // 0x154
+	real32 hard_melee_delay_scale; // 0x158
+	real32 impossible_melee_delay_scale; // 0x15c
+	int8 pad_160[16];
+	real32 easy_grenade_chance_scale; // 0x170
+	real32 normal_grenade_chance_scale; // 0x174
+	real32 hard_grenade_chance_scale; // 0x178
+	real32 impossible_grenade_chance_scale; // 0x17c
+	real32 easy_grenade_timer_scale; // 0x180
+	real32 normal_grenade_timer_scale; // 0x184
+	real32 hard_grenade_timer_scale; // 0x188
+	real32 impossible_grenade_timer_scale; // 0x18c
+	int8 pad_190[48];
+	real32 easy_major_upgrade_normal; // 0x1c0
+	real32 normal_major_upgrade_normal; // 0x1c4
+	real32 hard_major_upgrade_normal; // 0x1c8
+	real32 impossible_major_upgrade_normal; // 0x1cc
+	real32 easy_major_upgrade_few; // 0x1d0
+	real32 normal_major_upgrade_few; // 0x1d4
+	real32 hard_major_upgrade_few; // 0x1d8
+	real32 impossible_major_upgrade_few; // 0x1dc
+	real32 easy_major_upgrade_many; // 0x1e0
+	real32 normal_major_upgrade_many; // 0x1e4
+	real32 hard_major_upgrade_many; // 0x1e8
+	real32 impossible_major_upgrade_many; // 0x1ec
+	int8 pad_1f0[148];
+};
+ASSERT_STRUCT_SIZE(h1_matg_difficulty, 0x284);
+
+struct h1_matg_grenades
+{
+	int16 maximum_count; // 0x0
+	int16 mp_spawn_default; // 0x2
+	h1_tag_reference throwing_effect; // 0x4
+	h1_tag_reference hud_interface; // 0x14
+	h1_tag_reference equipment; // 0x24
+	h1_tag_reference projectile; // 0x34
+};
+ASSERT_STRUCT_SIZE(h1_matg_grenades, 0x44);
+
+struct h1_matg_rasterizer_data
+{
+	h1_tag_reference distance_attenuation; // 0x0
+	h1_tag_reference vector_normalization; // 0x10
+	h1_tag_reference atmospheric_fog_density; // 0x20
+	h1_tag_reference planar_fog_density; // 0x30
+	h1_tag_reference linear_corner_fade; // 0x40
+	h1_tag_reference active_camouflage_distortion; // 0x50
+	h1_tag_reference glow; // 0x60
+	int8 pad_70[60];
+	h1_tag_reference default_2d; // 0xac
+	h1_tag_reference default_3d; // 0xbc
+	h1_tag_reference default_cube_map; // 0xcc
+	h1_tag_reference test_0; // 0xdc
+	h1_tag_reference test_1; // 0xec
+	h1_tag_reference test_2; // 0xfc
+	h1_tag_reference test_3; // 0x10c
+	h1_tag_reference video_scanline_map; // 0x11c
+	h1_tag_reference video_noise_map; // 0x12c
+	int8 pad_13c[52];
+	uint16 flags; // 0x170
+	int16 unknown; // 0x172
+	real32 refraction_amount; // 0x174
+	real32 distance_falloff; // 0x178
+	real_rgb_color tint_color; // 0x17c
+	real32 hyper_stealth_refraction; // 0x188
+	real32 hyper_stealth_distance_falloff; // 0x18c
+	real_rgb_color hyper_stealth_tint_color; // 0x190
+	h1_tag_reference distance_attenuation_2d; // 0x19c
+};
+ASSERT_STRUCT_SIZE(h1_matg_rasterizer_data, 0x1ac);
+
+struct h1_matg_interface_bitmaps
+{
+	h1_tag_reference font_system; // 0x0
+	h1_tag_reference font_terminal; // 0x10
+	h1_tag_reference screen_color_table; // 0x20
+	h1_tag_reference hud_color_table; // 0x30
+	h1_tag_reference editor_color_table; // 0x40
+	h1_tag_reference dialog_color_table; // 0x50
+	h1_tag_reference hud_globals; // 0x60
+	h1_tag_reference motion_sensor_sweep_bitmap; // 0x70
+	h1_tag_reference motion_sensor_sweep_bitmap_mask; // 0x80
+	h1_tag_reference multiplayer_hud_bitmap; // 0x90
+	h1_tag_reference localization; // 0xa0
+	h1_tag_reference hud_digits_definition; // 0xb0
+	h1_tag_reference motion_sensor_blip_bitmap; // 0xc0
+	h1_tag_reference interface_goo_map1; // 0xd0
+	h1_tag_reference interface_goo_map2; // 0xe0
+	h1_tag_reference interface_goo_map3; // 0xf0
+	int8 pad_100[48];
+};
+ASSERT_STRUCT_SIZE(h1_matg_interface_bitmaps, 0x130);
+
+struct h1_matg_weapon_list
+{
+	h1_tag_reference weapon; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_matg_weapon_list, 0x10);
+
+struct h1_matg_cheat_powerups
+{
+	h1_tag_reference powerup; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_matg_cheat_powerups, 0x10);
+
+struct h1_matg_multiplayer_information_vehicles
+{
+	h1_tag_reference vehicle; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_matg_multiplayer_information_vehicles, 0x10);
+
+struct h1_matg_multiplayer_information_sounds
+{
+	h1_tag_reference sound; // 0x0
+};
+ASSERT_STRUCT_SIZE(h1_matg_multiplayer_information_sounds, 0x10);
+
+struct h1_matg_multiplayer_information
+{
+	h1_tag_reference flag; // 0x0
+	h1_tag_reference unit; // 0x10
+	h1_tag_block<h1_matg_multiplayer_information_vehicles> vehicles; // 0x20
+	h1_tag_reference hill_shader; // 0x2c
+	h1_tag_reference flag_shader; // 0x3c
+	h1_tag_reference ball; // 0x4c
+	h1_tag_block<h1_matg_multiplayer_information_sounds> sounds; // 0x5c
+	int8 pad_68[56];
+};
+ASSERT_STRUCT_SIZE(h1_matg_multiplayer_information, 0xa0);
+
+struct h1_matg_player_information
+{
+	h1_tag_reference unit; // 0x0
+	int8 pad_10[28];
+	real32 walking_speed; // 0x2c
+	real32 double_speed_multiplier; // 0x30
+	real32 run_forward; // 0x34
+	real32 run_backward; // 0x38
+	real32 run_sideways; // 0x3c
+	real32 run_acceleration; // 0x40
+	real32 sneak_forward; // 0x44
+	real32 sneak_backward; // 0x48
+	real32 sneak_sideways; // 0x4c
+	real32 sneak_acceleration; // 0x50
+	real32 airborne_acceleration; // 0x54
+	real32 speed_multiplier; // 0x58
+	int8 pad_5c[12];
+	real_point3d grenade_origin; // 0x68
+	int8 pad_74[12];
+	real32 stun_movement_penalty; // 0x80
+	real32 stun_turning_penalty; // 0x84
+	real32 stun_jumping_penalty; // 0x88
+	real32 minimum_stun_time; // 0x8c
+	real32 maximum_stun_time; // 0x90
+	int8 pad_94[8];
+	real_bounds first_person_idle_time; // 0x9c
+	real32 first_person_skip_fraction; // 0xa4
+	int8 pad_a8[16];
+	h1_tag_reference coop_respawn_effect; // 0xb8
+	int8 pad_c8[44];
+};
+ASSERT_STRUCT_SIZE(h1_matg_player_information, 0xf4);
+
+struct h1_matg_first_person_interface
+{
+	h1_tag_reference first_person_hands; // 0x0
+	h1_tag_reference base_bitmap; // 0x10
+	h1_tag_reference shield_meter; // 0x20
+	point2d shield_meter_origin; // 0x30
+	h1_tag_reference body_meter; // 0x34
+	point2d body_meter_origin; // 0x44
+	h1_tag_reference night_vision_off_on_effect; // 0x48
+	h1_tag_reference night_vision_on_off_effect; // 0x58
+	int8 pad_68[88];
+};
+ASSERT_STRUCT_SIZE(h1_matg_first_person_interface, 0xc0);
+
+struct h1_matg_falling_damage
+{
+	int8 pad_0[8];
+	real_bounds harmful_falling_distance; // 0x8
+	h1_tag_reference falling_damage; // 0x10
+	int8 pad_20[8];
+	real32 maximum_falling_distance; // 0x28
+	h1_tag_reference distance_damage; // 0x2c
+	h1_tag_reference vehicle_environment_collision_damage_effect; // 0x3c
+	h1_tag_reference vehicle_killed_unit_damage_effect; // 0x4c
+	h1_tag_reference vehicle_collision_damage; // 0x5c
+	h1_tag_reference flaming_death_damage; // 0x6c
+	int8 pad_7c[16];
+	real32 maximum_falling_velocity; // 0x8c
+	real_bounds damage_velocity_bounds; // 0x90
+};
+ASSERT_STRUCT_SIZE(h1_matg_falling_damage, 0x98);
+
+struct h1_matg_materials_particle_effects
+{
+	h1_tag_reference particle_type; // 0x0
+	uint32 flags; // 0x10
+	real32 density; // 0x14
+	real_bounds velocity_scale; // 0x18
+	int8 pad_20[4];
+	real_bounds angular_velocity; // 0x24
+	int8 pad_2c[8];
+	real_bounds radius; // 0x34
+	int8 pad_3c[8];
+	real_argb_color tint_lower_bound; // 0x44
+	real_argb_color tint_upper_bound; // 0x54
+	int8 pad_64[28];
+};
+ASSERT_STRUCT_SIZE(h1_matg_materials_particle_effects, 0x80);
+
+struct h1_matg_materials
+{
+	int8 pad_0[148];
+	real32 ground_friction_scale; // 0x94
+	real32 ground_friction_normal_k1_scale; // 0x98
+	real32 ground_friction_normal_k0_scale; // 0x9c
+	real32 ground_depth_scale; // 0xa0
+	real32 ground_damp_fraction_scale; // 0xa4
+	int8 pad_a8[556];
+	real32 maximum_vitality; // 0x2d4
+	int8 pad_2d8[12];
+	h1_tag_reference effect; // 0x2e4
+	h1_tag_reference sound; // 0x2f4
+	int8 pad_304[24];
+	h1_tag_block<h1_matg_materials_particle_effects> particle_effects; // 0x31c
+	int8 pad_328[60];
+	h1_tag_reference melee_hit_sound; // 0x364
+};
+ASSERT_STRUCT_SIZE(h1_matg_materials, 0x374);
+
+struct h1_matg_playlist_members
+{
+	char map_name[32]; // 0x0
+	char game_variant[32]; // 0x20
+	int32 minimum_experience; // 0x40
+	int32 maximum_experience; // 0x44
+	int32 minimum_player_count; // 0x48
+	int32 maximum_player_count; // 0x4c
+	int32 rating; // 0x50
+	int8 pad_54[64];
+};
+ASSERT_STRUCT_SIZE(h1_matg_playlist_members, 0x94);
+
+struct h1_matg
+{
+	int8 pad_0[248];
+	h1_tag_block<h1_matg_sounds> sounds; // 0xf8
+	h1_tag_block<h1_matg_camera> camera; // 0x104
+	h1_tag_block<h1_matg_player_control> player_control; // 0x110
+	h1_tag_block<h1_matg_difficulty> difficulty; // 0x11c
+	h1_tag_block<h1_matg_grenades> grenades; // 0x128
+	h1_tag_block<h1_matg_rasterizer_data> rasterizer_data; // 0x134
+	h1_tag_block<h1_matg_interface_bitmaps> interface_bitmaps; // 0x140
+	h1_tag_block<h1_matg_weapon_list> weapon_list; // 0x14c
+	h1_tag_block<h1_matg_cheat_powerups> cheat_powerups; // 0x158
+	h1_tag_block<h1_matg_multiplayer_information> multiplayer_information; // 0x164
+	h1_tag_block<h1_matg_player_information> player_information; // 0x170
+	h1_tag_block<h1_matg_first_person_interface> first_person_interface; // 0x17c
+	h1_tag_block<h1_matg_falling_damage> falling_damage; // 0x188
+	h1_tag_block<h1_matg_materials> materials; // 0x194
+	h1_tag_block<h1_matg_playlist_members> playlist_members; // 0x1a0
+};
+ASSERT_STRUCT_SIZE(h1_matg, 0x1ac);
+
 #pragma pack(pop)

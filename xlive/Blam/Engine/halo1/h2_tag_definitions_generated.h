@@ -5685,4 +5685,1485 @@ struct h2x_eqip
 };
 ASSERT_STRUCT_SIZE(h2x_eqip, 0x13c);
 
+struct h2x_proj_ai_properties
+{
+	uint32 flags; // 0x0
+	string_id ai_type_name; // 0x4
+	int8 pad_8[4];
+	int16 ai_size; // 0xc
+	int16 leap_jump_speed; // 0xe
+};
+ASSERT_STRUCT_SIZE(h2x_proj_ai_properties, 0x10);
+
+struct h2x_proj_functions
+{
+	uint32 flags; // 0x0
+	string_id import_name; // 0x4
+	string_id export_name; // 0x8
+	string_id turn_off_with; // 0xc
+	real32 minimum_value; // 0x10
+	tag_data default_function; // 0x14
+	string_id scale_by; // 0x1c
+};
+ASSERT_STRUCT_SIZE(h2x_proj_functions, 0x20);
+
+struct h2x_proj_attachments
+{
+	tag_reference type; // 0x0
+	string_id marker; // 0x8
+	int16 change_color; // 0xc
+	int16 unknown; // 0xe
+	string_id primary_scale; // 0x10
+	string_id secondary_scale; // 0x14
+};
+ASSERT_STRUCT_SIZE(h2x_proj_attachments, 0x18);
+
+struct h2x_proj_widgets
+{
+	tag_reference type; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_proj_widgets, 0x8);
+
+struct h2x_proj_old_functions
+{
+	int8 pad_0[76];
+	string_id unknown; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_proj_old_functions, 0x50);
+
+struct h2x_proj_change_colors_initial_permutations
+{
+	real32 weight; // 0x0
+	real_rgb_color color_lower_bound; // 0x4
+	real_rgb_color color_upper_bound; // 0x10
+	string_id variant_name; // 0x1c
+};
+ASSERT_STRUCT_SIZE(h2x_proj_change_colors_initial_permutations, 0x20);
+
+struct h2x_proj_change_colors_functions
+{
+	int8 pad_0[4];
+	uint32 scale_flags; // 0x4
+	real_rgb_color color_lower_bound; // 0x8
+	real_rgb_color color_upper_bound; // 0x14
+	string_id darken_by; // 0x20
+	string_id scale_by; // 0x24
+};
+ASSERT_STRUCT_SIZE(h2x_proj_change_colors_functions, 0x28);
+
+struct h2x_proj_change_colors
+{
+	tag_block<h2x_proj_change_colors_initial_permutations> initial_permutations; // 0x0
+	tag_block<h2x_proj_change_colors_functions> functions; // 0x8
+};
+ASSERT_STRUCT_SIZE(h2x_proj_change_colors, 0x10);
+
+struct h2x_proj_predicted_resources
+{
+	int16 type; // 0x0
+	int16 resource_index; // 0x2
+	datum tag_index; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_proj_predicted_resources, 0x8);
+
+struct h2x_proj_material_responses
+{
+	uint16 flags; // 0x0
+	int16 default_response; // 0x2
+	tag_reference do_not_use_old_effect; // 0x4
+	string_id global_material_name; // 0xc
+	int16 global_material_index; // 0x10
+	int16 unknown; // 0x12
+	int16 potential_response; // 0x14
+	uint16 response_flags; // 0x16
+	real32 chance_fraction; // 0x18
+	real_bounds between_angle; // 0x1c
+	real_bounds and_velocity; // 0x24
+	tag_reference old_effect; // 0x2c
+	int16 scale_effects_by; // 0x34
+	int16 unknown_2; // 0x36
+	real32 angular_noise; // 0x38
+	real32 velocity_noise; // 0x3c
+	tag_reference old_effect_2; // 0x40
+	real32 initial_friction; // 0x48
+	real32 maximum_distance; // 0x4c
+	real32 parallel_friction; // 0x50
+	real32 perpendicular_friction; // 0x54
+};
+ASSERT_STRUCT_SIZE(h2x_proj_material_responses, 0x58);
+
+struct h2x_proj
+{
+	int16 object_type; // 0x0
+	uint16 flags; // 0x2
+	real32 bounding_radius; // 0x4
+	real_point3d bounding_offset; // 0x8
+	real32 acceleration_scale; // 0x14
+	int16 lightmap_shadow_mode; // 0x18
+	int8 sweetener_size; // 0x1a
+	int8 unknown; // 0x1b
+	uint32 runtime_flags; // 0x1c
+	real32 dynamic_light_sphere_radius; // 0x20
+	real_point3d dynamic_light_sphere_offset; // 0x24
+	string_id default_model_variant; // 0x30
+	tag_reference model; // 0x34
+	tag_reference crate_object; // 0x3c
+	tag_reference modifier_shader; // 0x44
+	tag_reference creation_effect; // 0x4c
+	tag_reference material_effects; // 0x54
+	tag_block<h2x_proj_ai_properties> ai_properties; // 0x5c
+	tag_block<h2x_proj_functions> functions; // 0x64
+	real32 apply_collision_damage_scale; // 0x6c
+	real_bounds game_acceleration; // 0x70
+	real_bounds game_scale; // 0x78
+	real_bounds absolute_acceleration; // 0x80
+	real_bounds absolute_scale; // 0x88
+	int16 hud_text_message_index; // 0x90
+	int16 unknown_2; // 0x92
+	tag_block<h2x_proj_attachments> attachments; // 0x94
+	tag_block<h2x_proj_widgets> widgets; // 0x9c
+	tag_block<h2x_proj_old_functions> old_functions; // 0xa4
+	tag_block<h2x_proj_change_colors> change_colors; // 0xac
+	tag_block<h2x_proj_predicted_resources> predicted_resources; // 0xb4
+	uint32 flags_2; // 0xbc
+	int16 detonation_timer_starts; // 0xc0
+	int16 impact_noise; // 0xc2
+	real32 ai_perception_radius; // 0xc4
+	real32 collision_radius; // 0xc8
+	real32 arming_time; // 0xcc
+	real32 danger_radius; // 0xd0
+	real_bounds timer; // 0xd4
+	real32 minimum_velocity; // 0xdc
+	real32 maximum_range; // 0xe0
+	int16 detonation_noise; // 0xe4
+	int16 super_detonation_projectile_count; // 0xe6
+	tag_reference detonation_started; // 0xe8
+	tag_reference airborne_detonation_effect; // 0xf0
+	tag_reference ground_detonation_effect; // 0xf8
+	tag_reference detonation_damage; // 0x100
+	tag_reference attached_detonation_damage; // 0x108
+	tag_reference super_detonation; // 0x110
+	tag_reference super_detonation_damage; // 0x118
+	tag_reference detonation_sound; // 0x120
+	int8 damage_reporting_type; // 0x128
+	int8 unknown_3; // 0x129
+	int16 unknown_4; // 0x12a
+	tag_reference attached_super_detonation_damage; // 0x12c
+	real32 material_effect_radius; // 0x134
+	tag_reference flyby_sound; // 0x138
+	tag_reference impact_effect; // 0x140
+	tag_reference impact_damage; // 0x148
+	real32 boarding_detonation_time; // 0x150
+	tag_reference boarding_detonation_damage; // 0x154
+	tag_reference boarding_attached_detonation_damage; // 0x15c
+	real32 air_gravity_scale; // 0x164
+	real_bounds air_damage_range; // 0x168
+	real32 water_gravity_scale; // 0x170
+	real_bounds water_damage_range; // 0x174
+	real32 initial_velocity; // 0x17c
+	real32 final_velocity; // 0x180
+	real32 guided_angular_velocity_lower; // 0x184
+	real32 guided_angular_velocity_upper; // 0x188
+	real_bounds acceleration_range; // 0x18c
+	real32 runtime_acceleration_bound_inverse; // 0x194
+	real32 targeted_leading_fraction; // 0x198
+	tag_block<h2x_proj_material_responses> material_responses; // 0x19c
+};
+ASSERT_STRUCT_SIZE(h2x_proj, 0x1a4);
+
+struct h2x_jpt_player_responses
+{
+	int16 response_type; // 0x0
+	int16 unknown; // 0x2
+	int16 type; // 0x4
+	int16 priority; // 0x6
+	real32 duration; // 0x8
+	int16 fade_function; // 0xc
+	int16 unknown_2; // 0xe
+	real32 maximum_intensity; // 0x10
+	real_argb_color color; // 0x14
+	real32 low_frequency_vibration_duration; // 0x24
+	tag_data low_frequency_vibration_function; // 0x28
+	real32 high_frequency_vibration_duration; // 0x30
+	tag_data high_frequency_vibration_function; // 0x34
+	string_id effect_name; // 0x3c
+	real32 duration_2; // 0x40
+	tag_data effect_scale_function; // 0x44
+};
+ASSERT_STRUCT_SIZE(h2x_jpt_player_responses, 0x4c);
+
+struct h2x_jpt
+{
+	real_bounds radius; // 0x0
+	real32 cutoff_scale; // 0x8
+	uint32 flags; // 0xc
+	int16 side_effect; // 0x10
+	int16 category; // 0x12
+	uint32 flags_2; // 0x14
+	real32 area_of_effect_core_radius; // 0x18
+	real32 damage_lower_bound; // 0x1c
+	real_bounds damage_upper_bound; // 0x20
+	real32 damage_inner_cone_angle; // 0x28
+	real32 damage_outer_cone_angle; // 0x2c
+	real32 active_camouflage_damage; // 0x30
+	real32 stun; // 0x34
+	real32 maximum_stun; // 0x38
+	real32 stun_time; // 0x3c
+	real32 instantaneous_acceleration; // 0x40
+	real32 rider_direct_damage_scale; // 0x44
+	real32 rider_maximum_transfer_damage_scale; // 0x48
+	real32 rider_minimum_transfer_damage_scale; // 0x4c
+	string_id general_damage; // 0x50
+	string_id specific_damage; // 0x54
+	real32 ai_stun_radius; // 0x58
+	real_bounds ai_stun_bounds; // 0x5c
+	real32 shake_radius; // 0x64
+	real32 emp_radius; // 0x68
+	tag_block<h2x_jpt_player_responses> player_responses; // 0x6c
+	real32 duration; // 0x74
+	int16 fade_function; // 0x78
+	int16 unknown; // 0x7a
+	real32 rotation; // 0x7c
+	real32 pushback; // 0x80
+	real_bounds jitter; // 0x84
+	real32 duration_2; // 0x8c
+	int16 falloff_function; // 0x90
+	int16 unknown_2; // 0x92
+	real32 random_translation; // 0x94
+	real32 random_rotation; // 0x98
+	int16 wobble_function; // 0x9c
+	int16 unknown_3; // 0x9e
+	real32 wobble_function_period; // 0xa0
+	real32 wobble_weight; // 0xa4
+	tag_reference sound; // 0xa8
+	real32 forward_velocity; // 0xb0
+	real32 forward_radius; // 0xb4
+	real32 forward_exponent; // 0xb8
+	real32 outward_velocity; // 0xbc
+	real32 outward_radius; // 0xc0
+	real32 outward_exponent; // 0xc4
+};
+ASSERT_STRUCT_SIZE(h2x_jpt, 0xc8);
+
+struct h2x_effe_locations
+{
+	string_id marker_name; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_effe_locations, 0x4);
+
+struct h2x_effe_events_parts
+{
+	int16 create_in; // 0x0
+	int16 create_in_2; // 0x2
+	int16 location_index; // 0x4
+	uint16 flags; // 0x6
+	int32 runtime_base_group_tag; // 0x8
+	tag_reference type; // 0xc
+	real_bounds velocity_bounds; // 0x14
+	real32 velocity_cone_angle; // 0x1c
+	real_bounds angular_velocity_bounds; // 0x20
+	real_bounds radius_modifier_bounds; // 0x28
+	uint32 a_scales_values; // 0x30
+	uint32 b_scales_values; // 0x34
+};
+ASSERT_STRUCT_SIZE(h2x_effe_events_parts, 0x38);
+
+struct h2x_effe_events_beams
+{
+	tag_reference shader; // 0x0
+	int16 location_index; // 0x8
+	int16 unknown; // 0xa
+	tag_data color_function; // 0xc
+	tag_data alpha_function; // 0x14
+	tag_data width_function; // 0x1c
+	tag_data length_function; // 0x24
+	tag_data yaw_function; // 0x2c
+	tag_data pitch_function; // 0x34
+};
+ASSERT_STRUCT_SIZE(h2x_effe_events_beams, 0x3c);
+
+struct h2x_effe_events_accelerations
+{
+	int16 create_in; // 0x0
+	int16 create_in_2; // 0x2
+	int16 location_index; // 0x4
+	int16 unknown; // 0x6
+	real32 acceleration; // 0x8
+	real32 inner_cone_angle; // 0xc
+	real32 outer_cone_angle; // 0x10
+};
+ASSERT_STRUCT_SIZE(h2x_effe_events_accelerations, 0x14);
+
+struct h2x_effe_events_particle_systems_emitters
+{
+	tag_reference particle_physics; // 0x0
+	int16 input_variable; // 0x8
+	int16 range_variable; // 0xa
+	int16 output_modifier; // 0xc
+	int16 output_modifier_input; // 0xe
+	tag_data function; // 0x10
+	int16 input_variable_2; // 0x18
+	int16 range_variable_2; // 0x1a
+	int16 output_modifier_2; // 0x1c
+	int16 output_modifier_input_2; // 0x1e
+	tag_data function_2; // 0x20
+	int16 input_variable_3; // 0x28
+	int16 range_variable_3; // 0x2a
+	int16 output_modifier_3; // 0x2c
+	int16 output_modifier_input_3; // 0x2e
+	tag_data function_3; // 0x30
+	int16 input_variable_4; // 0x38
+	int16 range_variable_4; // 0x3a
+	int16 output_modifier_4; // 0x3c
+	int16 output_modifier_input_4; // 0x3e
+	tag_data function_4; // 0x40
+	int16 input_variable_5; // 0x48
+	int16 range_variable_5; // 0x4a
+	int16 output_modifier_5; // 0x4c
+	int16 output_modifier_input_5; // 0x4e
+	tag_data function_5; // 0x50
+	int16 input_variable_6; // 0x58
+	int16 range_variable_6; // 0x5a
+	int16 output_modifier_6; // 0x5c
+	int16 output_modifier_input_6; // 0x5e
+	tag_data function_6; // 0x60
+	int16 input_variable_7; // 0x68
+	int16 range_variable_7; // 0x6a
+	int16 output_modifier_7; // 0x6c
+	int16 output_modifier_input_7; // 0x6e
+	tag_data function_7; // 0x70
+	int32 emission_shape; // 0x78
+	int16 input_variable_8; // 0x7c
+	int16 range_variable_8; // 0x7e
+	int16 output_modifier_8; // 0x80
+	int16 output_modifier_input_8; // 0x82
+	tag_data function_8; // 0x84
+	int16 input_variable_9; // 0x8c
+	int16 range_variable_9; // 0x8e
+	int16 output_modifier_9; // 0x90
+	int16 output_modifier_input_9; // 0x92
+	tag_data function_9; // 0x94
+	real_point3d translational_offset; // 0x9c
+	real_euler_angles2d relative_direction; // 0xa8
+	int32 unknown; // 0xb0
+	int32 unknown_2; // 0xb4
+};
+ASSERT_STRUCT_SIZE(h2x_effe_events_particle_systems_emitters, 0xb8);
+
+struct h2x_effe_events_particle_systems
+{
+	tag_reference particle; // 0x0
+	int16 location_index; // 0x8
+	int16 unknown; // 0xa
+	int16 coordinate_system; // 0xc
+	int16 environment; // 0xe
+	int16 disposition; // 0x10
+	int16 camera_mode; // 0x12
+	int16 sort_bias; // 0x14
+	uint16 flags; // 0x16
+	real32 lod_in_distance; // 0x18
+	real32 lod_feather_in_delta; // 0x1c
+	real32 inverse_lod_feather_in; // 0x20
+	real32 lod_out_distance; // 0x24
+	real32 lod_feather_out_delta; // 0x28
+	real32 inverse_lod_feather_out; // 0x2c
+	tag_block<h2x_effe_events_particle_systems_emitters> emitters; // 0x30
+};
+ASSERT_STRUCT_SIZE(h2x_effe_events_particle_systems, 0x38);
+
+struct h2x_effe_events
+{
+	uint32 flags; // 0x0
+	real32 skip_fraction; // 0x4
+	real_bounds delay_bounds; // 0x8
+	real_bounds duration_bounds; // 0x10
+	tag_block<h2x_effe_events_parts> parts; // 0x18
+	tag_block<h2x_effe_events_beams> beams; // 0x20
+	tag_block<h2x_effe_events_accelerations> accelerations; // 0x28
+	tag_block<h2x_effe_events_particle_systems> particle_systems; // 0x30
+};
+ASSERT_STRUCT_SIZE(h2x_effe_events, 0x38);
+
+struct h2x_effe
+{
+	uint32 flags; // 0x0
+	int16 loop_start_event_index; // 0x4
+	int16 local_location_0; // 0x6
+	real32 damage_radius; // 0x8
+	tag_block<h2x_effe_locations> locations; // 0xc
+	tag_block<h2x_effe_events> events; // 0x14
+	tag_reference looping_sound; // 0x1c
+	int16 location_index; // 0x24
+	int16 unknown; // 0x26
+	real32 always_play_distance; // 0x28
+	real32 never_play_distance; // 0x2c
+};
+ASSERT_STRUCT_SIZE(h2x_effe, 0x30);
+
+struct h2x_matg_havok_cleanup_resources
+{
+	tag_reference object_cleanup_effect; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_havok_cleanup_resources, 0x8);
+
+struct h2x_matg_collision_damage
+{
+	tag_reference collision_damage; // 0x0
+	real32 minimum_game_acceleration; // 0x8
+	real32 maximum_game_acceleration; // 0xc
+	real32 minimum_game_scale; // 0x10
+	real32 maximum_game_scale; // 0x14
+	real32 minimum_absolute_acceleration; // 0x18
+	real32 maximum_absolute_acceleration; // 0x1c
+	real32 minimum_absolute_scale; // 0x20
+	real32 maximum_absolute_scale; // 0x24
+	int8 pad_28[32];
+};
+ASSERT_STRUCT_SIZE(h2x_matg_collision_damage, 0x48);
+
+struct h2x_matg_sound_globals
+{
+	tag_reference sound_classes; // 0x0
+	tag_reference sound_effects; // 0x8
+	tag_reference sound_mix; // 0x10
+	tag_reference sound_combat_dialogue_constants; // 0x18
+	datum sound_gestalt; // 0x20
+};
+ASSERT_STRUCT_SIZE(h2x_matg_sound_globals, 0x24);
+
+struct h2x_matg_ai_globals_gravemind_properties
+{
+	real32 minimum_retreat_time; // 0x0
+	real32 ideal_retreat_time; // 0x4
+	real32 maximum_retreat_time; // 0x8
+};
+ASSERT_STRUCT_SIZE(h2x_matg_ai_globals_gravemind_properties, 0xc);
+
+struct h2x_matg_ai_globals
+{
+	real32 danger_broadly_facing; // 0x0
+	int8 pad_4[4];
+	real32 danger_shooting_near; // 0x8
+	int8 pad_c[4];
+	real32 danger_shooting_at; // 0x10
+	int8 pad_14[4];
+	real32 danger_extremely_close; // 0x18
+	int8 pad_1c[4];
+	real32 danger_shield_damage; // 0x20
+	real32 danger_extended_shield_damage; // 0x24
+	real32 danger_body_damage; // 0x28
+	real32 danger_extended_body_damage; // 0x2c
+	int8 pad_30[48];
+	tag_reference global_dialogue_tag; // 0x60
+	string_id default_mission_dialogue_sound_effect; // 0x68
+	int8 pad_6c[20];
+	real32 jump_down; // 0x80
+	real32 jump_step; // 0x84
+	real32 jump_crouch; // 0x88
+	real32 jump_stand; // 0x8c
+	real32 jump_storey; // 0x90
+	real32 jump_tower; // 0x94
+	real32 maximum_jump_down_height_down; // 0x98
+	real32 maximum_jump_down_height_step; // 0x9c
+	real32 maximum_jump_down_height_crouch; // 0xa0
+	real32 maximum_jump_down_height_stand; // 0xa4
+	real32 maximum_jump_down_height_storey; // 0xa8
+	real32 maximum_jump_down_height_tower; // 0xac
+	real_bounds hoist_step; // 0xb0
+	real_bounds hoist_crouch; // 0xb8
+	real_bounds hoist_stand; // 0xc0
+	int8 pad_c8[24];
+	real_bounds vault_step; // 0xe0
+	real_bounds vault_crouch; // 0xe8
+	int8 pad_f0[48];
+	tag_block<h2x_matg_ai_globals_gravemind_properties> gravemind_properties; // 0x120
+	int8 pad_128[48];
+	real32 scary_target_threshold; // 0x158
+	real32 scary_weapon_threshold; // 0x15c
+	real32 player_scariness; // 0x160
+	real32 berserking_actor_scariness; // 0x164
+};
+ASSERT_STRUCT_SIZE(h2x_matg_ai_globals, 0x168);
+
+struct h2x_matg_damage_table_damage_groups_armor_modifiers
+{
+	string_id name; // 0x0
+	real32 damage_multiplier; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_matg_damage_table_damage_groups_armor_modifiers, 0x8);
+
+struct h2x_matg_damage_table_damage_groups
+{
+	string_id name; // 0x0
+	tag_block<h2x_matg_damage_table_damage_groups_armor_modifiers> armor_modifiers; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_matg_damage_table_damage_groups, 0xc);
+
+struct h2x_matg_damage_table
+{
+	tag_block<h2x_matg_damage_table_damage_groups> damage_groups; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_damage_table, 0x8);
+
+struct h2x_matg_unknown
+{
+	int8 unused;
+};
+
+struct h2x_matg_sounds
+{
+	tag_reference sound; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_sounds, 0x8);
+
+struct h2x_matg_camera
+{
+	tag_reference default_unit_camera_track; // 0x0
+	real32 default_change_pause; // 0x8
+	real32 first_person_change_pause; // 0xc
+	real32 following_camera_change_pause; // 0x10
+};
+ASSERT_STRUCT_SIZE(h2x_matg_camera, 0x14);
+
+struct h2x_matg_player_control_look_function
+{
+	real32 scale; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_player_control_look_function, 0x4);
+
+struct h2x_matg_player_control
+{
+	real32 magnetism_friction; // 0x0
+	real32 magnetism_adhesion; // 0x4
+	real32 inconsequential_target_scale; // 0x8
+	int8 pad_c[12];
+	real_point2d crosshair_location; // 0x18
+	real32 seconds_to_start; // 0x20
+	real32 seconds_to_full_speed; // 0x24
+	real32 decay_rate; // 0x28
+	real32 full_speed_multiplier; // 0x2c
+	real32 pegged_magnitude; // 0x30
+	real32 pegged_angular_threshold; // 0x34
+	int8 pad_38[8];
+	real32 look_default_pitch_rate; // 0x40
+	real32 look_default_yaw_rate; // 0x44
+	real32 look_peg_threshold; // 0x48
+	real32 look_yaw_acceleration_time; // 0x4c
+	real32 look_yaw_acceleration_scale; // 0x50
+	real32 look_pitch_acceleration_time; // 0x54
+	real32 look_pitch_acceleration_scale; // 0x58
+	real32 look_autoleveling_scale; // 0x5c
+	int8 pad_60[8];
+	real32 gravity_scale; // 0x68
+	int16 unknown; // 0x6c
+	int16 minimum_autoleveling_ticks; // 0x6e
+	real32 minimum_angle_for_vehicle_flipping; // 0x70
+	tag_block<h2x_matg_player_control_look_function> look_function; // 0x74
+	real32 minimum_action_hold_time; // 0x7c
+};
+ASSERT_STRUCT_SIZE(h2x_matg_player_control, 0x80);
+
+struct h2x_matg_difficulty
+{
+	real32 easy_enemy_damage; // 0x0
+	real32 normal_enemy_damage; // 0x4
+	real32 hard_enemy_damage; // 0x8
+	real32 impossible_enemy_damage; // 0xc
+	real32 easy_enemy_vitality; // 0x10
+	real32 normal_enemy_vitality; // 0x14
+	real32 hard_enemy_vitality; // 0x18
+	real32 impossible_enemy_vitality; // 0x1c
+	real32 easy_enemy_shield; // 0x20
+	real32 normal_enemy_shield; // 0x24
+	real32 hard_enemy_shield; // 0x28
+	real32 impossible_enemy_shield; // 0x2c
+	real32 easy_enemy_recharge; // 0x30
+	real32 normal_enemy_recharge; // 0x34
+	real32 hard_enemy_recharge; // 0x38
+	real32 impossible_enemy_recharge; // 0x3c
+	real32 easy_friend_damage; // 0x40
+	real32 normal_friend_damage; // 0x44
+	real32 hard_friend_damage; // 0x48
+	real32 impossible_friend_damage; // 0x4c
+	real32 easy_friend_vitality; // 0x50
+	real32 normal_friend_vitality; // 0x54
+	real32 hard_friend_vitality; // 0x58
+	real32 impossible_friend_vitality; // 0x5c
+	real32 easy_friend_shield; // 0x60
+	real32 normal_friend_shield; // 0x64
+	real32 hard_friend_shield; // 0x68
+	real32 impossible_friend_shield; // 0x6c
+	real32 easy_friend_recharge; // 0x70
+	real32 normal_friend_recharge; // 0x74
+	real32 hard_friend_recharge; // 0x78
+	real32 impossible_friend_recharge; // 0x7c
+	real32 easy_infection_forms; // 0x80
+	real32 normal_infection_forms; // 0x84
+	real32 hard_infection_forms; // 0x88
+	real32 impossible_infection_forms; // 0x8c
+	int8 pad_90[16];
+	real32 easy_rate_of_fire; // 0xa0
+	real32 normal_rate_of_fire; // 0xa4
+	real32 hard_rate_of_fire; // 0xa8
+	real32 impossible_rate_of_fire; // 0xac
+	real32 easy_projectile_error; // 0xb0
+	real32 normal_projectile_error; // 0xb4
+	real32 hard_projectile_error; // 0xb8
+	real32 impossible_projectile_error; // 0xbc
+	real32 easy_burst_error; // 0xc0
+	real32 normal_burst_error; // 0xc4
+	real32 hard_burst_error; // 0xc8
+	real32 impossible_burst_error; // 0xcc
+	real32 easy_new_target_delay; // 0xd0
+	real32 normal_new_target_delay; // 0xd4
+	real32 hard_new_target_delay; // 0xd8
+	real32 impossible_new_target_delay; // 0xdc
+	real32 easy_burst_separation; // 0xe0
+	real32 normal_burst_separation; // 0xe4
+	real32 hard_burst_separation; // 0xe8
+	real32 impossible_burst_separation; // 0xec
+	real32 easy_target_tracking; // 0xf0
+	real32 normal_target_tracking; // 0xf4
+	real32 hard_target_tracking; // 0xf8
+	real32 impossible_target_tracking; // 0xfc
+	real32 easy_target_leading; // 0x100
+	real32 normal_target_leading; // 0x104
+	real32 hard_target_leading; // 0x108
+	real32 impossible_target_leading; // 0x10c
+	real32 easy_overcharge_chance; // 0x110
+	real32 normal_overcharge_chance; // 0x114
+	real32 hard_overcharge_chance; // 0x118
+	real32 impossible_overcharge_chance; // 0x11c
+	real32 easy_special_fire_delay; // 0x120
+	real32 normal_special_fire_delay; // 0x124
+	real32 hard_special_fire_delay; // 0x128
+	real32 impossible_special_fire_delay; // 0x12c
+	real32 easy_guidance_vs_player; // 0x130
+	real32 normal_guidance_vs_player; // 0x134
+	real32 hard_guidance_vs_player; // 0x138
+	real32 impossible_guidance_vs_player; // 0x13c
+	real32 easy_melee_delay_base; // 0x140
+	real32 normal_melee_delay_base; // 0x144
+	real32 hard_melee_delay_base; // 0x148
+	real32 impossible_melee_delay_base; // 0x14c
+	real32 easy_melee_delay_scale; // 0x150
+	real32 normal_melee_delay_scale; // 0x154
+	real32 hard_melee_delay_scale; // 0x158
+	real32 impossible_melee_delay_scale; // 0x15c
+	int8 pad_160[16];
+	real32 easy_grenade_chance_scale; // 0x170
+	real32 normal_grenade_chance_scale; // 0x174
+	real32 hard_grenade_chance_scale; // 0x178
+	real32 impossible_grenade_chance_scale; // 0x17c
+	real32 easy_grenade_timer_scale; // 0x180
+	real32 normal_grenade_timer_scale; // 0x184
+	real32 hard_grenade_timer_scale; // 0x188
+	real32 impossible_grenade_timer_scale; // 0x18c
+	int8 pad_190[48];
+	real32 easy_major_upgrade_normal; // 0x1c0
+	real32 normal_major_upgrade_normal; // 0x1c4
+	real32 hard_major_upgrade_normal; // 0x1c8
+	real32 impossible_major_upgrade_normal; // 0x1cc
+	real32 easy_major_upgrade_few; // 0x1d0
+	real32 normal_major_upgrade_few; // 0x1d4
+	real32 hard_major_upgrade_few; // 0x1d8
+	real32 impossible_major_upgrade_few; // 0x1dc
+	real32 easy_major_upgrade_many; // 0x1e0
+	real32 normal_major_upgrade_many; // 0x1e4
+	real32 hard_major_upgrade_many; // 0x1e8
+	real32 impossible_major_upgrade_many; // 0x1ec
+	real32 easy_player_vehicle_ram_chance; // 0x1f0
+	real32 normal_player_vehicle_ram_chance; // 0x1f4
+	real32 hard_player_vehicle_ram_chance; // 0x1f8
+	real32 impossible_player_vehicle_ram_chance; // 0x1fc
+	int8 pad_200[132];
+};
+ASSERT_STRUCT_SIZE(h2x_matg_difficulty, 0x284);
+
+struct h2x_matg_grenades
+{
+	int16 maximum_count; // 0x0
+	int16 unknown; // 0x2
+	tag_reference throwing_effect; // 0x4
+	int8 pad_c[16];
+	tag_reference equipment; // 0x1c
+	tag_reference projectile; // 0x24
+};
+ASSERT_STRUCT_SIZE(h2x_matg_grenades, 0x2c);
+
+struct h2x_matg_rasterizer_data_global_vertex_shaders
+{
+	tag_reference vertex_shader; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_rasterizer_data_global_vertex_shaders, 0x8);
+
+struct h2x_matg_rasterizer_data
+{
+	tag_reference distance_attenuation; // 0x0
+	tag_reference vector_normalization; // 0x8
+	tag_reference gradients; // 0x10
+	tag_reference unused; // 0x18
+	tag_reference unused_2; // 0x20
+	tag_reference unused_3; // 0x28
+	tag_reference glow; // 0x30
+	tag_reference unused_4; // 0x38
+	tag_reference unused_5; // 0x40
+	int8 pad_48[16];
+	tag_block<h2x_matg_rasterizer_data_global_vertex_shaders> global_vertex_shaders; // 0x58
+	tag_reference default_2d; // 0x60
+	tag_reference default_3d; // 0x68
+	tag_reference default_cube_map; // 0x70
+	tag_reference unused_6; // 0x78
+	tag_reference unused_7; // 0x80
+	tag_reference unused_8; // 0x88
+	tag_reference unused_9; // 0x90
+	tag_reference unused_10; // 0x98
+	tag_reference unused_11; // 0xa0
+	int8 pad_a8[36];
+	tag_reference global_shader; // 0xcc
+	uint16 flags; // 0xd4
+	int16 unknown; // 0xd6
+	real32 refraction_amount; // 0xd8
+	real32 distance_falloff; // 0xdc
+	real_rgb_color tint_color; // 0xe0
+	real32 hyper_stealth_refraction; // 0xec
+	real32 hyper_stealth_distance_falloff; // 0xf0
+	real_rgb_color hyper_stealth_tint_color; // 0xf4
+	tag_reference unused_12; // 0x100
+};
+ASSERT_STRUCT_SIZE(h2x_matg_rasterizer_data, 0x108);
+
+struct h2x_matg_interface_tags
+{
+	tag_reference spinner; // 0x0
+	tag_reference obsolete; // 0x8
+	tag_reference screen_color_table; // 0x10
+	tag_reference hud_color_table; // 0x18
+	tag_reference editor_color_table; // 0x20
+	tag_reference dialog_color_table; // 0x28
+	tag_reference hud_globals; // 0x30
+	tag_reference motion_sensor_sweep_bitmap; // 0x38
+	tag_reference motion_sensor_sweep_bitmap_mask; // 0x40
+	tag_reference multiplayer_hud_bitmap; // 0x48
+	tag_reference unknown; // 0x50
+	tag_reference hud_digits_definition; // 0x58
+	tag_reference motion_sensor_blip_bitmap; // 0x60
+	tag_reference interface_goo_map_1; // 0x68
+	tag_reference interface_goo_map_2; // 0x70
+	tag_reference interface_goo_map_3; // 0x78
+	tag_reference main_menu_ui_globals; // 0x80
+	tag_reference single_player_ui_globals; // 0x88
+	tag_reference multiplayer_ui_globals; // 0x90
+};
+ASSERT_STRUCT_SIZE(h2x_matg_interface_tags, 0x98);
+
+struct h2x_matg_weapon_list
+{
+	tag_reference weapon; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_weapon_list, 0x8);
+
+struct h2x_matg_cheat_powerups
+{
+	tag_reference powerup; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_cheat_powerups, 0x8);
+
+struct h2x_matg_multiplayer_information_vehicles
+{
+	tag_reference vehicle; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_information_vehicles, 0x8);
+
+struct h2x_matg_multiplayer_information_sounds
+{
+	tag_reference sound; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_information_sounds, 0x8);
+
+struct h2x_matg_multiplayer_information_general_events_sound_permutations
+{
+	uint16 sound_flags; // 0x0
+	int16 unknown; // 0x2
+	tag_reference english_sound; // 0x4
+	tag_reference japanese_sound; // 0xc
+	tag_reference german_sound; // 0x14
+	tag_reference french_sound; // 0x1c
+	tag_reference spanish_sound; // 0x24
+	tag_reference italian_sound; // 0x2c
+	tag_reference korean_sound; // 0x34
+	tag_reference chinese_sound; // 0x3c
+	tag_reference portuguese_sound; // 0x44
+	real32 probability; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_information_general_events_sound_permutations, 0x50);
+
+struct h2x_matg_multiplayer_information_general_events
+{
+	uint16 flags; // 0x0
+	int16 unknown; // 0x2
+	int16 event; // 0x4
+	int16 audience; // 0x6
+	int16 unknown_2; // 0x8
+	int16 unknown_3; // 0xa
+	string_id display_string; // 0xc
+	int16 required_field; // 0x10
+	int16 excluded_audience; // 0x12
+	string_id primary_string; // 0x14
+	int32 primary_string_duration; // 0x18
+	string_id plural_display_string; // 0x1c
+	int8 pad_20[28];
+	real32 sound_delay_announcer_only; // 0x3c
+	uint16 sound_flags; // 0x40
+	int16 unknown_4; // 0x42
+	tag_reference sound; // 0x44
+	tag_reference japanese_sound; // 0x4c
+	tag_reference german_sound; // 0x54
+	tag_reference french_sound; // 0x5c
+	tag_reference spanish_sound; // 0x64
+	tag_reference italian_sound; // 0x6c
+	tag_reference korean_sound; // 0x74
+	tag_reference chinese_sound; // 0x7c
+	tag_reference portuguese_sound; // 0x84
+	int8 pad_8c[20];
+	tag_block<h2x_matg_multiplayer_information_general_events_sound_permutations> sound_permutations; // 0xa0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_information_general_events, 0xa8);
+
+struct h2x_matg_multiplayer_information_slayer_events_sound_permutations
+{
+	uint16 sound_flags; // 0x0
+	int16 unknown; // 0x2
+	tag_reference english_sound; // 0x4
+	tag_reference japanese_sound; // 0xc
+	tag_reference german_sound; // 0x14
+	tag_reference french_sound; // 0x1c
+	tag_reference spanish_sound; // 0x24
+	tag_reference italian_sound; // 0x2c
+	tag_reference korean_sound; // 0x34
+	tag_reference chinese_sound; // 0x3c
+	tag_reference portuguese_sound; // 0x44
+	real32 probability; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_information_slayer_events_sound_permutations, 0x50);
+
+struct h2x_matg_multiplayer_information_slayer_events
+{
+	uint16 flags; // 0x0
+	int16 unknown; // 0x2
+	int16 event; // 0x4
+	int16 audience; // 0x6
+	int16 unknown_2; // 0x8
+	int16 unknown_3; // 0xa
+	string_id display_string; // 0xc
+	int16 required_field; // 0x10
+	int16 excluded_audience; // 0x12
+	string_id primary_string; // 0x14
+	int32 primary_string_duration; // 0x18
+	string_id plural_display_string; // 0x1c
+	int8 pad_20[28];
+	real32 sound_delay_announcer_only; // 0x3c
+	uint16 sound_flags; // 0x40
+	int16 unknown_4; // 0x42
+	tag_reference sound; // 0x44
+	tag_reference japanese_sound; // 0x4c
+	tag_reference german_sound; // 0x54
+	tag_reference french_sound; // 0x5c
+	tag_reference spanish_sound; // 0x64
+	tag_reference italian_sound; // 0x6c
+	tag_reference korean_sound; // 0x74
+	tag_reference chinese_sound; // 0x7c
+	tag_reference portuguese_sound; // 0x84
+	int8 pad_8c[20];
+	tag_block<h2x_matg_multiplayer_information_slayer_events_sound_permutations> sound_permutations; // 0xa0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_information_slayer_events, 0xa8);
+
+struct h2x_matg_multiplayer_information_ctf_events_sound_permutations
+{
+	uint16 sound_flags; // 0x0
+	int16 unknown; // 0x2
+	tag_reference english_sound; // 0x4
+	tag_reference japanese_sound; // 0xc
+	tag_reference german_sound; // 0x14
+	tag_reference french_sound; // 0x1c
+	tag_reference spanish_sound; // 0x24
+	tag_reference italian_sound; // 0x2c
+	tag_reference korean_sound; // 0x34
+	tag_reference chinese_sound; // 0x3c
+	tag_reference portuguese_sound; // 0x44
+	real32 probability; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_information_ctf_events_sound_permutations, 0x50);
+
+struct h2x_matg_multiplayer_information_ctf_events
+{
+	uint16 flags; // 0x0
+	int16 unknown; // 0x2
+	int16 event; // 0x4
+	int16 audience; // 0x6
+	int16 unknown_2; // 0x8
+	int16 unknown_3; // 0xa
+	string_id display_string; // 0xc
+	int16 required_field; // 0x10
+	int16 excluded_audience; // 0x12
+	string_id primary_string; // 0x14
+	int32 primary_string_duration; // 0x18
+	string_id plural_display_string; // 0x1c
+	int8 pad_20[28];
+	real32 sound_delay_announcer_only; // 0x3c
+	uint16 sound_flags; // 0x40
+	int16 unknown_4; // 0x42
+	tag_reference sound; // 0x44
+	tag_reference japanese_sound; // 0x4c
+	tag_reference german_sound; // 0x54
+	tag_reference french_sound; // 0x5c
+	tag_reference spanish_sound; // 0x64
+	tag_reference italian_sound; // 0x6c
+	tag_reference korean_sound; // 0x74
+	tag_reference chinese_sound; // 0x7c
+	tag_reference portuguese_sound; // 0x84
+	int8 pad_8c[20];
+	tag_block<h2x_matg_multiplayer_information_ctf_events_sound_permutations> sound_permutations; // 0xa0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_information_ctf_events, 0xa8);
+
+struct h2x_matg_multiplayer_information_oddball_events_sound_permutations
+{
+	uint16 sound_flags; // 0x0
+	int16 unknown; // 0x2
+	tag_reference english_sound; // 0x4
+	tag_reference japanese_sound; // 0xc
+	tag_reference german_sound; // 0x14
+	tag_reference french_sound; // 0x1c
+	tag_reference spanish_sound; // 0x24
+	tag_reference italian_sound; // 0x2c
+	tag_reference korean_sound; // 0x34
+	tag_reference chinese_sound; // 0x3c
+	tag_reference portuguese_sound; // 0x44
+	real32 probability; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_information_oddball_events_sound_permutations, 0x50);
+
+struct h2x_matg_multiplayer_information_oddball_events
+{
+	uint16 flags; // 0x0
+	int16 unknown; // 0x2
+	int16 event; // 0x4
+	int16 audience; // 0x6
+	int16 unknown_2; // 0x8
+	int16 unknown_3; // 0xa
+	string_id display_string; // 0xc
+	int16 required_field; // 0x10
+	int16 excluded_audience; // 0x12
+	string_id primary_string; // 0x14
+	int32 primary_string_duration; // 0x18
+	string_id plural_display_string; // 0x1c
+	int8 pad_20[28];
+	real32 sound_delay_announcer_only; // 0x3c
+	uint16 sound_flags; // 0x40
+	int16 unknown_4; // 0x42
+	tag_reference sound; // 0x44
+	tag_reference japanese_sound; // 0x4c
+	tag_reference german_sound; // 0x54
+	tag_reference french_sound; // 0x5c
+	tag_reference spanish_sound; // 0x64
+	tag_reference italian_sound; // 0x6c
+	tag_reference korean_sound; // 0x74
+	tag_reference chinese_sound; // 0x7c
+	tag_reference portuguese_sound; // 0x84
+	int8 pad_8c[20];
+	tag_block<h2x_matg_multiplayer_information_oddball_events_sound_permutations> sound_permutations; // 0xa0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_information_oddball_events, 0xa8);
+
+struct h2x_matg_multiplayer_information_unknown
+{
+	int8 unused;
+};
+
+struct h2x_matg_multiplayer_information_king_events_sound_permutations
+{
+	uint16 sound_flags; // 0x0
+	int16 unknown; // 0x2
+	tag_reference english_sound; // 0x4
+	tag_reference japanese_sound; // 0xc
+	tag_reference german_sound; // 0x14
+	tag_reference french_sound; // 0x1c
+	tag_reference spanish_sound; // 0x24
+	tag_reference italian_sound; // 0x2c
+	tag_reference korean_sound; // 0x34
+	tag_reference chinese_sound; // 0x3c
+	tag_reference portuguese_sound; // 0x44
+	real32 probability; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_information_king_events_sound_permutations, 0x50);
+
+struct h2x_matg_multiplayer_information_king_events
+{
+	uint16 flags; // 0x0
+	int16 unknown; // 0x2
+	int16 event; // 0x4
+	int16 audience; // 0x6
+	int16 unknown_2; // 0x8
+	int16 unknown_3; // 0xa
+	string_id display_string; // 0xc
+	int16 required_field; // 0x10
+	int16 excluded_audience; // 0x12
+	string_id primary_string; // 0x14
+	int32 primary_string_duration; // 0x18
+	string_id plural_display_string; // 0x1c
+	int8 pad_20[28];
+	real32 sound_delay_announcer_only; // 0x3c
+	uint16 sound_flags; // 0x40
+	int16 unknown_4; // 0x42
+	tag_reference sound; // 0x44
+	tag_reference japanese_sound; // 0x4c
+	tag_reference german_sound; // 0x54
+	tag_reference french_sound; // 0x5c
+	tag_reference spanish_sound; // 0x64
+	tag_reference italian_sound; // 0x6c
+	tag_reference korean_sound; // 0x74
+	tag_reference chinese_sound; // 0x7c
+	tag_reference portuguese_sound; // 0x84
+	int8 pad_8c[20];
+	tag_block<h2x_matg_multiplayer_information_king_events_sound_permutations> sound_permutations; // 0xa0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_information_king_events, 0xa8);
+
+struct h2x_matg_multiplayer_information
+{
+	tag_reference flag; // 0x0
+	tag_reference unit; // 0x8
+	tag_block<h2x_matg_multiplayer_information_vehicles> vehicles; // 0x10
+	tag_reference hill_shader; // 0x18
+	tag_reference flag_shader; // 0x20
+	tag_reference ball; // 0x28
+	tag_block<h2x_matg_multiplayer_information_sounds> sounds; // 0x30
+	tag_reference in_game_text; // 0x38
+	int8 pad_40[40];
+	tag_block<h2x_matg_multiplayer_information_general_events> general_events; // 0x68
+	tag_block<h2x_matg_multiplayer_information_slayer_events> slayer_events; // 0x70
+	tag_block<h2x_matg_multiplayer_information_ctf_events> ctf_events; // 0x78
+	tag_block<h2x_matg_multiplayer_information_oddball_events> oddball_events; // 0x80
+	tag_block<h2x_matg_multiplayer_information_unknown> unknown; // 0x88
+	tag_block<h2x_matg_multiplayer_information_king_events> king_events; // 0x90
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_information, 0x98);
+
+struct h2x_matg_player_information
+{
+	tag_reference unused; // 0x0
+	int8 pad_8[28];
+	real32 walking_speed; // 0x24
+	int8 pad_28[4];
+	real32 run_forward; // 0x2c
+	real32 run_backward; // 0x30
+	real32 run_sideways; // 0x34
+	real32 run_acceleration; // 0x38
+	real32 sneak_forward; // 0x3c
+	real32 sneak_backward; // 0x40
+	real32 sneak_sideways; // 0x44
+	real32 sneak_acceleration; // 0x48
+	real32 airborne_acceleration; // 0x4c
+	int8 pad_50[16];
+	real_point3d grenade_origin; // 0x60
+	int8 pad_6c[12];
+	real32 stun_movement_penalty; // 0x78
+	real32 stun_turning_penalty; // 0x7c
+	real32 stun_jumping_penalty; // 0x80
+	real32 minimum_stun_time; // 0x84
+	real32 maximum_stun_time; // 0x88
+	int8 pad_8c[8];
+	real_bounds first_person_idle_time; // 0x94
+	real32 first_person_skip_fraction; // 0x9c
+	int8 pad_a0[16];
+	tag_reference coop_respawn_effect; // 0xb0
+	int32 binoculars_zoom_count; // 0xb8
+	real_bounds binoculars_zoom_range; // 0xbc
+	tag_reference binoculars_zoom_in_sound; // 0xc4
+	tag_reference binoculars_zoom_out_sound; // 0xcc
+	int8 pad_d4[16];
+	tag_reference active_camouflage_on; // 0xe4
+	tag_reference active_camouflage_off; // 0xec
+	tag_reference active_camouflage_error; // 0xf4
+	tag_reference active_camouflage_ready; // 0xfc
+	tag_reference flashlight_on; // 0x104
+	tag_reference flashlight_off; // 0x10c
+	tag_reference ice_cream; // 0x114
+};
+ASSERT_STRUCT_SIZE(h2x_matg_player_information, 0x11c);
+
+struct h2x_matg_player_representation
+{
+	tag_reference first_person_hands_model; // 0x0
+	tag_reference first_person_body_model; // 0x8
+	int8 pad_10[160];
+	tag_reference third_person_unit; // 0xb0
+	string_id third_person_variant; // 0xb8
+};
+ASSERT_STRUCT_SIZE(h2x_matg_player_representation, 0xbc);
+
+struct h2x_matg_falling_damage
+{
+	int8 pad_0[8];
+	real_bounds harmful_falling_distance; // 0x8
+	tag_reference falling_damage; // 0x10
+	int8 pad_18[8];
+	real32 maximum_falling_distance; // 0x20
+	tag_reference distance_damage; // 0x24
+	tag_reference vehicle_environment_collision_damage_effect; // 0x2c
+	tag_reference vehicle_killed_unit_damage_effect; // 0x34
+	tag_reference vehicle_collision_damage; // 0x3c
+	tag_reference flaming_death_damage; // 0x44
+	int8 pad_4c[16];
+	real32 maximum_falling_velocity; // 0x5c
+	real_bounds damage_velocity_bounds; // 0x60
+};
+ASSERT_STRUCT_SIZE(h2x_matg_falling_damage, 0x68);
+
+struct h2x_matg_old_materials
+{
+	string_id new_material_name; // 0x0
+	string_id new_general_material_name; // 0x4
+	real32 ground_friction_scale; // 0x8
+	real32 ground_friction_normal_k1_scale; // 0xc
+	real32 ground_friction_normal_k0_scale; // 0x10
+	real32 ground_depth_scale; // 0x14
+	real32 ground_damp_fraction_scale; // 0x18
+	tag_reference melee_hit_sound; // 0x1c
+};
+ASSERT_STRUCT_SIZE(h2x_matg_old_materials, 0x24);
+
+struct h2x_matg_materials
+{
+	string_id name; // 0x0
+	string_id parent_name; // 0x4
+	int16 unknown; // 0x8
+	uint16 flags; // 0xa
+	int16 old_material_type; // 0xc
+	int16 unknown_2; // 0xe
+	string_id general_armor; // 0x10
+	string_id specific_armor; // 0x14
+	uint32 flags_2; // 0x18
+	real32 friction; // 0x1c
+	real32 restitution; // 0x20
+	real32 density; // 0x24
+	tag_reference old_material_physics; // 0x28
+	tag_reference breakable_surface; // 0x30
+	tag_reference sound_sweetener_small; // 0x38
+	tag_reference sound_sweetener_medium; // 0x40
+	tag_reference sound_sweetener_large; // 0x48
+	tag_reference sound_sweetener_rolling; // 0x50
+	tag_reference sound_sweetener_grinding; // 0x58
+	tag_reference sound_sweetener_melee; // 0x60
+	tag_reference unknown_3; // 0x68
+	tag_reference effect_sweetener_small; // 0x70
+	tag_reference effect_sweetener_medium; // 0x78
+	tag_reference effect_sweetener_large; // 0x80
+	tag_reference effect_sweetener_rolling; // 0x88
+	tag_reference effect_sweetener_grinding; // 0x90
+	tag_reference effect_sweetener_melee; // 0x98
+	tag_reference unknown_4; // 0xa0
+	uint32 sweetener_inheritance_flags; // 0xa8
+	tag_reference material_effects; // 0xac
+};
+ASSERT_STRUCT_SIZE(h2x_matg_materials, 0xb4);
+
+struct h2x_matg_multiplayer_ui_obsolete_profile_colors
+{
+	real_rgb_color color; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_ui_obsolete_profile_colors, 0xc);
+
+struct h2x_matg_multiplayer_ui_team_colors
+{
+	real_rgb_color color; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_ui_team_colors, 0xc);
+
+struct h2x_matg_multiplayer_ui
+{
+	tag_reference random_player_names; // 0x0
+	tag_block<h2x_matg_multiplayer_ui_obsolete_profile_colors> obsolete_profile_colors; // 0x8
+	tag_block<h2x_matg_multiplayer_ui_team_colors> team_colors; // 0x10
+	tag_reference team_names; // 0x18
+};
+ASSERT_STRUCT_SIZE(h2x_matg_multiplayer_ui, 0x20);
+
+struct h2x_matg_profile_colors
+{
+	real_rgb_color color; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_profile_colors, 0xc);
+
+struct h2x_matg_runtime_level_data_campaign_levels
+{
+	int32 campaign_id; // 0x0
+	int32 map_id; // 0x4
+	char path[256]; // 0x8
+};
+ASSERT_STRUCT_SIZE(h2x_matg_runtime_level_data_campaign_levels, 0x108);
+
+struct h2x_matg_runtime_level_data
+{
+	tag_block<h2x_matg_runtime_level_data_campaign_levels> campaign_levels; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_matg_runtime_level_data, 0x8);
+
+struct h2x_matg_ui_level_data_campaigns
+{
+	int32 campaign_id; // 0x0
+	wchar_t english_name[16]; // 0x4
+	int8 pad_24[32];
+	wchar_t japanese_name[16]; // 0x44
+	int8 pad_64[32];
+	wchar_t german_name[16]; // 0x84
+	int8 pad_a4[32];
+	wchar_t french_name[16]; // 0xc4
+	int8 pad_e4[32];
+	wchar_t spanish_name[16]; // 0x104
+	int8 pad_124[32];
+	wchar_t italian_name[16]; // 0x144
+	int8 pad_164[32];
+	wchar_t korean_name[16]; // 0x184
+	int8 pad_1a4[32];
+	wchar_t chinese_name[16]; // 0x1c4
+	int8 pad_1e4[32];
+	wchar_t portuguese_name[16]; // 0x204
+	int8 pad_224[32];
+	wchar_t english_description[16]; // 0x244
+	int8 pad_264[224];
+	wchar_t japanese_description[16]; // 0x344
+	int8 pad_364[224];
+	wchar_t german_description[16]; // 0x444
+	int8 pad_464[224];
+	wchar_t french_description[16]; // 0x544
+	int8 pad_564[224];
+	wchar_t spanish_description[16]; // 0x644
+	int8 pad_664[224];
+	wchar_t italian_description[16]; // 0x744
+	int8 pad_764[224];
+	wchar_t korean_description[16]; // 0x844
+	int8 pad_864[224];
+	wchar_t chinese_description[16]; // 0x944
+	int8 pad_964[224];
+	wchar_t portuguese_description[16]; // 0xa44
+	int8 pad_a64[224];
+};
+ASSERT_STRUCT_SIZE(h2x_matg_ui_level_data_campaigns, 0xb44);
+
+struct h2x_matg_ui_level_data_campaign_levels
+{
+	int32 campaign_id; // 0x0
+	int32 map_id; // 0x4
+	tag_reference bitmap; // 0x8
+	wchar_t english_name[16]; // 0x10
+	int8 pad_30[32];
+	wchar_t japanese_name[16]; // 0x50
+	int8 pad_70[32];
+	wchar_t german_name[16]; // 0x90
+	int8 pad_b0[32];
+	wchar_t french_name[16]; // 0xd0
+	int8 pad_f0[32];
+	wchar_t spanish_name[16]; // 0x110
+	int8 pad_130[32];
+	wchar_t italian_name[16]; // 0x150
+	int8 pad_170[32];
+	wchar_t korean_name[16]; // 0x190
+	int8 pad_1b0[32];
+	wchar_t chinese_name[16]; // 0x1d0
+	int8 pad_1f0[32];
+	wchar_t portuguese_name[16]; // 0x210
+	int8 pad_230[32];
+	wchar_t english_description[16]; // 0x250
+	int8 pad_270[224];
+	wchar_t japanese_description[16]; // 0x350
+	int8 pad_370[224];
+	wchar_t german_description[16]; // 0x450
+	int8 pad_470[224];
+	wchar_t french_description[16]; // 0x550
+	int8 pad_570[224];
+	wchar_t spanish_description[16]; // 0x650
+	int8 pad_670[224];
+	wchar_t italian_description[16]; // 0x750
+	int8 pad_770[224];
+	wchar_t korean_description[16]; // 0x850
+	int8 pad_870[224];
+	wchar_t chinese_description[16]; // 0x950
+	int8 pad_970[224];
+	wchar_t portuguese_description[16]; // 0xa50
+	int8 pad_a70[224];
+};
+ASSERT_STRUCT_SIZE(h2x_matg_ui_level_data_campaign_levels, 0xb50);
+
+struct h2x_matg_ui_level_data_multiplayer_levels
+{
+	int32 map_id; // 0x0
+	tag_reference bitmap; // 0x4
+	wchar_t english_name[16]; // 0xc
+	int8 pad_2c[32];
+	wchar_t japanese_name[16]; // 0x4c
+	int8 pad_6c[32];
+	wchar_t german_name[16]; // 0x8c
+	int8 pad_ac[32];
+	wchar_t french_name[16]; // 0xcc
+	int8 pad_ec[32];
+	wchar_t spanish_name[16]; // 0x10c
+	int8 pad_12c[32];
+	wchar_t italian_name[16]; // 0x14c
+	int8 pad_16c[32];
+	wchar_t korean_name[16]; // 0x18c
+	int8 pad_1ac[32];
+	wchar_t chinese_name[16]; // 0x1cc
+	int8 pad_1ec[32];
+	wchar_t portuguese_name[16]; // 0x20c
+	int8 pad_22c[32];
+	wchar_t english_description[16]; // 0x24c
+	int8 pad_26c[224];
+	wchar_t japanese_description[16]; // 0x34c
+	int8 pad_36c[224];
+	wchar_t german_description[16]; // 0x44c
+	int8 pad_46c[224];
+	wchar_t french_description[16]; // 0x54c
+	int8 pad_56c[224];
+	wchar_t spanish_description[16]; // 0x64c
+	int8 pad_66c[224];
+	wchar_t italian_description[16]; // 0x74c
+	int8 pad_76c[224];
+	wchar_t korean_description[16]; // 0x84c
+	int8 pad_86c[224];
+	wchar_t chinese_description[16]; // 0x94c
+	int8 pad_96c[224];
+	wchar_t portuguese_description[16]; // 0xa4c
+	int8 pad_a6c[224];
+	char path[256]; // 0xb4c
+	int32 sort_order; // 0xc4c
+	uint8 flags; // 0xc50
+	int8 unknown; // 0xc51
+	int16 unknown_2; // 0xc52
+	int8 max_teams_none; // 0xc54
+	int8 max_teams_ctf; // 0xc55
+	int8 max_teams_slayer; // 0xc56
+	int8 max_teams_oddball; // 0xc57
+	int8 max_teams_koth; // 0xc58
+	int8 max_teams_race; // 0xc59
+	int8 max_teams_headhunter; // 0xc5a
+	int8 max_teams_juggernaut; // 0xc5b
+	int8 max_teams_territories; // 0xc5c
+	int8 max_teams_assault; // 0xc5d
+	int8 max_teams_stub_10; // 0xc5e
+	int8 max_teams_stub_11; // 0xc5f
+	int8 max_teams_stub_12; // 0xc60
+	int8 max_teams_stub_13; // 0xc61
+	int8 max_teams_stub_14; // 0xc62
+	int8 max_teams_stub_15; // 0xc63
+};
+ASSERT_STRUCT_SIZE(h2x_matg_ui_level_data_multiplayer_levels, 0xc64);
+
+struct h2x_matg_ui_level_data
+{
+	tag_block<h2x_matg_ui_level_data_campaigns> campaigns; // 0x0
+	tag_block<h2x_matg_ui_level_data_campaign_levels> campaign_levels; // 0x8
+	tag_block<h2x_matg_ui_level_data_multiplayer_levels> multiplayer_levels; // 0x10
+};
+ASSERT_STRUCT_SIZE(h2x_matg_ui_level_data, 0x18);
+
+struct h2x_matg
+{
+	int8 pad_0[172];
+	int32 language; // 0xac
+	tag_block<h2x_matg_havok_cleanup_resources> havok_cleanup_resources; // 0xb0
+	tag_block<h2x_matg_collision_damage> collision_damage; // 0xb8
+	tag_block<h2x_matg_sound_globals> sound_globals; // 0xc0
+	tag_block<h2x_matg_ai_globals> ai_globals; // 0xc8
+	tag_block<h2x_matg_damage_table> damage_table; // 0xd0
+	tag_block<h2x_matg_unknown> unknown; // 0xd8
+	tag_block<h2x_matg_sounds> sounds; // 0xe0
+	tag_block<h2x_matg_camera> camera; // 0xe8
+	tag_block<h2x_matg_player_control> player_control; // 0xf0
+	tag_block<h2x_matg_difficulty> difficulty; // 0xf8
+	tag_block<h2x_matg_grenades> grenades; // 0x100
+	tag_block<h2x_matg_rasterizer_data> rasterizer_data; // 0x108
+	tag_block<h2x_matg_interface_tags> interface_tags; // 0x110
+	tag_block<h2x_matg_weapon_list> weapon_list; // 0x118
+	tag_block<h2x_matg_cheat_powerups> cheat_powerups; // 0x120
+	tag_block<h2x_matg_multiplayer_information> multiplayer_information; // 0x128
+	tag_block<h2x_matg_player_information> player_information; // 0x130
+	tag_block<h2x_matg_player_representation> player_representation; // 0x138
+	tag_block<h2x_matg_falling_damage> falling_damage; // 0x140
+	tag_block<h2x_matg_old_materials> old_materials; // 0x148
+	tag_block<h2x_matg_materials> materials; // 0x150
+	tag_block<h2x_matg_multiplayer_ui> multiplayer_ui; // 0x158
+	tag_block<h2x_matg_profile_colors> profile_colors; // 0x160
+	tag_reference multiplayer_globals; // 0x168
+	tag_block<h2x_matg_runtime_level_data> runtime_level_data; // 0x170
+	tag_block<h2x_matg_ui_level_data> ui_level_data; // 0x178
+	tag_reference default_global_lighting; // 0x180
+	uint32 string_reference_pointer; // 0x188
+	uint32 string_data_pointer; // 0x18c
+	uint32 number_of_strings; // 0x190
+	uint32 string_data_size; // 0x194
+	uint32 string_reference_cache_offset; // 0x198
+	uint32 string_data_cache_offset; // 0x19c
+	uint32 data_loaded_boolean; // 0x1a0
+	uint32 string_reference_pointer_2; // 0x1a4
+	uint32 string_data_pointer_2; // 0x1a8
+	uint32 number_of_strings_2; // 0x1ac
+	uint32 string_data_size_2; // 0x1b0
+	uint32 string_reference_cache_offset_2; // 0x1b4
+	uint32 string_data_cache_offset_2; // 0x1b8
+	uint32 data_loaded_boolean_2; // 0x1bc
+	uint32 string_reference_pointer_3; // 0x1c0
+	uint32 string_data_pointer_3; // 0x1c4
+	uint32 number_of_strings_3; // 0x1c8
+	uint32 string_data_size_3; // 0x1cc
+	uint32 string_reference_cache_offset_3; // 0x1d0
+	uint32 string_data_cache_offset_3; // 0x1d4
+	uint32 data_loaded_boolean_3; // 0x1d8
+	uint32 string_reference_pointer_4; // 0x1dc
+	uint32 string_data_pointer_4; // 0x1e0
+	uint32 number_of_strings_4; // 0x1e4
+	uint32 string_data_size_4; // 0x1e8
+	uint32 string_reference_cache_offset_4; // 0x1ec
+	uint32 string_data_cache_offset_4; // 0x1f0
+	uint32 data_loaded_boolean_4; // 0x1f4
+	uint32 string_reference_pointer_5; // 0x1f8
+	uint32 string_data_pointer_5; // 0x1fc
+	uint32 number_of_strings_5; // 0x200
+	uint32 string_data_size_5; // 0x204
+	uint32 string_reference_cache_offset_5; // 0x208
+	uint32 string_data_cache_offset_5; // 0x20c
+	uint32 data_loaded_boolean_5; // 0x210
+	uint32 string_reference_pointer_6; // 0x214
+	uint32 string_data_pointer_6; // 0x218
+	uint32 number_of_strings_6; // 0x21c
+	uint32 string_data_size_6; // 0x220
+	uint32 string_reference_cache_offset_6; // 0x224
+	uint32 string_data_cache_offset_6; // 0x228
+	uint32 data_loaded_boolean_6; // 0x22c
+	uint32 string_reference_pointer_7; // 0x230
+	uint32 string_data_pointer_7; // 0x234
+	uint32 number_of_strings_7; // 0x238
+	uint32 string_data_size_7; // 0x23c
+	uint32 string_reference_cache_offset_7; // 0x240
+	uint32 string_data_cache_offset_7; // 0x244
+	uint32 data_loaded_boolean_7; // 0x248
+	uint32 string_reference_pointer_8; // 0x24c
+	uint32 string_data_pointer_8; // 0x250
+	uint32 number_of_strings_8; // 0x254
+	uint32 string_data_size_8; // 0x258
+	uint32 string_reference_cache_offset_8; // 0x25c
+	uint32 string_data_cache_offset_8; // 0x260
+	uint32 data_loaded_boolean_8; // 0x264
+	uint32 string_reference_pointer_9; // 0x268
+	uint32 string_data_pointer_9; // 0x26c
+	uint32 number_of_strings_9; // 0x270
+	uint32 string_data_size_9; // 0x274
+	uint32 string_reference_cache_offset_9; // 0x278
+	uint32 string_data_cache_offset_9; // 0x27c
+	uint32 data_loaded_boolean_9; // 0x280
+};
+ASSERT_STRUCT_SIZE(h2x_matg, 0x284);
+
 #pragma pack(pop)
