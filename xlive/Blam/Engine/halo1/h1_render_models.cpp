@@ -266,8 +266,9 @@ void h1_render_model_draw(datum model_tag_index, int16 permutation, const real_m
 	device->SetStreamSource(0, g_h1_model_vertex_buffer, 0, sizeof(s_h1_model_vertex));
 	device->SetIndices(g_h1_model_index_buffer);
 	h1_render_set_camera_constants(object_to_world, sky);
-	const real_point3d centroid = { object_to_world->n[3][0], object_to_world->n[3][1], object_to_world->n[3][2] };
-	h1_render_shader_fog_context_set(!sky, &centroid);
+	// the sky (and anything drawn without a matrix) isn't fogged
+	const real_point3d centroid = object_to_world ? real_point3d{ object_to_world->n[3][0], object_to_world->n[3][1], object_to_world->n[3][2] } : real_point3d{};
+	h1_render_shader_fog_context_set(!sky && object_to_world, object_to_world ? &centroid : NULL);
 
 	const s_h1_model* entry = &found->second;
 	for (int32 r = 0; r < model->regions.count; r++)
