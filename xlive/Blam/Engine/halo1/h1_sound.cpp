@@ -86,6 +86,8 @@ struct s_h1_sound_data
 	real32 gain;
 	real32 minimum_distance;
 	real32 maximum_distance;
+	real32 zero_gain_modifier;	// the gain at a scale of 0 and of 1 (sound_scale_value)
+	real32 one_gain_modifier;
 	std::vector<s_h1_sound_permutation> permutations;
 };
 
@@ -111,6 +113,8 @@ struct s_h1_looping_sound
 	real32 fade_in_rate;
 	real32 fade_out_rate;
 	bool stopping;
+	bool held = true;		// an attached sound's object function is active
+	real32 scale = 1.f;
 	real32 maximum_distance;
 	std::vector<std::shared_ptr<s_h1_voice>> track_voices;
 	std::vector<real32> track_gains;
@@ -136,6 +140,8 @@ struct s_h1_sound_globals
 	std::unique_ptr<s_h1_looping_sound> background;
 	std::vector<std::unique_ptr<s_h1_looping_sound>> stopping_backgrounds;
 	std::vector<std::unique_ptr<s_h1_looping_sound>> positional_sounds;
+	std::unordered_map<int32, std::unique_ptr<s_h1_looping_sound>> attached_sounds;
+	int32 next_attached_handle;
 	std::vector<s_h1_detail_voice> detail_voices;
 	int16 background_sound_index;
 	uint32 random;
@@ -261,6 +267,7 @@ void h1_sound_dispose(void)
 	g_h1_sound.background.reset();
 	g_h1_sound.stopping_backgrounds.clear();
 	g_h1_sound.positional_sounds.clear();
+	g_h1_sound.attached_sounds.clear();
 	g_h1_sound.detail_voices.clear();
 	g_h1_sound.voices.clear();
 	g_h1_sound.sounds.clear();
@@ -336,6 +343,10 @@ void h1_sound_update(void)
 	{
 		h1_looping_sound_update(loop.get(), dt);
 	}
+	for (const auto& entry : g_h1_sound.attached_sounds)
+	{
+		h1_looping_sound_update(entry.second.get(), dt);
+	}
 
 	// detail sounds stay where they started while the listener moves
 	for (size_t i = 0; i < g_h1_sound.detail_voices.size();)
@@ -386,6 +397,53 @@ void h1_sound_impulse(datum sound_index, const real_point3d* position, real32 sc
 	impulse.position = *position;
 	impulse.maximum_distance = voice->sound->maximum_distance > 0.f ? voice->sound->maximum_distance : FLT_MAX;
 	g_h1_sound.detail_voices.push_back(impulse);
+	return;
+}
+
+int32 h1_sound_looping_attached_new(datum looping_sound_index)
+{
+	if (!g_h1_sound.active || looping_sound_index == NONE)
+	{
+		return 0;
+	}
+	std::lock_guard<std::mutex> lock(g_h1_sound.voices_lock);
+	const real_point3d origin = {};
+	std::unique_ptr<s_h1_looping_sound> loop = h1_looping_sound_new(looping_sound_index, &origin);
+	if (!loop)
+	{
+		return 0;
+	}
+	loop->held = false;
+	const int32 handle = ++g_h1_sound.next_attached_handle;
+	g_h1_sound.attached_sounds[handle] = std::move(loop);
+	return handle;
+}
+
+void h1_sound_looping_attached_update(int32 handle, const real_point3d* position, bool audible, real32 scale)
+{
+	std::lock_guard<std::mutex> lock(g_h1_sound.voices_lock);
+	auto found = g_h1_sound.attached_sounds.find(handle);
+	if (found == g_h1_sound.attached_sounds.end())
+	{
+		return;
+	}
+	found->second->position = *position;
+	found->second->held = audible;
+	found->second->scale = PIN(scale, 0.f, 1.f);
+	return;
+}
+
+void h1_sound_looping_attached_delete(int32 handle)
+{
+	std::lock_guard<std::mutex> lock(g_h1_sound.voices_lock);
+	auto found = g_h1_sound.attached_sounds.find(handle);
+	if (found == g_h1_sound.attached_sounds.end())
+	{
+		return;
+	}
+	found->second->stopping = true;
+	g_h1_sound.stopping_backgrounds.push_back(std::move(found->second));
+	g_h1_sound.attached_sounds.erase(found);
 	return;
 }
 
@@ -495,11 +553,29 @@ static bool h1_looping_sound_update(s_h1_looping_sound* loop, real32 dt)
 		vector_from_points3d(&g_h1_sound.listener_point, &loop->position, &offset);
 		distance = magnitude3d(&offset);
 	}
-	const bool audible = !loop->stopping && (!loop->positional || distance < loop->maximum_distance);
+	const bool audible = !loop->stopping && loop->held && (!loop->positional || distance < loop->maximum_distance);
 
 	if (audible && loop->track_voices.empty())
 	{
 		h1_looping_sound_start_voices(loop);
+		// the tracks' start sounds play once as they begin (an attached sound's, where it is)
+		if (loop->positional && loop->fade <= 0.f)
+		{
+			for (int32 i = 0; i < definition->tracks.count; i++)
+			{
+				const h1_lsnd_tracks* track = g_h1_cache_file->block_get(definition->tracks, i);
+				std::shared_ptr<s_h1_voice> voice = track->start.index != NONE ? h1_sound_voice_new(track->start.index, false) : NULL;
+				if (voice)
+				{
+					s_h1_detail_voice start;
+					start.voice = voice;
+					start.gain = track->gain * voice->sound->gain * loop->scale;
+					start.position = loop->position;
+					start.maximum_distance = loop->maximum_distance;
+					g_h1_sound.detail_voices.push_back(start);
+				}
+			}
+		}
 	}
 
 	loop->fade = audible
@@ -519,7 +595,9 @@ static bool h1_looping_sound_update(s_h1_looping_sound* loop, real32 dt)
 		{
 			continue;
 		}
-		const real32 gain = loop->track_gains[i] * voice->sound->gain * loop->fade;
+		// sound_scale_value: the sound's gain between its zero and one modifiers by the scale
+		const real32 scale_gain = (voice->sound->one_gain_modifier - voice->sound->zero_gain_modifier) * loop->scale + voice->sound->zero_gain_modifier;
+		const real32 gain = loop->track_gains[i] * voice->sound->gain * loop->fade * scale_gain;
 		real32 left = gain, right = gain;
 		if (loop->positional)
 		{
@@ -688,6 +766,8 @@ static std::shared_ptr<const s_h1_sound_data> h1_sound_data_get(datum sound_inde
 		data->channel_count = sound->encoding == 1 ? 2 : 1;
 		data->sample_rate = sound->sample_rate == 1 ? 44100 : 22050;
 		data->gain = sound->gain_modifier > 0.f ? sound->gain_modifier : 1.f;
+		data->zero_gain_modifier = sound->gain_modifier_2;
+		data->one_gain_modifier = sound->gain_modifier_3;
 
 		const real_bounds* class_distances = VALID_INDEX(sound->f_class, NUMBEROF(k_h1_sound_class_distances)) ? &k_h1_sound_class_distances[sound->f_class] : NULL;
 		data->minimum_distance = sound->minimum_distance > 0.f ? sound->minimum_distance : (class_distances ? class_distances->lower : 1.f);

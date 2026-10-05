@@ -701,6 +701,7 @@ struct s_h1_attachment
 	bool seen;
 	s_h1_effect effect;
 	s_h1_light light;
+	int32 sound_handle;		// a looping sound's (h1_sound_looping_attached_new)
 };
 
 // effects/decals.c struct decal_datum, its vertices drawn by the particle shader
@@ -3082,7 +3083,7 @@ static void h1_attachments_update(real32 dt)
 		{
 			const h1_proj_attachments* attachment_definition = g_h1_cache_file->block_get(definition->attachments, i);
 			const uint32 group_tag = attachment_definition->type.group_tag;
-			if ((group_tag != 'effe' && group_tag != 'ligh' && group_tag != 'cont' && group_tag != 'pctl') || attachment_definition->type.index == NONE)
+			if ((group_tag != 'effe' && group_tag != 'ligh' && group_tag != 'cont' && group_tag != 'pctl' && group_tag != 'lsnd') || attachment_definition->type.index == NONE)
 			{
 				continue;
 			}
@@ -3113,7 +3114,18 @@ static void h1_attachments_update(real32 dt)
 					g_h1_effects.attachments.back().seen = true;
 					continue;
 				}
-				if (group_tag == 'effe')
+				if (group_tag == 'lsnd')
+				{
+					// game_looping_sound_new
+					created.sound_handle = h1_sound_looping_attached_new(attachment_definition->type.index);
+					if (!created.sound_handle)
+					{
+						continue;
+					}
+					g_h1_effects.attachments.push_back(std::move(created));
+					attachment = &g_h1_effects.attachments.back();
+				}
+				else if (group_tag == 'effe')
 				{
 					const h1_effe* effect_definition = (const h1_effe*)g_h1_cache_file->tag_get('effe', attachment_definition->type.index);
 					if (!effect_definition || effect_definition->events.count <= 0)
@@ -3143,8 +3155,11 @@ static void h1_attachments_update(real32 dt)
 					created.light.occlusion_fraction = 0.f;
 					created.light.id = ++g_h1_effects.next_light_id;
 				}
-				g_h1_effects.attachments.push_back(std::move(created));
-				attachment = &g_h1_effects.attachments.back();
+				if (!attachment)
+				{
+					g_h1_effects.attachments.push_back(std::move(created));
+					attachment = &g_h1_effects.attachments.back();
+				}
 			}
 			attachment->seen = true;
 			if (group_tag == 'cont' || group_tag == 'pctl')
@@ -3156,7 +3171,15 @@ static void h1_attachments_update(real32 dt)
 			const int16 function_index = attachment_definition->primary_scale > 0 ? (int16)(attachment_definition->primary_scale - 1) : (int16)NONE;
 			real32 function_value;
 			const bool function_active = h1_object_function_value_get(object_index, function_index, &function_value);
-			if (group_tag == 'effe')
+			if (group_tag == 'lsnd')
+			{
+				// game_sound.c update_potentially_audible_looping_sound: at its marker, while the object's function is active
+				object_marker marker;
+				const real_point3d position = h1_object_markers_get(object_index, attachment_definition->marker, &marker, 1) > 0 ?
+					marker.matrix.position : object->object.position;
+				h1_sound_looping_attached_update(attachment->sound_handle, &position, function_active, function_value);
+			}
+			else if (group_tag == 'effe')
 			{
 				attachment->effect.scale_a = function_value;
 				for (int32 tick = 0; tick < ticks; tick++)
@@ -3205,6 +3228,13 @@ static void h1_attachments_update(real32 dt)
 	}
 
 	// the attachments of objects that are gone go with them
+	for (const s_h1_attachment& attachment : g_h1_effects.attachments)
+	{
+		if (!attachment.seen && attachment.group_tag == 'lsnd')
+		{
+			h1_sound_looping_attached_delete(attachment.sound_handle);
+		}
+	}
 	g_h1_effects.attachments.erase(std::remove_if(g_h1_effects.attachments.begin(), g_h1_effects.attachments.end(),
 		[](const s_h1_attachment& attachment) { return !attachment.seen; }), g_h1_effects.attachments.end());
 	return;
