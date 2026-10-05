@@ -3,6 +3,7 @@
 
 #include "h1_bitmaps.h"
 #include "h1_cache_file.h"
+#include "h1_fog.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
 #include "h1_render_models.h"
@@ -96,6 +97,7 @@ static void h1_render_scenery_initialize(void);
 static bool h1_render_begin(void);
 static void h1_render_end(void);
 static void h1_render_structure_pass(e_h1_render_pass pass);
+static void h1_render_structure_fog_pass(void);
 static void h1_unpack_normal(uint32 packed, real32* out);
 static real32 h1_render_game_time(void);
 static bool h1_render_breakable_surface_extant(int16 breakable_surface_index);
@@ -115,9 +117,11 @@ void h1_render_structure_opaque(void)
 		h1_sound_listener_set(&frame->camera);
 	}
 
+	h1_fog_update();
 	if (g_h1_render_debug_mode != 9)
 	{
 		h1_render_structure_pass(_h1_render_pass_opaque);
+		h1_render_structure_fog_pass();
 	}
 
 
@@ -218,6 +222,7 @@ void h1_render_dispose(void)
 	g_h1_render.index_buffer = NULL;
 	g_h1_render.state_block = NULL;
 	std::vector<s_h1_structure_draw>().swap(g_h1_render.draws);
+	h1_fog_reset();
 	std::vector<s_h1_scenery_instance>().swap(g_h1_render.scenery);
 	std::vector<s_h1_lighting_triangle>().swap(g_h1_render.lighting_triangles);
 	std::vector<s_h1_lighting_material>().swap(g_h1_render.lighting_materials);
@@ -573,6 +578,7 @@ static void h1_render_structure_pass(e_h1_render_pass pass)
 	device->SetStreamSource(0, g_h1_render.vertex_buffer, 0, sizeof(s_h1_structure_vertex));
 	device->SetIndices(g_h1_render.index_buffer);
 	h1_render_set_camera_constants(NULL, false);
+	h1_render_shader_fog_context_set(true, NULL);
 
 	const real32 game_time = h1_render_game_time();
 	for (const s_h1_structure_draw& draw : g_h1_render.draws)
@@ -732,4 +738,36 @@ static bool h1_render_breakable_surface_extant(int16 breakable_surface_index)
 
 	const uint32* extant_bits = (const uint32*)(breakable_surface_globals + 1 + structure_bsp_index * 0x20);
 	return TEST_BIT(extant_bits[breakable_surface_index >> 5], breakable_surface_index & 31);
+}
+
+// rasterizer_xbox_environment_fog.c: the opaque structure again, blending the fog over it where the depth is equal
+static void h1_render_structure_fog_pass(void)
+{
+	if (!h1_fog_active())
+	{
+		return;
+	}
+
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	device->SetStreamSource(0, g_h1_render.vertex_buffer, 0, sizeof(s_h1_structure_vertex));
+	device->SetIndices(g_h1_render.index_buffer);
+	h1_render_set_camera_constants(NULL, false);
+	if (!h1_render_environment_fog_bind())
+	{
+		return;
+	}
+
+	for (const s_h1_structure_draw& draw : g_h1_render.draws)
+	{
+		if (draw.triangle_count <= 0 || h1_render_shader_pass(draw.shader_group) != _h1_render_pass_opaque || !h1_render_breakable_surface_extant(draw.breakable_surface_index))
+		{
+			continue;
+		}
+		device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, draw.base_vertex, 0, draw.vertex_count, draw.first_index, draw.triangle_count);
+	}
+
+	device->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+	device->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
+	h1_render_shader_unbind();
+	return;
 }

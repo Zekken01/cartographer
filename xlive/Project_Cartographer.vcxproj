@@ -1174,6 +1174,7 @@
     <ClCompile Include="Blam\Engine\halo1\h1_objects.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_object_tags.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_items.cpp" />
+    <ClCompile Include="Blam\Engine\halo1\h1_fog.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_render.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_sound.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_render_models.cpp" />
@@ -2151,6 +2152,7 @@
     <ClInclude Include="Blam\Engine\halo1\h1_objects.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_object_tags.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_items.h" />
+    <ClInclude Include="Blam\Engine\halo1\h1_fog.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_render.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_sound.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_render_models.h" />

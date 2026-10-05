@@ -46,6 +46,12 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 // halo 1 objects without functions export 0 and white
 void h1_render_shader_object_animation_set(const real32* function_values, const real_rgb_color* change_colors);
 
+// what the following draws are for fog: structure (fogged, no centroid), an object (fogged, its center) or unfogged (the sky)
+void h1_render_shader_fog_context_set(bool fogged, const real_point3d* centroid);
+
+// binds the halo 1 environment fog pass (drawn over the opaque structure with an equal depth test), false if it can't draw
+bool h1_render_environment_fog_bind(void);
+
 // restores the default opaque render state after a bound shader
 void h1_render_shader_unbind(void);
 

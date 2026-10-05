@@ -3,6 +3,7 @@
 
 #include "h1_bitmaps.h"
 #include "h1_cache_file.h"
+#include "h1_fog.h"
 #include "h1_log.h"
 
 #include "rasterizer/rasterizer_globals.h"
@@ -58,6 +59,7 @@ struct VS_OUTPUT
 	float depth : TEXCOORD3;
 	float3 view : TEXCOORD4;
 	float3 world_normal : TEXCOORD5;
+	float3 world : TEXCOORD6;
 };
 
 VS_OUTPUT main(VS_INPUT input)
@@ -72,6 +74,7 @@ VS_OUTPUT main(VS_INPUT input)
 	output.normal = input.normal;
 	output.world_normal = float3(dot(input.normal, object_to_world[0].xyz), dot(input.normal, object_to_world[1].xyz), dot(input.normal, object_to_world[2].xyz));
 	output.view = camera_position.xyz - input.position;
+	output.world = float3(dot(position.xyz, object_to_world[0].xyz) + object_to_world[0].w, dot(position.xyz, object_to_world[1].xyz) + object_to_world[1].w, dot(position.xyz, object_to_world[2].xyz) + object_to_world[2].w);
 	output.depth = depth_scale.y > 0.5f ? 1.0f : dot(position, view_forward) * depth_scale.x;
 	return output;
 }
@@ -86,6 +89,7 @@ struct PS_INPUT
 	float depth : TEXCOORD3;
 	float3 view : TEXCOORD4;
 	float3 world_normal : TEXCOORD5;
+	float3 world : TEXCOORD6;
 };
 
 struct PS_OUTPUT
@@ -93,6 +97,48 @@ struct PS_OUTPUT
 	float4 color : COLOR0;
 	float4 depth : COLOR1;
 };
+
+// halo 1 fog (h1_fog.cpp): the vertex shader fog constants c[-88] to c[-85], then the model fog colors
+float4 fog_atmospheric : register(c100);	// (world position, 1) . this: atmospheric fog distance fraction
+float4 fog_planar_depth : register(c101);	// depth below the fog plane, a fraction of the planar fog's opaque depth
+float4 fog_planar_distance : register(c102);	// view distance, a fraction of the planar fog's opaque distance
+float4 fog_settings : register(c103);		// atmospheric maximum density, camera planar density, planar maximum density, mode (1 model, 2 transparent)
+float4 fog_model_atmospheric : register(c104);	// atmospheric color times the object's fog density, w: the object's fog density
+float4 fog_model_planar : register(c105);	// the color planar fog blends models to
+
+// the vertex fog of the xbox model and transparent vertex shaders
+float fog_atmospheric_density(float3 world)
+{
+	return saturate(dot(world, fog_atmospheric.xyz) + fog_atmospheric.w) * fog_settings.x;
+}
+
+float fog_planar_density(float3 world)
+{
+	float depth = dot(world, fog_planar_depth.xyz) + fog_planar_depth.w;
+	float distance = dot(world, fog_planar_distance.xyz) + fog_planar_distance.w;
+	float a = min(pow(max(1.0f - depth, 0.0f), 2.0f), 1.0f);
+	float b = min(pow(max(1.0f - distance, 0.0f), 2.0f), 1.0f);
+	float x = 1.0f - min(a + b, 1.0f);
+	float y = 1.0f - b;
+	x *= x;
+	y *= y;
+	return (x + fog_settings.y * (y - x)) * fog_settings.z;
+}
+
+// how much of a transparent surface shows through the fog
+float fog_transmittance(float3 world)
+{
+	return fog_settings.w > 1.5f ? (1.0f - fog_atmospheric_density(world)) * (1.0f - fog_planar_density(world)) : 1.0f;
+}
+
+// the final combiner of the xbox model shaders: the object's atmospheric fog, the planar fog per pixel
+float3 fog_model(float3 color, float3 world)
+{
+	if (fog_settings.w < 0.5f || fog_settings.w > 1.5f)
+		return color;
+	float planar = saturate(fog_planar_density(world));
+	return color * (1.0f - fog_model_atmospheric.w) * (1.0f - planar) + planar * fog_model_planar.rgb + fog_model_atmospheric.rgb;
+}
 
 // halo 2 reads view depth packed as r + g / 256 + b / 65536
 float4 pack_depth(float depth)
@@ -144,7 +190,7 @@ PS_OUTPUT main(PS_INPUT input)
 	float3 light = ambient.w > 0.5f ? tex2D(lightmap, input.lightmap_texcoord).rgb : ambient.rgb;
 
 	PS_OUTPUT output;
-	output.color = float4(color * light, 1.0f);
+	output.color = float4(fog_model(color * light, input.world), 1.0f);
 	if (debug_mode.x > 0.5f && debug_mode.x < 1.5f) output.color = float4(1.0f, 0.0f, 1.0f, 1.0f);
 	else if (debug_mode.x > 1.5f && debug_mode.x < 2.5f) output.color = float4(base.rgb, 1.0f);
 	else if (debug_mode.x > 2.5f && debug_mode.x < 3.5f) output.color = float4(light, 1.0f);
@@ -152,6 +198,40 @@ PS_OUTPUT main(PS_INPUT input)
 	else if (debug_mode.x > 4.5f && debug_mode.x < 5.5f) output.color = float4(micro.rgb, 1.0f);
 	else if (debug_mode.x > 5.5f) output.color = float4(debug_mode.yzw, 1.0f);
 	output.depth = pack_depth(input.depth);
+	return output;
+}
+)";
+
+// halo 1 environment fog: a pass over the opaque structure, blended one / inverse source alpha where the depth is equal
+static const char k_h1_environment_fog_pixel_shader[] = H1_PIXEL_SHADER_COMMON R"(
+sampler2D atmospheric_fog_density : register(s0);
+sampler2D planar_fog_density : register(s1);
+
+float4 eye : register(c106);				// atmospheric eye density, planar eye density, atmospheric maximum density, planar maximum density
+float4 atmospheric_color : register(c107);
+float4 planar_color : register(c108);
+
+PS_OUTPUT main(PS_INPUT input)
+{
+	// the environment fog vertex shader's texture coordinates
+	float2 t0_coord = float2(dot(input.world, fog_atmospheric.xyz) + fog_atmospheric.w, 0.0f);
+	float2 t1_coord = float2(dot(input.world, fog_planar_distance.xyz) + fog_planar_distance.w, dot(input.world, fog_planar_depth.xyz) + fog_planar_depth.w);
+	float4 t0 = tex2D(atmospheric_fog_density, t0_coord);
+	float4 t1 = tex2D(planar_fog_density, t1_coord);
+
+	// stage 0
+	float atmospheric = eye.z * t0.a;
+	float eye_atmospheric = atmospheric * eye.x;
+	float planar = saturate((1.0f - eye.y) * eye.w * t1.a + eye.y * eye.w * t1.b);
+	// stage 1
+	float3 r0 = atmospheric_color.rgb * atmospheric;
+	float3 r1 = planar_color.rgb * planar;
+	float r1_alpha = (1.0f - eye.x) * planar;
+	float r0_alpha = (1.0f - atmospheric) * (1.0f - planar);
+	// final combiner
+	PS_OUTPUT output;
+	output.color = float4(saturate(r0 * (1.0f - r1_alpha) + r1 * (1.0f - eye_atmospheric)), 1.0f - r0_alpha);
+	output.depth = float4(0.0f, 0.0f, 0.0f, 0.0f);
 	return output;
 }
 )";
@@ -190,7 +270,7 @@ PS_OUTPUT main(PS_INPUT input)
 	float self_illumination = modes.z > 0.5f ? multipurpose.g * modes.w : 0.0f;
 
 	PS_OUTPUT output;
-	output.color = float4(color * saturate(light + self_illumination), base.a);
+	output.color = float4(fog_model(color * saturate(light + self_illumination), input.world), base.a);
 	output.depth = pack_depth(input.depth);
 	return output;
 }
@@ -224,11 +304,11 @@ PS_OUTPUT main(PS_INPUT input)
 	float4 m1 = tex2D(map1, map_texcoord(input.texcoord, 1));
 	float4 m2 = tex2D(map2, map_texcoord(input.texcoord, 2));
 	float4 m3 = tex2D(map3, map_texcoord(input.texcoord, 3));
-	float fade = saturate(abs(dot(normalize(input.view), normalize(input.normal))));
-	if (settings.z > 1.5f)
-		fade = 1.0f - fade;
-	float4 v0 = float4(vertex_light.rgb, 1.0f);
-	float4 v1 = float4(fade, fade, fade, fade);
+	// vertex color 1 is the fade when perpendicular in color, the fade when parallel in alpha, both faded by fog
+	float facing = saturate(abs(dot(normalize(input.view), normalize(input.normal))));
+	float transmittance = fog_transmittance(input.world) * settings.w;
+	float4 v0 = float4(vertex_light.rgb, transmittance);
+	float4 v1 = float4(facing, facing, facing, 1.0f - facing) * transmittance;
 	float4 r0 = 0.0f;
 	float4 r1 = 0.0f;
 	float4 k0, k1;
@@ -238,8 +318,7 @@ PS_OUTPUT main(PS_INPUT input)
 
 static const char k_h1_generic_pixel_shader_footer[] = R"(
 	// fade: vertex alpha 0 without a fade mode, else vertex color 1 (alpha when perpendicular, blue when parallel)
-	float f = settings.z < 0.5f ? v0.a : (settings.z < 1.5f ? v1.a : v1.b);
-	f = saturate(f * settings.w);
+	float f = saturate(settings.z < 0.5f ? v0.a : (settings.z < 1.5f ? v1.a : v1.b));
 	float blend = blend_settings.x;
 	if (blend < 0.5f)							// alpha blend
 		r0.a = r0.a * f;
@@ -273,6 +352,7 @@ samplerCUBE cube0 : register(s4);
 float4 map_transform[8] : register(c0);
 float4 functions[4] : register(c8);		// per map: color function, alpha function, alpha replicate
 float4 settings : register(c12);		// map count, first map is a cube map
+float4 fade_settings : register(c13);	// framebuffer blend function, fade mode, fade intensity
 
 float2 map_texcoord(float2 texcoord, int index)
 {
@@ -327,6 +407,25 @@ PS_OUTPUT main(PS_INPUT input)
 			float alpha = saturate(combine(result.aaaa, maps[j].aaaa, functions[j - 1].y).a);
 			result = float4(color, alpha);
 		}
+	}
+
+	// the stage halo 1 appends for the framebuffer blend function, faded by fog and the fade mode
+	float facing = saturate(abs(dot(normalize(input.view), normalize(input.normal))));
+	float transmittance = fog_transmittance(input.world) * fade_settings.z;
+	float f = saturate(fade_settings.y < 0.5f ? transmittance : (fade_settings.y < 1.5f ? (1.0f - facing) * transmittance : facing * transmittance));
+	float blend = fade_settings.x;
+	if (blend < 0.5f)
+		result.a = result.a * f;
+	else if (blend < 1.5f || abs(blend - 5.0f) < 0.5f)
+		result.rgb = result.rgb * f + (1.0f - f);
+	else if (blend < 2.5f)
+		result.rgb = result.rgb * f + 0.5f * (1.0f - f);
+	else if (blend < 6.5f)
+		result.rgb = result.rgb * f;
+	else
+	{
+		result.rgb = result.rgb * f;
+		result.a = result.a * f;
 	}
 
 	PS_OUTPUT output;
@@ -469,7 +568,11 @@ static std::unordered_map<datum, IDirect3DPixelShader9*> g_h1_generic_shaders;
 static IDirect3DPixelShader9* g_h1_chicago_shader = NULL;
 static IDirect3DPixelShader9* g_h1_water_shader = NULL;
 static IDirect3DPixelShader9* g_h1_glass_shader = NULL;
+static IDirect3DPixelShader9* g_h1_environment_fog_shader = NULL;
 static IDirect3DTexture9* g_h1_default_textures[4] = {};
+static bool g_h1_fog_context_fogged = false;
+static bool g_h1_fog_context_has_centroid = false;
+static real_point3d g_h1_fog_context_centroid = {};
 static const real32* g_h1_object_function_values = NULL;
 static const real_rgb_color* g_h1_object_change_colors = NULL;
 
@@ -515,6 +618,7 @@ bool h1_render_shaders_initialize(void)
 	g_h1_chicago_shader = h1_compile_pixel_shader(k_h1_chicago_pixel_shader, "transparent chicago");
 	g_h1_water_shader = h1_compile_pixel_shader(k_h1_water_pixel_shader, "transparent water");
 	g_h1_glass_shader = h1_compile_pixel_shader(k_h1_glass_pixel_shader, "transparent glass");
+	g_h1_environment_fog_shader = h1_compile_pixel_shader(k_h1_environment_fog_pixel_shader, "environment fog");
 
 	g_h1_default_textures[0] = h1_solid_texture(0xFFFFFFFF);
 	g_h1_default_textures[1] = h1_solid_texture(0xFF808080);
@@ -768,6 +872,48 @@ int32 h1_render_shader_subpass_count(uint32 shader_group)
 	}
 }
 
+void h1_render_shader_fog_context_set(bool fogged, const real_point3d* centroid)
+{
+	g_h1_fog_context_fogged = fogged;
+	g_h1_fog_context_has_centroid = centroid != NULL;
+	g_h1_fog_context_centroid = centroid ? *centroid : real_point3d{};
+	return;
+}
+
+bool h1_render_environment_fog_bind(void)
+{
+	if (!g_h1_environment_fog_shader)
+	{
+		return false;
+	}
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	device->SetPixelShader(g_h1_environment_fog_shader);
+	for (DWORD stage = 0; stage < 2; stage++)
+	{
+		IDirect3DBaseTexture9* texture = h1_fog_density_texture(stage == 1);
+		device->SetTexture(stage, texture ? texture : g_h1_default_textures[2]);
+		device->SetSamplerState(stage, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+		device->SetSamplerState(stage, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+		device->SetSamplerState(stage, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+		device->SetSamplerState(stage, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+		device->SetSamplerState(stage, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR);
+	}
+	device->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+	device->SetRenderState(D3DRS_COLORWRITEENABLE, D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
+	device->SetRenderState(D3DRS_COLORWRITEENABLE1, 0);
+	device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+	device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+	device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+	device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+	device->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+	device->SetRenderState(D3DRS_ZENABLE, D3DZB_TRUE);
+	device->SetRenderState(D3DRS_ZFUNC, D3DCMP_EQUAL);
+	device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+	h1_fog_set_shader_constants(_h1_fog_shader_mode_none, NULL);
+	h1_fog_set_environment_fog_constants();
+	return true;
+}
+
 void h1_render_shader_object_animation_set(const real32* function_values, const real_rgb_color* change_colors)
 {
 	g_h1_object_function_values = function_values;
@@ -783,6 +929,21 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 	{
 		return false;
 	}
+
+	// halo 1 fogs opaque structure with the environment fog pass, opaque models in their shader, transparents through their fade
+	e_h1_fog_shader_mode fog_mode = _h1_fog_shader_mode_none;
+	if (g_h1_fog_context_fogged && h1_fog_active())
+	{
+		if (h1_render_shader_pass(shader_group) == _h1_render_pass_transparent)
+		{
+			fog_mode = _h1_fog_shader_mode_transparent;
+		}
+		else if (g_h1_fog_context_has_centroid)
+		{
+			fog_mode = _h1_fog_shader_mode_model;
+		}
+	}
+	h1_fog_set_shader_constants(fog_mode, g_h1_fog_context_has_centroid ? &g_h1_fog_context_centroid : NULL);
 
 	switch (shader_group)
 	{
@@ -1150,6 +1311,13 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 		device->SetPixelShaderConstantF(8, &functions[0][0], 4);
 		const real32 settings[4] = { (real32)MAX(map_count, 1), shader->first_map_type != 0 ? 1.f : 0.f, 0.f, 0.f };
 		device->SetPixelShaderConstantF(12, settings, 1);
+		real32 fade_intensity = 1.f;
+		if (g_h1_object_function_values && shader->framebuffer_fade_source > 0 && shader->framebuffer_fade_source <= 4)
+		{
+			fade_intensity = g_h1_object_function_values[shader->framebuffer_fade_source - 1];
+		}
+		const real32 fade_settings[4] = { (real32)shader->framebuffer_blend_function, (real32)shader->framebuffer_fade_mode, fade_intensity, 0.f };
+		device->SetPixelShaderConstantF(13, fade_settings, 1);
 
 		// flags: alpha tested, decal, two sided, first map is in screenspace, draw before water, ignore effect, scale first map with distance, numeric
 		device->SetRenderState(D3DRS_CULLMODE, TEST_BIT(shader->flags_3, 2) ? D3DCULL_NONE : D3DCULL_CCW);
