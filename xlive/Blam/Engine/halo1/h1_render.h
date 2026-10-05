@@ -32,6 +32,10 @@ bool h1_render_sky(void);
 // object lighting at a point: the lightmap material under it and its lightmap sample
 void h1_render_lighting_at(const real_point3d* point, struct s_h1_render_lighting* out_lighting);
 
+// object_lights.c light_particle: the lightmap's light (brightened a tenth) and the diffuse texture's color of the structure under
+// a point, grey without one
+void h1_render_light_particle(const real_point3d* point, real_rgb_color* out_light, real_rgb_color* out_diffuse);
+
 // the opaque lightmapped structure triangles (three points each), for decals
 int32 h1_render_structure_triangle_count(void);
 const real_point3d* h1_render_structure_triangle_get(int32 index);

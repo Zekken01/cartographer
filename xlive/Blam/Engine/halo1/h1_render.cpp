@@ -753,29 +753,11 @@ const real_point3d* h1_render_structure_triangle_get(int32 index)
 	return g_h1_render.lighting_triangles[index].points;
 }
 
-// lighting from the lightmapped structure surface below a point: the material's radiosity lights scaled by the lightmap
-// object_lights.c lights_distant_lighting_at_point: the structure under the point (10 units down) lights it from its lightmap, its
-// incident radiosity and its diffuse color (build_distant_lights), the bsp's default lighting without one
-void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_lighting)
+// the lightmapped structure triangle under a point (within 10 units down), its barycentric weights
+static const s_h1_lighting_triangle* h1_render_lighting_triangle_below(const real_point3d* point, real32* weights)
 {
-	if (g_h1_render.lighting.ambient.red != 0.f)
-	{
-		*out_lighting = g_h1_render.lighting;
-	}
-	else
-	{
-		// default_object_lighting
-		out_lighting->ambient = { 0.2f, 0.2f, 0.2f };
-		out_lighting->light0_color = { 1.f, 1.f, 1.f };
-		out_lighting->light0_direction = { -0.577f, -0.577f, -0.577f };
-		out_lighting->light1_color = { 0.4f, 0.4f, 0.5f };
-		out_lighting->light1_direction = { 0.f, 0.f, 1.f };
-		out_lighting->reflection_tint = { 0.5f, 1.f, 1.f, 1.f };
-	}
-
 	const s_h1_lighting_triangle* best = NULL;
 	real32 best_z = -FLT_MAX;
-	real32 weights[3] = {};
 	for (const s_h1_lighting_triangle& triangle : g_h1_render.lighting_triangles)
 	{
 		const real_point3d& a = triangle.points[0];
@@ -803,6 +785,62 @@ void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_
 			weights[2] = w2;
 		}
 	}
+	return best;
+}
+
+void h1_render_light_particle(const real_point3d* point, real_rgb_color* out_light, real_rgb_color* out_diffuse)
+{
+	*out_light = { 0.5f, 0.5f, 0.5f };
+	*out_diffuse = { 0.5f, 0.5f, 0.5f };
+	real32 weights[3];
+	const s_h1_lighting_triangle* triangle = h1_render_lighting_triangle_below(point, weights);
+	if (!triangle)
+	{
+		return;
+	}
+	auto shade2 = [&](const real_point2d* values) -> real_point2d
+	{
+		return { weights[0] * values[0].x + weights[1] * values[1].x + weights[2] * values[2].x, weights[0] * values[0].y + weights[1] * values[1].y + weights[2] * values[2].y };
+	};
+	const real_point2d lightmap_texcoord = shade2(triangle->lightmap_texcoords);
+	real_rgb_color light;
+	if (g_h1_render.lightmap_bitmap_tag != NONE &&
+		h1_bitmap_sample_lod(g_h1_render.lightmap_bitmap_tag, triangle->lightmap_bitmap_index, lightmap_texcoord.x, lightmap_texcoord.y, 1.f, &light))
+	{
+		out_light->red = MIN(light.red + 0.1f, 1.f);
+		out_light->green = MIN(light.green + 0.1f, 1.f);
+		out_light->blue = MIN(light.blue + 0.1f, 1.f);
+	}
+	const real_point2d texcoord = shade2(triangle->texcoords);
+	if (triangle->diffuse_bitmap_tag_index != NONE)
+	{
+		h1_bitmap_sample_lod(triangle->diffuse_bitmap_tag_index, triangle->diffuse_bitmap_index, texcoord.x, texcoord.y, 0.3f, out_diffuse);
+	}
+	return;
+}
+
+// lighting from the lightmapped structure surface below a point: the material's radiosity lights scaled by the lightmap
+// object_lights.c lights_distant_lighting_at_point: the structure under the point (10 units down) lights it from its lightmap, its
+// incident radiosity and its diffuse color (build_distant_lights), the bsp's default lighting without one
+void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_lighting)
+{
+	if (g_h1_render.lighting.ambient.red != 0.f)
+	{
+		*out_lighting = g_h1_render.lighting;
+	}
+	else
+	{
+		// default_object_lighting
+		out_lighting->ambient = { 0.2f, 0.2f, 0.2f };
+		out_lighting->light0_color = { 1.f, 1.f, 1.f };
+		out_lighting->light0_direction = { -0.577f, -0.577f, -0.577f };
+		out_lighting->light1_color = { 0.4f, 0.4f, 0.5f };
+		out_lighting->light1_direction = { 0.f, 0.f, 1.f };
+		out_lighting->reflection_tint = { 0.5f, 1.f, 1.f, 1.f };
+	}
+
+	real32 weights[3] = {};
+	const s_h1_lighting_triangle* best = h1_render_lighting_triangle_below(point, weights);
 	if (!best || best->diffuse_bitmap_tag_index == NONE)
 	{
 		return;

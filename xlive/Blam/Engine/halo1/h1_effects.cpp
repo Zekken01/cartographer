@@ -1621,13 +1621,25 @@ static void h1_particle_new(const s_h1_new_particle* data)
 	}
 
 	// lit by the surface below it unless it lights itself
-	if (!TEST_BIT(definition->flags, _h1_particle_definition_self_illuminated_bit))
+	// particles.c particle_new: lit by the structure's lightmap under it, tinted by its diffuse texture (light_particle)
+	const bool self_illuminated = TEST_BIT(definition->flags, _h1_particle_definition_self_illuminated_bit);
+	const bool tint_from_diffuse = TEST_BIT(definition->flags, _h1_particle_definition_tint_from_diffuse_texture_bit);
+	if (!self_illuminated || tint_from_diffuse)
 	{
-		s_h1_render_lighting lighting;
-		h1_render_lighting_at(&data->position, &lighting);
-		particle.color.red *= MIN(lighting.ambient.red + lighting.light0_color.red + lighting.light1_color.red, 1.f);
-		particle.color.green *= MIN(lighting.ambient.green + lighting.light0_color.green + lighting.light1_color.green, 1.f);
-		particle.color.blue *= MIN(lighting.ambient.blue + lighting.light0_color.blue + lighting.light1_color.blue, 1.f);
+		real_rgb_color light, diffuse;
+		h1_render_light_particle(&data->position, &light, &diffuse);
+		if (!self_illuminated)
+		{
+			particle.color.red *= light.red;
+			particle.color.green *= light.green;
+			particle.color.blue *= light.blue;
+		}
+		if (tint_from_diffuse)
+		{
+			particle.color.red *= diffuse.red;
+			particle.color.green *= diffuse.green;
+			particle.color.blue *= diffuse.blue;
+		}
 	}
 
 	if (!h1_particle_next_sequence(&particle))
