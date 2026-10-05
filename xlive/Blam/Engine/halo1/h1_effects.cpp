@@ -3,6 +3,7 @@
 
 #include "h1_bitmaps.h"
 #include "h1_cache_file.h"
+#include "h1_first_person.h"
 #include "h1_fog.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
@@ -2526,6 +2527,17 @@ static int16 h1_object_markers_get(datum object_index, const char* name, object_
 	if (!name || !name[0])
 	{
 		return 0;
+	}
+	// the local player's weapon is seen in first person: its attachments follow its first person model's markers
+	real_matrix4x3 first_person_marker;
+	if (maximum_count > 0 && h1_first_person_marker_get(object_index, name, &first_person_marker))
+	{
+		markers[0].node_index = 0;
+		markers[0].region_index = 0;
+		markers[0].matrix = first_person_marker;
+		markers[0].node_matrix = first_person_marker;
+		markers[0].radius = 0.f;
+		return 1;
 	}
 	char marker_name[32];
 	strncpy_s(marker_name, name, _TRUNCATE);

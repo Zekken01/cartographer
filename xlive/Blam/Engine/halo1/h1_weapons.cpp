@@ -662,7 +662,7 @@ static void h1_weapon_effect_at_marker(datum object_index, const char* marker_na
 	}
 	real_point3d point = object->object.position;
 	real_vector3d forward = object->object.forward;
-	real_matrix4x3 first_person_marker;
+	real_matrix4x3 first_person_marker = {};
 	if (marker_name && marker_name[0] && h1_first_person_marker_get(object_index, marker_name, &first_person_marker))
 	{
 		point = first_person_marker.position;
