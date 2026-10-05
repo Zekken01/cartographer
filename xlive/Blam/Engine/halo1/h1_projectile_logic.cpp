@@ -12,7 +12,10 @@
 
 #include "game/game_time.h"
 #include "math/real_math.h"
+#include "models/model_definitions.h"
+#include "models/models.h"
 #include "objects/damage.h"
+#include "objects/object_definition.h"
 #include "objects/object_types.h"
 #include "objects/objects.h"
 #include "physics/collisions.h"
@@ -1256,20 +1259,60 @@ static int16 h1_global_material_to_material_type(int16 global_material_index)
 	return NONE;
 }
 
-// the halo 1 material type of a material of a halo 1 object's collision model, NONE for other objects
+// the halo 1 material type of a material of an object's collision model: a halo 1 object's own, a halo 2 object's (a vehicle) from
+// its model's global material, the halo 1 material it was built from or the nearest by name
 static int16 h1_object_material_type(datum object_index, int16 material_index)
 {
 	const object_datum* object = (const object_datum*)object_try_and_get(object_index);
-	const datum h1_definition_index = object ? h1_objects_h1_definition_get(object->definition_index) : NONE;
-	const h1_proj* definition = h1_definition_index != NONE ? (const h1_proj*)g_h1_cache_file->tag_get('obje', h1_definition_index) : NULL;
-	const h1_coll* collision_model = definition && definition->collision_model.index != NONE ?
-		(const h1_coll*)g_h1_cache_file->tag_get('coll', definition->collision_model.index) : NULL;
-	if (!collision_model || collision_model->materials.count <= 0)
+	if (!object)
 	{
 		return NONE;
 	}
-	const h1_coll_materials* material = g_h1_cache_file->block_get(collision_model->materials, VALID_INDEX(material_index, collision_model->materials.count) ? material_index : 0);
-	return material->material_type;
+	const datum h1_definition_index = h1_objects_h1_definition_get(object->definition_index);
+	if (h1_definition_index != NONE)
+	{
+		const h1_proj* definition = (const h1_proj*)g_h1_cache_file->tag_get('obje', h1_definition_index);
+		const h1_coll* collision_model = definition && definition->collision_model.index != NONE ?
+			(const h1_coll*)g_h1_cache_file->tag_get('coll', definition->collision_model.index) : NULL;
+		if (!collision_model || collision_model->materials.count <= 0)
+		{
+			return NONE;
+		}
+		const h1_coll_materials* material = g_h1_cache_file->block_get(collision_model->materials, VALID_INDEX(material_index, collision_model->materials.count) ? material_index : 0);
+		return material->material_type;
+	}
+
+	const object_definition* definition = object_definition_get(object->definition_index);
+	const s_model_definition* model = definition && definition->object.model.index != NONE ? model_definition_get(definition->object.model.index) : NULL;
+	if (!model || model->materials.count <= 0)
+	{
+		return NONE;
+	}
+	const s_model_material* material = model->materials[VALID_INDEX(material_index, model->materials.count) ? material_index : 0];
+	const int16 material_type = h1_global_material_to_material_type(material->global_material_index);
+	if (material_type != NONE)
+	{
+		return material_type;
+	}
+	// halo 1's material types by halo 2's global material names
+	const char* name = material->global_material_name != 0 ? string_id_get_string_const(material->global_material_name) : NULL;
+	if (!name)
+	{
+		return 6;	// metal thin
+	}
+	static const struct { const char* part; int16 material_type; } k_names[] =
+	{
+		{ "glass", 9 }, { "rubber", 8 }, { "metal_thick", 7 }, { "metal", 6 }, { "plastic", 27 }, { "wood", 4 }, { "armor", 23 },
+		{ "flesh", 24 }, { "stone", 2 }, { "dirt", 0 }, { "sand", 1 }, { "snow", 3 }, { "ice", 31 }, { "water", 28 }, { "leaf", 29 },
+	};
+	for (int32 i = 0; i < NUMBEROF(k_names); i++)
+	{
+		if (strstr(name, k_names[i].part))
+		{
+			return k_names[i].material_type;
+		}
+	}
+	return 6;	// metal thin
 }
 
 // the object that fired the projectile (its damage owner)
