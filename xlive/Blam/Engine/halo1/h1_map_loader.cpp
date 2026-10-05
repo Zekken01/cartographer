@@ -275,6 +275,25 @@ static int32 h1_maps_structure_bsp_cluster_get(int32 bsp_index, const real_point
 	return leaf ? leaf->cluster : NONE;
 }
 
+// scenario.c scenario_trigger_volume_test_point: inside the trigger volume's box (oriented by its forward and up)
+static bool h1_maps_trigger_volume_test_point(int16 trigger_volume_index, const real_point3d* point)
+{
+	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
+	const h1_scnr_trigger_volumes* volume = scenario && VALID_INDEX(trigger_volume_index, scenario->trigger_volumes.count) ?
+		g_h1_cache_file->block_get(scenario->trigger_volumes, trigger_volume_index) : NULL;
+	if (!volume)
+	{
+		return false;
+	}
+	const real_vector3d offset = { point->x - volume->position.x, point->y - volume->position.y, point->z - volume->position.z };
+	real_vector3d left;
+	cross_product3d(&volume->up, &volume->forward, &left);
+	const real32 x = dot_product3d(&offset, &volume->forward);
+	const real32 y = dot_product3d(&offset, &left);
+	const real32 z = dot_product3d(&offset, &volume->up);
+	return x > 0.f && y > 0.f && z > 0.f && x < volume->extents.x && y < volume->extents.y && z < volume->extents.z;
+}
+
 // until halo 1's scripts switch the structure bsps (switch_bsp), the player's leaving the current one for another switches to it
 static void h1_maps_structure_bsp_follow_player(void)
 {
@@ -292,6 +311,23 @@ static void h1_maps_structure_bsp_follow_player(void)
 	object_get_origin(player->unit_index, &position, false);
 	position.z += 0.3f;
 	const int16 current = h1_maps_structure_bsp_index();
+
+	// the scenario's bsp switch trigger volumes: the player in one from the current structure bsp switches to its destination
+	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
+	const real_point3d center = ((const object_datum*)object_get(player->unit_index))->object.center;
+	for (int32 i = 0; scenario && i < scenario->bsp_switch_trigger_volumes.count; i++)
+	{
+		const h1_scnr_bsp_switch_trigger_volumes* bsp_switch = g_h1_cache_file->block_get(scenario->bsp_switch_trigger_volumes, i);
+		if (bsp_switch->source_index != current || !VALID_INDEX(bsp_switch->destination_index, g_h1_cache_file->structure_bsp_count()) ||
+			!h1_maps_trigger_volume_test_point(bsp_switch->trigger_volume_index, &center))
+		{
+			continue;
+		}
+		h1_log("maps: the player entered the switch from structure bsp %d to %d", current, bsp_switch->destination_index);
+		main_switch_structure_bsp_request(bsp_switch->destination_index);
+		return;
+	}
+
 	if (h1_maps_structure_bsp_cluster_get(current, &position) != NONE)
 	{
 		return;
