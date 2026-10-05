@@ -112,6 +112,9 @@ ASSERT_STRUCT_SIZE(s_first_person_orientations, 4096);
 
 void first_person_weapons_apply_patches(void);
 
+// the action label the user's first person primary weapon animates
+string_id first_person_weapon_action_get(int32 user_index);
+
 s_first_person_model_data* first_person_model_data_get(uint32 user_index);
 
 void first_person_weapons_toggle(bool state);

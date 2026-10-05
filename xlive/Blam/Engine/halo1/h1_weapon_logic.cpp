@@ -3,6 +3,7 @@
 
 #include "h1_cache_file.h"
 #include "h1_effects.h"
+#include "h1_first_person_weapon.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
 #include "h1_projectiles.h"
@@ -190,8 +191,6 @@ enum : uint32
 	k_h2_unit_control_primary_trigger_held = FLAG(18),
 	k_h2_unit_control_reload = FLAG(30),
 	k_h2_weapon_control_busy = FLAG(5),
-	k_h2_weapon_state_ready = 9,
-	k_h2_weapon_state_put_away = 10,
 };
 
 /* structures */
@@ -243,7 +242,7 @@ struct s_h1_weapon_logic_state
 	int16 animation_index;
 	int16 animation_frame;
 	int32 overheated_effect_id;
-	int16 h2_state;
+	bool in_hands;
 	real32 leftover_ticks;
 	bool primary_pressed;
 	std::vector<e_h1_first_person_weapon_message> messages;
@@ -272,7 +271,7 @@ static bool __cdecl h1_weapon_magazine_update_hook(datum weapon_index, int32 mag
 static bool h1_weapon_context_get(datum weapon_index, s_h1_weapon_logic_context* context);
 static void h1_weapon_new(s_h1_weapon_logic_context* context);
 static void h1_weapon_tick(s_h1_weapon_logic_context* context);
-static void h1_weapon_h2_state_changed(s_h1_weapon_logic_context* context, int16 h2_state);
+static void h1_weapon_hands_changed(s_h1_weapon_logic_context* context, bool in_hands);
 static void h1_weapon_mirror_to_h2(s_h1_weapon_logic_context* context);
 
 static const h1_weap_triggers* h1_trigger_definition_get(const s_h1_weapon_logic_context* context, int16 trigger_index);
@@ -397,19 +396,20 @@ static bool h1_weapon_update_hook(datum weapon_index)
 	weapon_datum* weapon = context.weapon;
 	s_h1_weapon_logic_state* state = context.state;
 
-	// halo 2 readies and puts away the weapon (the unit's weapon swap): weapons.c weapon_ready and weapon_put_away
-	const int16 h2_state = weapon->weapon.state;
-	if (h2_state != state->h2_state)
-	{
-		h1_weapon_h2_state_changed(&context, h2_state);
-		state->h2_state = h2_state;
-	}
-
 	// units.c unit_update_weapons -> weapon_owner_update: the owner's controls, the presses kept for the next halo 1 tick
 	uint16 control_flags = 0;
 	real32 primary_trigger = 0.f;
 	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(weapon->object.parent_object_index, _object_mask_unit);
-	if (unit && h2_state != k_h2_weapon_state_put_away)
+	// only the weapon in the unit's hands gets its controls (the others ride along in the inventory)
+	const bool in_hands = unit && unit->unit.weapon_indices[0] != NONE &&
+		unit_inventory_get_weapon(weapon->object.parent_object_index, unit->unit.weapon_indices[0]) == weapon_index;
+	// halo 2's unit swaps the weapons: weapons.c weapon_ready as the weapon comes into the hands, weapon_put_away as it leaves
+	if (in_hands != state->in_hands)
+	{
+		h1_weapon_hands_changed(&context, in_hands);
+		state->in_hands = in_hands;
+	}
+	if (in_hands)
 	{
 		const uint32 unit_control = *(const uint32*)&unit->unit.control_flags;
 		if (unit_control & k_h2_unit_control_primary_trigger_pressed)
@@ -424,7 +424,7 @@ static bool h1_weapon_update_hook(datum weapon_index)
 		{
 			SET_BIT(state->flags, _h1_weapon_needs_to_reload_bit, true);
 		}
-		if ((weapon->weapon.control_flags & k_h2_weapon_control_busy) || h2_state == k_h2_weapon_state_ready)
+		if (weapon->weapon.control_flags & k_h2_weapon_control_busy)
 		{
 			control_flags |= FLAG(_h1_weapon_control_user_busy_bit);
 		}
@@ -453,6 +453,11 @@ static bool h1_weapon_update_hook(datum weapon_index)
 			// detonated
 			g_h1_weapon_logic.erase(weapon_index);
 			return false;
+		}
+		// game_tick: the first person weapon updates after the weapons, with this tick's messages
+		if (in_hands && weapon->object.parent_object_index == h1_first_person_weapon_unit_get())
+		{
+			h1_first_person_weapon_tick();
 		}
 	}
 	h1_weapon_mirror_to_h2(&context);
@@ -505,7 +510,6 @@ static void h1_weapon_new(s_h1_weapon_logic_context* context)
 	state->tracked_object_index = NONE;
 	state->animation_index = NONE;
 	state->overheated_effect_id = 0;
-	state->h2_state = context->weapon->weapon.state;
 	for (int32 i = 0; i < k_h1_maximum_triggers; i++)
 	{
 		state->triggers[i].charging_effect_id = 0;
@@ -901,11 +905,13 @@ static void h1_weapon_tick(s_h1_weapon_logic_context* context)
 }
 
 // halo 2's weapon swap readies and puts away the weapon
-static void h1_weapon_h2_state_changed(s_h1_weapon_logic_context* context, int16 h2_state)
+static void h1_weapon_hands_changed(s_h1_weapon_logic_context* context, bool in_hands)
 {
 	s_h1_weapon_logic_state* state = context->state;
-	if (h2_state == k_h2_weapon_state_ready)
+	if (in_hands)
 	{
+		// the messages of its time in the inventory (its put away) are old
+		state->messages.clear();
 		// weapons.c weapon_ready
 		h1_weapon_reset(context);
 		h1_weapon_set_state(context, _h1_weapon_state_ready, true);
@@ -913,7 +919,7 @@ static void h1_weapon_h2_state_changed(s_h1_weapon_logic_context* context, int16
 		h1_weapon_effect_new(context, &context->definition->ready_effect, 0.f, 0.f, false);
 		state->state_timer = h1_weapon_first_person_animation_time(context, false, _h1_first_person_animation_ready, NONE);
 	}
-	else if (h2_state == k_h2_weapon_state_put_away)
+	else
 	{
 		// weapons.c weapon_put_away
 		h1_weapon_set_state(context, _h1_weapon_state_put_away, true);

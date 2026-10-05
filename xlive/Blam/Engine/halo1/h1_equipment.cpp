@@ -9,6 +9,7 @@
 #include "h1_projectiles.h"
 #include "h1_scenery.h"
 #include "h1_first_person.h"
+#include "h1_first_person_weapon.h"
 #include "h1_weapons.h"
 #include "h1_weapon_logic.h"
 #include "h1_projectiles.h"
@@ -97,6 +98,7 @@ void h1_equipment_build(scenario* h2_scenario, const h1_scnr* h1_scenario)
 	h1_weapons_reset();
 	h1_weapon_logic_reset();
 	h1_first_person_reset();
+	h1_first_person_weapon_reset();
 
 	const int32 h1_item_count = h1_scenario->netgame_equipment.count;
 

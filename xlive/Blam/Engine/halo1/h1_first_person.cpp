@@ -2,6 +2,7 @@
 #include "h1_first_person.h"
 
 #include "h1_cache_file.h"
+#include "h1_first_person_weapon.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
 #include "h1_object_tags.h"
@@ -91,7 +92,11 @@ int32 h1_first_person_models_submit(int32 user_index, s_first_person_model_data*
 		model.h1_model_index = found->second;
 		model.object_index = models[i].object_index;
 		model.node_count = MIN(h1_model->nodes.count, (int32)k_h1_maximum_first_person_nodes);
-		csmemcpy(model.nodes, models[i].nodes, sizeof(real_matrix4x3) * model.node_count);
+		// halo 1's first person weapon poses its models, halo 2's pose stays for weapons it doesn't show
+		if (!h1_first_person_weapon_model_nodes_get(model.h1_model_index, model.object_index, model.nodes, model.node_count))
+		{
+			csmemcpy(model.nodes, models[i].nodes, sizeof(real_matrix4x3) * model.node_count);
+		}
 		g_h1_first_person_frame.push_back(model);
 	}
 	return kept_count;

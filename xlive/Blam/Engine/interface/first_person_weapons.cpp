@@ -429,6 +429,13 @@ static s_first_person_orientations* first_person_orientations_get(uint32 user_in
 	return &first_person_orientations_get_global()[(k_first_person_max_weapons * user_index) + weapon_slot];
 }
 
+string_id first_person_weapon_action_get(int32 user_index)
+{
+	// the action label of the primary weapon's animation (animation_string_ids: mode, class, type, action)
+	const first_person_weapon* fp = first_person_weapons_get(user_index);
+	return fp->weapon[k_first_person_primary_weapon].animation_manager.animation_string_ids[3];
+}
+
 static s_first_person_model_data* first_person_model_data_get_global(void)
 {
 	return Memory::GetAddress<s_first_person_model_data*>(0x4E8F48, 0x50EDF0);
