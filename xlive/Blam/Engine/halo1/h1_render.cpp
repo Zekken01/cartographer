@@ -61,8 +61,13 @@ struct s_h1_lighting_triangle
 {
 	real_point3d points[3];
 	real_point2d lightmap_texcoords[3];
+	real_point2d texcoords[3];
+	real_vector3d normals[3];
+	real_vector3d incident_radiosity[3];
 	int32 lightmap_bitmap_index;
 	int32 material_index;
+	datum diffuse_bitmap_tag_index;	// the environment shader's base map (object_lights.c sample_diffuse_texture)
+	int16 diffuse_bitmap_index;
 };
 
 struct s_h1_lighting_material
@@ -409,6 +414,7 @@ static bool h1_render_structure_initialize(void)
 	g_h1_render.lighting.light0_direction = bsp->default_distant_light_0_direction;
 	g_h1_render.lighting.light1_color = bsp->default_distant_light_1_color;
 	g_h1_render.lighting.light1_direction = bsp->default_distant_light_1_direction;
+	g_h1_render.lighting.reflection_tint = bsp->default_reflection_tint;
 
 	int32 vertex_count = 0;
 	int32 index_count = 0;
@@ -464,6 +470,20 @@ static bool h1_render_structure_initialize(void)
 				lighting_material.light1_color = material->distant_light_count > 1 ? material->distant_light_1_color : real_rgb_color{ 0.f, 0.f, 0.f };
 				lighting_material.light1_direction = material->distant_light_1_direction;
 				g_h1_render.lighting_materials.push_back(lighting_material);
+			}
+
+			// object_lights.c sample_diffuse_texture: the environment shader's base map, the material's permutation of it
+			datum diffuse_bitmap_tag_index = NONE;
+			int16 diffuse_bitmap_index = NONE;
+			if (material->shader.group_tag == 'senv' && material->shader.index != NONE)
+			{
+				const h1_senv* environment = (const h1_senv*)g_h1_cache_file->tag_get('senv', material->shader.index);
+				const h1_bitm* base_map = environment && environment->base_map.index != NONE ? (const h1_bitm*)g_h1_cache_file->tag_get('bitm', environment->base_map.index) : NULL;
+				if (base_map && base_map->bitmaps.count > 0)
+				{
+					diffuse_bitmap_tag_index = environment->base_map.index;
+					diffuse_bitmap_index = (int16)(material->shader_permutation % base_map->bitmaps.count);
+				}
 			}
 
 			// xbox: 32 byte compressed rendered vertices followed by 8 byte compressed lightmap vertices
@@ -533,9 +553,17 @@ static bool h1_render_structure_initialize(void)
 						const s_h1_structure_vertex* vertex = &vertices[vertex_cursor + triangle_vertices[k]];
 						triangle.points[k] = { vertex->position[0], vertex->position[1], vertex->position[2] };
 						triangle.lightmap_texcoords[k] = { vertex->lightmap_texcoord[0], vertex->lightmap_texcoord[1] };
+						triangle.texcoords[k] = { vertex->texcoord[0], vertex->texcoord[1] };
+						triangle.normals[k] = { vertex->normal[0], vertex->normal[1], vertex->normal[2] };
+						// the compressed lightmap vertex starts with the incident radiosity (11:11:10)
+						real32 radiosity[3];
+						h1_unpack_normal(*(const uint32*)(data + material_vertex_count * 32 + triangle_vertices[k] * 8), radiosity);
+						triangle.incident_radiosity[k] = { radiosity[0], radiosity[1], radiosity[2] };
 					}
 					triangle.lightmap_bitmap_index = lightmap->bitmap;
 					triangle.material_index = lighting_material_index;
+					triangle.diffuse_bitmap_tag_index = diffuse_bitmap_tag_index;
+					triangle.diffuse_bitmap_index = diffuse_bitmap_index;
 					if (valid)
 					{
 						g_h1_render.lighting_triangles.push_back(triangle);
@@ -688,15 +716,28 @@ const real_point3d* h1_render_structure_triangle_get(int32 index)
 }
 
 // lighting from the lightmapped structure surface below a point: the material's radiosity lights scaled by the lightmap
+// object_lights.c lights_distant_lighting_at_point: the structure under the point (10 units down) lights it from its lightmap, its
+// incident radiosity and its diffuse color (build_distant_lights), the bsp's default lighting without one
 void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_lighting)
 {
-	*out_lighting = g_h1_render.lighting;
+	if (g_h1_render.lighting.ambient.red != 0.f)
+	{
+		*out_lighting = g_h1_render.lighting;
+	}
+	else
+	{
+		// default_object_lighting
+		out_lighting->ambient = { 0.2f, 0.2f, 0.2f };
+		out_lighting->light0_color = { 1.f, 1.f, 1.f };
+		out_lighting->light0_direction = { -0.577f, -0.577f, -0.577f };
+		out_lighting->light1_color = { 0.4f, 0.4f, 0.5f };
+		out_lighting->light1_direction = { 0.f, 0.f, 1.f };
+		out_lighting->reflection_tint = { 0.5f, 1.f, 1.f, 1.f };
+	}
 
 	const s_h1_lighting_triangle* best = NULL;
 	real32 best_z = -FLT_MAX;
-	real32 best_weights[3] = {};
-	const real32 test_z = point->z + 0.5f;
-
+	real32 weights[3] = {};
 	for (const s_h1_lighting_triangle& triangle : g_h1_render.lighting_triangles)
 	{
 		const real_point3d& a = triangle.points[0];
@@ -715,48 +756,66 @@ void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_
 			continue;
 		}
 		const real32 z = w0 * a.z + w1 * b.z + w2 * c.z;
-		if (z <= test_z && z > best_z)
+		if (z <= point->z && z >= point->z - 10.f && z > best_z)
 		{
 			best = &triangle;
 			best_z = z;
-			best_weights[0] = w0;
-			best_weights[1] = w1;
-			best_weights[2] = w2;
+			weights[0] = w0;
+			weights[1] = w1;
+			weights[2] = w2;
 		}
 	}
-
-	if (!best)
+	if (!best || best->diffuse_bitmap_tag_index == NONE)
 	{
-		// nothing below, use the brightest material lighting so objects aren't black
-		out_lighting->ambient = { 0.35f, 0.35f, 0.35f };
-		out_lighting->light0_color = { 0.7f, 0.7f, 0.7f };
-		out_lighting->light0_direction = { -0.577f, -0.577f, -0.577f };
-		out_lighting->light1_color = { 0.2f, 0.2f, 0.25f };
-		out_lighting->light1_direction = { 0.f, 0.f, 1.f };
 		return;
 	}
 
-	const s_h1_lighting_material* material = &g_h1_render.lighting_materials[best->material_index];
-	out_lighting->ambient = material->ambient;
-	out_lighting->light0_color = material->light0_color;
-	out_lighting->light0_direction = material->light0_direction;
-	out_lighting->light1_color = material->light1_color;
-	out_lighting->light1_direction = material->light1_direction;
-
-	real_rgb_color sample;
-	const real32 u = best_weights[0] * best->lightmap_texcoords[0].x + best_weights[1] * best->lightmap_texcoords[1].x + best_weights[2] * best->lightmap_texcoords[2].x;
-	const real32 v = best_weights[0] * best->lightmap_texcoords[0].y + best_weights[1] * best->lightmap_texcoords[1].y + best_weights[2] * best->lightmap_texcoords[2].y;
-	if (h1_bitmap_sample(g_h1_render.lightmap_bitmap_tag, best->lightmap_bitmap_index, u, v, &sample))
+	auto shade2 = [&](const real_point2d* values) -> real_point2d
 	{
-		// shadowed ground darkens the direct light, the lightmap color tints the ambient term
-		const real32 brightness = PIN((sample.red * 0.3f + sample.green * 0.59f + sample.blue * 0.11f) * 1.5f, 0.f, 1.f);
-		out_lighting->light0_color.red *= brightness;
-		out_lighting->light0_color.green *= brightness;
-		out_lighting->light0_color.blue *= brightness;
-		out_lighting->ambient.red = MAX(out_lighting->ambient.red, sample.red * 0.5f);
-		out_lighting->ambient.green = MAX(out_lighting->ambient.green, sample.green * 0.5f);
-		out_lighting->ambient.blue = MAX(out_lighting->ambient.blue, sample.blue * 0.5f);
+		return { weights[0] * values[0].x + weights[1] * values[1].x + weights[2] * values[2].x, weights[0] * values[0].y + weights[1] * values[1].y + weights[2] * values[2].y };
+	};
+	auto shade3 = [&](const real_vector3d* values) -> real_vector3d
+	{
+		return
+		{
+			weights[0] * values[0].i + weights[1] * values[1].i + weights[2] * values[2].i,
+			weights[0] * values[0].j + weights[1] * values[1].j + weights[2] * values[2].j,
+			weights[0] * values[0].k + weights[1] * values[1].k + weights[2] * values[2].k
+		};
+	};
+	real_rgb_color diffuse_color;
+	real_rgb_color lightmap_color;
+	const real_point2d texcoord = shade2(best->texcoords);
+	const real_point2d lightmap_texcoord = shade2(best->lightmap_texcoords);
+	if (!h1_bitmap_sample_lod(best->diffuse_bitmap_tag_index, best->diffuse_bitmap_index, texcoord.x, texcoord.y, 0.3f, &diffuse_color) ||
+		!h1_bitmap_sample_lod(g_h1_render.lightmap_bitmap_tag, best->lightmap_bitmap_index, lightmap_texcoord.x, lightmap_texcoord.y, 1.f, &lightmap_color))
+	{
+		return;
 	}
+	real_vector3d surface_normal = shade3(best->normals);
+	normalize3d(&surface_normal);
+	real_vector3d radiosity[3];
+	real32 lengths[3];
+	for (int32 i = 0; i < 3; i++)
+	{
+		radiosity[i] = best->incident_radiosity[i];
+		lengths[i] = normalize3d(&radiosity[i]);
+	}
+	real_vector3d radiosity_normal = shade3(radiosity);
+	normalize3d(&radiosity_normal);
+	(void)lengths;
+
+	// build_distant_lights
+	const real32 brightness = lightmap_color.red * 0.299f + lightmap_color.green * 0.587f + lightmap_color.blue * 0.114f;
+	out_lighting->ambient = { lightmap_color.red * 0.4f + 0.03f, lightmap_color.green * 0.4f + 0.03f, lightmap_color.blue * 0.4f + 0.03f };
+	out_lighting->light0_color = lightmap_color;
+	out_lighting->light0_direction = { -radiosity_normal.i, -radiosity_normal.j, -radiosity_normal.k };
+	out_lighting->light1_color = { diffuse_color.red * brightness, diffuse_color.green * brightness, diffuse_color.blue * brightness };
+	out_lighting->light1_direction = surface_normal;
+	out_lighting->reflection_tint.alpha = PIN(brightness * 1.5f + 0.25f, 0.f, 1.f);
+	out_lighting->reflection_tint.red = PIN(diffuse_color.red * 3.f + 0.5f, 0.f, 1.f) * PIN(lightmap_color.red * 2.f + 0.25f, 0.f, 1.f);
+	out_lighting->reflection_tint.green = PIN(diffuse_color.green * 3.f + 0.5f, 0.f, 1.f) * PIN(lightmap_color.green * 2.f + 0.25f, 0.f, 1.f);
+	out_lighting->reflection_tint.blue = PIN(diffuse_color.blue * 3.f + 0.5f, 0.f, 1.f) * PIN(lightmap_color.blue * 2.f + 0.25f, 0.f, 1.f);
 	return;
 }
 

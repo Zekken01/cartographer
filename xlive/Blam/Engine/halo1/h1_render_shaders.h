@@ -17,6 +17,7 @@ struct s_h1_render_lighting
 	real_rgb_color light0_color;
 	real_vector3d light1_direction;
 	real_rgb_color light1_color;
+	real_argb_color reflection_tint;	// render_lighting reflection_tint_color: the reflections' tint and brightness
 };
 
 enum e_h1_render_pass

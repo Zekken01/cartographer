@@ -383,7 +383,7 @@ float4 self_illumination_color : register(c7);
 float4 change_color : register(c8);
 float4 perpendicular : register(c9);	// reflection tint, w: brightness (with the reflection falloff)
 float4 parallel : register(c10);
-float4 model_settings : register(c11);	// x: has a reflection cube map, yz: base map offset
+float4 model_settings : register(c11);	// x: has a reflection cube map, yz: base map offset, w: translucency
 float4 camera_world : register(c12);
 
 float3 detail_combine(float3 color, float3 detail, float function)
@@ -416,18 +416,24 @@ PS_OUTPUT main(PS_INPUT input)
 
 	// the vertex lighting plus the self-illumination, tinted by the change color
 	float3 normal = normalize(input.world_normal);
+	// model vertex shader (reflection permutation): the first light reaches the back by the translucency
+	float light0 = dot(normal, -light0_direction.xyz);
 	float3 light = ambient.rgb +
-		saturate(dot(normal, -light0_direction.xyz)) * light0_color.rgb +
+		max(max(light0, -light0 * model_settings.w), 0.0f) * light0_color.rgb +
 		saturate(dot(normal, -light1_direction.xyz)) * light1_color.rgb +
 		dynamic_light(input.world, normal);
 	light = saturate(saturate(light) + multipurpose.g * self_illumination_color.rgb);
 	light *= lerp(float3(1.0f, 1.0f, 1.0f), change_color.rgb, multipurpose.a);
 
 	// the reflection: the cube map tinted between the parallel and perpendicular colors by the view angle, masked
-	float3 view = normalize(camera_world.xyz - input.world);
-	float facing = saturate(dot(normal, view));
-	float4 tint = lerp(parallel, perpendicular, facing);
-	float3 reflection = model_settings.x > 0.5f ? texCUBE(reflection_map, reflect(-view, normal)).rgb * tint.rgb : float3(0.0f, 0.0f, 0.0f);
+	// model vertex shader (reflection permutation): the reflection vector 2(n.e)n - e of the eye vector, and vertex color 1 the
+	// parallel color plus the cosine of the view angle times the perpendicular less the parallel, clamped as a vertex color
+	float3 eye = camera_world.xyz - input.world;
+	float3 view = normalize(eye);
+	float facing = dot(normal, view);
+	float4 tint = saturate(parallel + facing * (perpendicular - parallel));
+	float3 reflection_vector = 2.0f * dot(eye, normal) * normal - eye;
+	float3 reflection = model_settings.x > 0.5f ? texCUBE(reflection_map, reflection_vector).rgb * tint.rgb : float3(0.0f, 0.0f, 0.0f);
 	float specular = multipurpose.r * tint.a;
 
 	float3 color;
@@ -1310,7 +1316,7 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 			(real32)shader->detail_mask,
 			TEST_BIT(shader->flags_3, 0) ? 1.f : 0.f,	// detail after reflection
 		};
-		s_h1_render_lighting default_lighting = { { 0.4f, 0.4f, 0.4f }, { -0.577f, -0.577f, -0.577f }, { 0.8f, 0.8f, 0.8f }, { 0.f, 0.f, 1.f }, { 0.2f, 0.2f, 0.25f } };
+		s_h1_render_lighting default_lighting = { { 0.4f, 0.4f, 0.4f }, { -0.577f, -0.577f, -0.577f }, { 0.8f, 0.8f, 0.8f }, { 0.f, 0.f, 1.f }, { 0.2f, 0.2f, 0.25f }, { 0.5f, 1.f, 1.f, 1.f } };
 		const s_h1_render_lighting* light = lighting ? lighting : &default_lighting;
 		const real32 constants[5][4] =
 		{
@@ -1353,13 +1359,17 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 			reflection_fraction = range != 0.f ? PIN((distance - shader->reflection_cutoff_distance) / range, 0.f, 1.f) : 1.f;
 		}
 		const real_point3d camera_point = global_window_parameters_get()->camera.point;
+		const real_argb_color tint = light->reflection_tint;
 		const real32 model_constants[6][4] =
 		{
 			{ self_illumination.red, self_illumination.green, self_illumination.blue, 0.f },
 			{ change.red, change.green, change.blue, 0.f },
-			{ shader->perpendicular_tint_color.red, shader->perpendicular_tint_color.green, shader->perpendicular_tint_color.blue, shader->perpendicular_brightness * reflection_fraction },
-			{ shader->parallel_tint_color.red, shader->parallel_tint_color.green, shader->parallel_tint_color.blue, shader->parallel_brightness * reflection_fraction },
-			{ reflection ? 1.f : 0.f, 0.f, 0.f, 0.f },
+			// rasterizer_xbox_models.c: the tints and brightnesses times the lighting's reflection tint
+			{ shader->perpendicular_tint_color.red * tint.red, shader->perpendicular_tint_color.green * tint.green,
+				shader->perpendicular_tint_color.blue * tint.blue, shader->perpendicular_brightness * reflection_fraction * tint.alpha },
+			{ shader->parallel_tint_color.red * tint.red, shader->parallel_tint_color.green * tint.green,
+				shader->parallel_tint_color.blue * tint.blue, shader->parallel_brightness * reflection_fraction * tint.alpha },
+			{ reflection ? 1.f : 0.f, 0.f, 0.f, shader->translucency },
 			{ camera_point.x, camera_point.y, camera_point.z, 1.f },
 		};
 		device->SetPixelShaderConstantF(7, &model_constants[0][0], 6);

@@ -453,3 +453,137 @@ bool h1_bitmap_sample(datum bitmap_tag_index, int32 bitmap_index, real32 u, real
 		return false;
 	}
 }
+
+// bitmaps.c bitmap_2d_get_pixel: the nearest texel of the mip level the level of detail picks (lod 1: the largest), any 2d
+// format the textures decode
+bool h1_bitmap_sample_lod(datum bitmap_tag_index, int32 bitmap_index, real32 u, real32 v, real32 lod, real_rgb_color* out_color)
+{
+	if (!g_h1_cache_file || bitmap_tag_index == NONE)
+	{
+		return false;
+	}
+	const h1_bitm* bitmap_group = (const h1_bitm*)g_h1_cache_file->tag_get('bitm', bitmap_tag_index);
+	const h1_bitm_bitmaps* bitmap = bitmap_group && VALID_INDEX(bitmap_index, bitmap_group->bitmaps.count) ?
+		g_h1_cache_file->block_get(bitmap_group->bitmaps, bitmap_index) : NULL;
+	s_h1_format_info info;
+	if (!bitmap || bitmap->type != _h1_bitmap_type_2d || bitmap->width <= 0 || bitmap->height <= 0 || !h1_bitmap_format_info(bitmap->format, &info))
+	{
+		return false;
+	}
+
+	int32 mipmap_index = lod < 1.f && bitmap->mipmap_count > 0 ? (int32)((1.f - lod) * bitmap->mipmap_count) : 0;
+	mipmap_index = PIN(mipmap_index, 0, (int32)bitmap->mipmap_count);
+	uint32 width = (uint32)bitmap->width;
+	uint32 height = (uint32)bitmap->height;
+	uint32 offset = 0;
+	for (int32 level = 0; level < mipmap_index; level++)
+	{
+		offset += h1_bitmap_level_size(&info, width, height);
+		width = MAX(1u, width / 2);
+		height = MAX(1u, height / 2);
+	}
+	// xbox caches leave dxt levels below 4x4 empty: sample the 4x4 one
+	if (info.block_compressed && (width < 4 || height < 4) && mipmap_index > 0)
+	{
+		return h1_bitmap_sample_lod(bitmap_tag_index, bitmap_index, u, v, lod + 1.f / MAX((real32)bitmap->mipmap_count, 1.f), out_color);
+	}
+
+	auto wrap = [](int32 value, uint32 size) -> uint32
+	{
+		return (size & (size - 1)) == 0 ? (uint32)value & (size - 1) : (uint32)(((value % (int32)size) + (int32)size) % (int32)size);
+	};
+	const uint32 x = wrap((int32)floorf((real32)width * u - 0.5f + 0.5f), width);
+	const uint32 y = wrap((int32)floorf((real32)height * v - 0.5f + 0.5f), height);
+	const uint8* pixels = g_h1_cache_file->file_data() + bitmap->pixels_offset + offset;
+	const uint32 level_size = h1_bitmap_level_size(&info, width, height);
+	if (offset + level_size > (uint32)bitmap->pixels_size)
+	{
+		return false;
+	}
+
+	if (info.block_compressed)
+	{
+		const uint32 block_size = info.d3d_format == D3DFMT_DXT1 ? 8 : 16;
+		const uint32 blocks_x = MAX(1u, (width + 3) / 4);
+		const uint8* block = pixels + ((y / 4) * blocks_x + (x / 4)) * block_size;
+		const uint8* color_block = block + (block_size == 16 ? 8 : 0);
+		const uint16 c0 = *(const uint16*)color_block;
+		const uint16 c1 = *(const uint16*)(color_block + 2);
+		const uint32 selectors = *(const uint32*)(color_block + 4);
+		const uint32 selector = (selectors >> (((y & 3) * 4 + (x & 3)) * 2)) & 3;
+		real32 colors[4][3];
+		auto expand = [](uint16 c, real32* out)
+		{
+			out[0] = (real32)((c >> 11) & 0x1F) / 31.f;
+			out[1] = (real32)((c >> 5) & 0x3F) / 63.f;
+			out[2] = (real32)(c & 0x1F) / 31.f;
+		};
+		expand(c0, colors[0]);
+		expand(c1, colors[1]);
+		for (int32 i = 0; i < 3; i++)
+		{
+			if (c0 > c1 || block_size == 16)
+			{
+				colors[2][i] = (2.f * colors[0][i] + colors[1][i]) / 3.f;
+				colors[3][i] = (colors[0][i] + 2.f * colors[1][i]) / 3.f;
+			}
+			else
+			{
+				colors[2][i] = (colors[0][i] + colors[1][i]) / 2.f;
+				colors[3][i] = 0.f;
+			}
+		}
+		out_color->red = colors[selector][0];
+		out_color->green = colors[selector][1];
+		out_color->blue = colors[selector][2];
+		return true;
+	}
+
+	const bool swizzled = TEST_BIT(bitmap->flags, _h1_bitmap_flag_swizzled_bit);
+	const uint32 texel = swizzled ? h1_swizzle_offset(x, y, width, height) : y * width + x;
+	switch (bitmap->format)
+	{
+	case _h1_bitmap_format_r5g6b5:
+	{
+		const uint16 value = *(const uint16*)(pixels + texel * 2);
+		out_color->red = (real32)((value >> 11) & 0x1F) / 31.f;
+		out_color->green = (real32)((value >> 5) & 0x3F) / 63.f;
+		out_color->blue = (real32)(value & 0x1F) / 31.f;
+		return true;
+	}
+	case _h1_bitmap_format_a1r5g5b5:
+	{
+		const uint16 value = *(const uint16*)(pixels + texel * 2);
+		out_color->red = (real32)((value >> 10) & 0x1F) / 31.f;
+		out_color->green = (real32)((value >> 5) & 0x1F) / 31.f;
+		out_color->blue = (real32)(value & 0x1F) / 31.f;
+		return true;
+	}
+	case _h1_bitmap_format_a4r4g4b4:
+	{
+		const uint16 value = *(const uint16*)(pixels + texel * 2);
+		out_color->red = (real32)((value >> 8) & 0xF) / 15.f;
+		out_color->green = (real32)((value >> 4) & 0xF) / 15.f;
+		out_color->blue = (real32)(value & 0xF) / 15.f;
+		return true;
+	}
+	case _h1_bitmap_format_x8r8g8b8:
+	case _h1_bitmap_format_a8r8g8b8:
+	{
+		const uint8* value = pixels + texel * 4;
+		out_color->red = (real32)value[2] / 255.f;
+		out_color->green = (real32)value[1] / 255.f;
+		out_color->blue = (real32)value[0] / 255.f;
+		return true;
+	}
+	case _h1_bitmap_format_y8:
+	case _h1_bitmap_format_ay8:
+	{
+		const real32 value = (real32)pixels[texel] / 255.f;
+		*out_color = { value, value, value };
+		return true;
+	}
+	default:
+		return false;
+	}
+}

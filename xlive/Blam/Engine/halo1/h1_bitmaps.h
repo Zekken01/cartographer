@@ -16,3 +16,5 @@ void h1_bitmaps_dispose(void);
 
 // samples level 0 of a 16/32 bit bitmap on the cpu (lightmaps), returns false for unsupported formats
 bool h1_bitmap_sample(datum bitmap_tag_index, int32 bitmap_index, real32 u, real32 v, real_rgb_color* out_color);
+// bitmaps.c bitmap_2d_get_pixel: the nearest texel of the mip level the level of detail picks (1 the largest level)
+bool h1_bitmap_sample_lod(datum bitmap_tag_index, int32 bitmap_index, real32 u, real32 v, real32 lod, real_rgb_color* out_color);
