@@ -263,6 +263,19 @@ static void h1_animation_encode(const h1_antr_animations* animation, h2x_jmad_an
 			node = { { 0.f, 0.f, 0.f, 1.f }, { 0.f, 0.f, 0.f }, 1.f };
 		}
 		h1_animation_frame_decode(animation, f, frames[f].data());
+		// q and -q are the same rotation, but halo 2 blends between frames: keep each node on the near side of its last frame
+		// (the first frame on the positive w side, so blends between animations agree too)
+		for (int32 node = 0; node < node_count; node++)
+		{
+			real_quaternion* q = &frames[f][node].rotation;
+			const real32 side = f > 0 ?
+				q->v.i * frames[f - 1][node].rotation.v.i + q->v.j * frames[f - 1][node].rotation.v.j + q->v.k * frames[f - 1][node].rotation.v.k + q->w * frames[f - 1][node].rotation.w :
+				q->w;
+			if (side < 0.f)
+			{
+				*q = { -q->v.i, -q->v.j, -q->v.k, -q->w };
+			}
+		}
 	}
 
 	const uint32 rotation_stride = frame_count * 16;

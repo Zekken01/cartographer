@@ -235,7 +235,8 @@ datum h1_weapon_definition_build(datum h1_weapon_index)
 	weapon->campaign_on_ground_scale = weapon->multiplayer_on_ground_scale;
 	weapon->detonation_delay = h1_weapon->detonation_delay;
 
-	// weapon
+	// weapon: halo 2 kept halo 1's first weapon flags (vertical heat display to secondary trigger overrides grenades)
+	weapon->flags_3 = h1_weapon->flags_3 & (FLAG(13) - 1);
 	weapon->secondary_trigger_mode = h1_weapon->secondary_trigger_mode;
 	weapon->maximum_alternate_shots_loaded = h1_weapon->maximum_alternate_shots_loaded;
 	weapon->ready_time = h1_weapon->ready_time;
