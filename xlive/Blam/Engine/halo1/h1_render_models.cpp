@@ -7,8 +7,11 @@
 #include "math/matrix_math.h"
 #include "rasterizer/rasterizer_globals.h"
 #include "rasterizer/dx9/rasterizer_dx9_main.h"
+#include "render/render.h"
 
+#include <algorithm>
 #include <unordered_map>
+#include <vector>
 
 /* structures */
 
@@ -38,6 +41,10 @@ struct s_h1_model_part
 	int32 vertex_count;
 	int32 first_index;
 	int32 index_count;
+	// the part's centroid and its nodes (the transparent parts are drawn back to front by it)
+	int16 centroid_nodes[2];
+	real32 centroid_weights[2];
+	real_point3d centroid;
 };
 
 struct s_h1_model_geometry
@@ -201,6 +208,11 @@ bool h1_render_models_initialize(void)
 
 				s_h1_model_part part_entry;
 				part_entry.shader_index = part->shader_index;
+				part_entry.centroid_nodes[0] = part->centroid_primary_node;
+				part_entry.centroid_nodes[1] = part->centroid_secondary_node;
+				part_entry.centroid_weights[0] = part->centroid_primary_weight;
+				part_entry.centroid_weights[1] = part->centroid_secondary_weight;
+				part_entry.centroid = part->centroid;
 				part_entry.base_vertex = vertex_cursor;
 				part_entry.vertex_count = part_vertex_count;
 				part_entry.first_index = index_cursor;
@@ -338,6 +350,15 @@ void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, cons
 	const real_point3d centroid = { node_matrices[0].n[3][0], node_matrices[0].n[3][1], node_matrices[0].n[3][2] };
 	h1_render_shader_fog_context_set(true, &centroid);
 
+	struct s_h1_part_draw
+	{
+		const s_h1_model_part* part;
+		const h1_mode_shaders* shader_reference;
+		real32 distance;
+	};
+	std::vector<s_h1_part_draw> draws;
+	const render_camera* camera = &global_window_parameters_get()->camera;
+
 	const s_h1_model* entry = &found->second;
 	for (int32 r = 0; r < model->regions.count; r++)
 	{
@@ -363,6 +384,36 @@ void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, cons
 			{
 				continue;
 			}
+			// rasterizer_transparent_geometry: the part's centroid at its nodes, its distance along the camera's forward
+			real_point3d part_centroid = {};
+			for (int32 n = 0; n < 2; n++)
+			{
+				const int16 node = part->centroid_nodes[n];
+				if (part->centroid_weights[n] > 0.f && VALID_INDEX(node, node_count))
+				{
+					real_point3d point;
+					matrix4x3_transform_point(&node_matrices[node], &part->centroid, &point);
+					part_centroid.x += point.x * part->centroid_weights[n];
+					part_centroid.y += point.y * part->centroid_weights[n];
+					part_centroid.z += point.z * part->centroid_weights[n];
+				}
+			}
+			const real_vector3d camera_to_centroid = { part_centroid.x - camera->point.x, part_centroid.y - camera->point.y, part_centroid.z - camera->point.z };
+			draws.push_back({ part, shader_reference,
+				camera->forward.i * camera_to_centroid.i + camera->forward.j * camera_to_centroid.j + camera->forward.k * camera_to_centroid.k });
+		}
+	}
+	// the transparent parts back to front
+	if (pass == _h1_render_pass_transparent)
+	{
+		std::stable_sort(draws.begin(), draws.end(), [](const s_h1_part_draw& a, const s_h1_part_draw& b) { return a.distance > b.distance; });
+	}
+
+	{
+		for (const s_h1_part_draw& draw : draws)
+		{
+			const s_h1_model_part* part = draw.part;
+			const h1_mode_shaders* shader_reference = draw.shader_reference;
 
 			// append to the dynamic buffer, starting over when it is full
 			DWORD lock_flags = D3DLOCK_NOOVERWRITE;
