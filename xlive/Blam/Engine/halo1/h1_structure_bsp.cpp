@@ -58,7 +58,7 @@ static const int16 k_h1_material_type_to_global_material[] =
 /* prototypes */
 
 static int16 h1_index_to_h2_short(int32 index);
-static void h1_collision_bsp_build(collision_bsp* destination, const h1_sbsp_collision_bsp* source, int16 material_offset);
+
 static void h1_structure_material_set(structure_collision_material* material, int16 h1_material_type);
 static int32 h1_instanced_geometry_build(structure_bsp* bsp, const structure_bsp* host_bsp, int32 structure_material_count, std::vector<real_rectangle3d>& out_instance_bounds);
 
@@ -381,7 +381,7 @@ static int32 h1_index_to_h2_bsp3d_child(int32 index)
 	return index;
 }
 
-static void h1_collision_bsp_build(collision_bsp* destination, const h1_sbsp_collision_bsp* source, int16 material_offset)
+void h1_collision_bsp_build(collision_bsp* destination, const h1_sbsp_collision_bsp* source, int16 material_offset)
 {
 	// bsp3d nodes
 	{

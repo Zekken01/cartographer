@@ -2634,3 +2634,5 @@ const char* string_id_get_string_const(string_id index);
 void string_id_convert_string(char* string);
 
 string_id string_id_exists(const char* in_string);
+
+string_id string_id_find_or_add(const char* string);

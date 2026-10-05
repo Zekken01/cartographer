@@ -2,7 +2,9 @@
 #include "h1_equipment.h"
 
 #include "h1_cache_file.h"
+#include "h1_items.h"
 #include "h1_log.h"
+#include "h1_objects.h"
 #include "h1_runtime.h"
 #include "h2_tag_definitions_generated.h"
 
@@ -70,6 +72,7 @@ static std::unordered_map<datum, int8> g_h1_collection_classification;
 
 static const s_h1_object_substitute* h1_object_substitute_get(const char* h1_name);
 static datum h1_item_collection_get(datum h1_collection_index, int8* out_classification);
+static void h1_simulation_definition_table_extend(scenario* h2_scenario);
 static datum h1_vehicle_collection_get(const char* h1_vehicle_name, int8* out_classification);
 static e_item_spawn_game_type h1_equipment_game_type(int16 h1_game_type);
 
@@ -79,6 +82,7 @@ void h1_equipment_build(scenario* h2_scenario, const h1_scnr* h1_scenario)
 {
 	g_h1_collection_cache.clear();
 	g_h1_collection_classification.clear();
+	h1_objects_reset();
 
 	const int32 h1_item_count = h1_scenario->netgame_equipment.count;
 
@@ -182,6 +186,7 @@ void h1_equipment_build(scenario* h2_scenario, const h1_scnr* h1_scenario)
 		}
 	}
 
+	h1_simulation_definition_table_extend(h2_scenario);
 	h1_log("equipment: %d netgame items and vehicles from %d halo 1 items and %d vehicles, %d starting equipment", count, h1_item_count, vehicle_count, starting_count);
 	return;
 }
@@ -242,6 +247,18 @@ static datum h1_item_collection_get(datum h1_collection_index, int8* out_classif
 		for (int32 i = 0; i < h1_collection->item_permutations.count; i++)
 		{
 			const h1_itmc_item_permutations* permutation = g_h1_cache_file->block_get(h1_collection->item_permutations, i);
+			const h1_cache_file_tag_instance* h1_item = g_h1_cache_file->tag_instance_get(permutation->item.index);
+			if (h1_item && h1_item->group_tag == 'eqip')
+			{
+				const datum h2_equipment = h1_equipment_definition_build(permutation->item.index);
+				if (h2_equipment != NONE)
+				{
+					const h1_eqip* h1_equipment = (const h1_eqip*)g_h1_cache_file->tag_get('eqip', permutation->item.index);
+					permutations.push_back({ permutation->weight > 0.f ? permutation->weight : 1.f, h2_equipment, 'eqip' });
+					classification = (int8)(h1_equipment->powerup_type == 6 ? _h2_classification_grenade : _h2_classification_powerup);
+				}
+				continue;
+			}
 			const s_h1_object_substitute* substitute = h1_object_substitute_get(g_h1_cache_file->tag_name_get(permutation->item.index));
 			if (!substitute || substitute->h2_group == 'vehi')
 			{
@@ -320,4 +337,33 @@ static datum h1_vehicle_collection_get(const char* h1_vehicle_name, int8* out_cl
 		collection->spawn_time = 30;
 	}
 	return result;
+}
+
+// objects only replicate when their definition is in the scenario's simulation definition table
+static void h1_simulation_definition_table_extend(scenario* h2_scenario)
+{
+	datum definitions[64];
+	const int32 definition_count = h1_objects_bound_definitions(definitions, NUMBEROF(definitions));
+	if (definition_count <= 0)
+	{
+		return;
+	}
+
+	s_tag_block* table = &h2_scenario->simulation_definition_table;
+	const int32 old_count = table->count;
+	const s_scenario_simulation_definition_table_element* old_elements = old_count > 0 ?
+		(const s_scenario_simulation_definition_table_element*)tag_block_get_element_with_size(table, 0, sizeof(s_scenario_simulation_definition_table_element)) :
+		NULL;
+	const int32 new_count = MIN(old_count + definition_count, (int32)k_maximum_simulation_definition_table_elements_per_scenario);
+
+	std::vector<s_scenario_simulation_definition_table_element> elements(old_elements, old_elements + old_count);
+	for (int32 i = 0; i < definition_count && (int32)elements.size() < new_count; i++)
+	{
+		elements.push_back({ definitions[i] });
+	}
+	s_scenario_simulation_definition_table_element* destination = (s_scenario_simulation_definition_table_element*)h1_runtime_block_allocate(
+		table, sizeof(s_scenario_simulation_definition_table_element), (int32)elements.size());
+	csmemcpy(destination, elements.data(), elements.size() * sizeof(s_scenario_simulation_definition_table_element));
+	h1_log("equipment: simulation definition table %d -> %d", old_count, (int32)elements.size());
+	return;
 }

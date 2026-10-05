@@ -152,6 +152,8 @@ static int32 g_string_id_count;
 
 static int32 g_string_id_block_offset;
 
+static int32 g_string_id_storage_used;
+
 static int32 g_string_id_index_buffer[0x6000];
 
 static char g_string_id_storage[k_maximum_string_id_storage];
@@ -417,6 +419,7 @@ bool string_id_load_strings(
 	
 	g_string_id_block_offset = header->string_block_offset;
 	g_string_id_count = header->string_table_count;
+	g_string_id_storage_used = header->string_table_size;
 
 	uint32 read_count = cache_file_align_read_size_to_cache_page(sizeof(string_id) * g_string_id_count);
 	
@@ -480,6 +483,32 @@ string_id string_id_exists(
 	}
 	
 	return result;
+}
+
+// the id of a string, appending it to the string table when it isn't there yet (halo 1 names)
+string_id string_id_find_or_add(const char* string)
+{
+	const int32 length = (int32)cstrlen(string);
+	for (int32 i = 0; i < g_string_id_count; ++i)
+	{
+		const int32 storage_index = g_string_id_index_buffer[i];
+		if (VALID_INDEX(storage_index, k_maximum_string_id_storage) && csstrcmp(&g_string_id_storage[storage_index], string) == 0)
+		{
+			return (string_id)(i | (length << k_string_id_length_shift));
+		}
+	}
+
+	if (g_string_id_count >= NUMBEROF(g_string_id_index_buffer) ||
+		g_string_id_storage_used + length + 1 > k_maximum_string_id_storage)
+	{
+		return _string_id_invalid;
+	}
+
+	const int32 index = g_string_id_count++;
+	g_string_id_index_buffer[index] = g_string_id_storage_used;
+	csmemcpy(&g_string_id_storage[g_string_id_storage_used], string, length + 1);
+	g_string_id_storage_used += length + 1;
+	return (string_id)(index | (length << k_string_id_length_shift));
 }
 
 /* private code */

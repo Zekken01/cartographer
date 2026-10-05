@@ -11,6 +11,7 @@
 #include "objects/objects.h"
 #include "rasterizer/rasterizer_memory.h"
 #include "render/render_objects.h"
+#include "halo1/h1_objects.h"
 
 #include "H2MOD/Modules/Shell/Config.h"
 
@@ -208,6 +209,12 @@ void __cdecl object_build_render_cache_and_info(
         info);
 
     info->level_of_detail = desired_object_lod;
+
+    // halo 1 objects draw their halo 1 model instead (h1_objects_render)
+    if (h1_objects_render_replaced(object_index))
+    {
+        render_model_count = 0;
+    }
 
     ASSERT(VALID_INDEX(render_model_count, MAXIMUM_RENDER_MODELS_PER_OBJECT));
 

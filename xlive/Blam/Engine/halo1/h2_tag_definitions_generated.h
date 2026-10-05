@@ -5536,4 +5536,153 @@ struct h2x_vehc
 };
 ASSERT_STRUCT_SIZE(h2x_vehc, 0xc);
 
+struct h2x_eqip_ai_properties
+{
+	uint32 flags; // 0x0
+	string_id ai_type_name; // 0x4
+	int8 pad_8[4];
+	int16 ai_size; // 0xc
+	int16 leap_jump_speed; // 0xe
+};
+ASSERT_STRUCT_SIZE(h2x_eqip_ai_properties, 0x10);
+
+struct h2x_eqip_functions
+{
+	uint32 flags; // 0x0
+	string_id import_name; // 0x4
+	string_id export_name; // 0x8
+	string_id turn_off_with; // 0xc
+	real32 minimum_value; // 0x10
+	tag_data default_function; // 0x14
+	string_id scale_by; // 0x1c
+};
+ASSERT_STRUCT_SIZE(h2x_eqip_functions, 0x20);
+
+struct h2x_eqip_attachments
+{
+	tag_reference type; // 0x0
+	string_id marker; // 0x8
+	int16 change_color; // 0xc
+	int16 unknown; // 0xe
+	string_id primary_scale; // 0x10
+	string_id secondary_scale; // 0x14
+};
+ASSERT_STRUCT_SIZE(h2x_eqip_attachments, 0x18);
+
+struct h2x_eqip_widgets
+{
+	tag_reference type; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_eqip_widgets, 0x8);
+
+struct h2x_eqip_old_functions
+{
+	int8 pad_0[76];
+	string_id unknown; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_eqip_old_functions, 0x50);
+
+struct h2x_eqip_change_colors_initial_permutations
+{
+	real32 weight; // 0x0
+	real_rgb_color color_lower_bound; // 0x4
+	real_rgb_color color_upper_bound; // 0x10
+	string_id variant_name; // 0x1c
+};
+ASSERT_STRUCT_SIZE(h2x_eqip_change_colors_initial_permutations, 0x20);
+
+struct h2x_eqip_change_colors_functions
+{
+	int8 pad_0[4];
+	uint32 scale_flags; // 0x4
+	real_rgb_color color_lower_bound; // 0x8
+	real_rgb_color color_upper_bound; // 0x14
+	string_id darken_by; // 0x20
+	string_id scale_by; // 0x24
+};
+ASSERT_STRUCT_SIZE(h2x_eqip_change_colors_functions, 0x28);
+
+struct h2x_eqip_change_colors
+{
+	tag_block<h2x_eqip_change_colors_initial_permutations> initial_permutations; // 0x0
+	tag_block<h2x_eqip_change_colors_functions> functions; // 0x8
+};
+ASSERT_STRUCT_SIZE(h2x_eqip_change_colors, 0x10);
+
+struct h2x_eqip_predicted_resources
+{
+	int16 type; // 0x0
+	int16 resource_index; // 0x2
+	datum tag_index; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_eqip_predicted_resources, 0x8);
+
+struct h2x_eqip_predicted_bitmaps
+{
+	tag_reference bitmap; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_eqip_predicted_bitmaps, 0x8);
+
+struct h2x_eqip
+{
+	int16 object_type; // 0x0
+	uint16 flags; // 0x2
+	real32 bounding_radius; // 0x4
+	real_point3d bounding_offset; // 0x8
+	real32 acceleration_scale; // 0x14
+	int16 lightmap_shadow_mode; // 0x18
+	int8 sweetener_size; // 0x1a
+	int8 unknown; // 0x1b
+	uint32 runtime_flags; // 0x1c
+	real32 dynamic_light_sphere_radius; // 0x20
+	real_point3d dynamic_light_sphere_offset; // 0x24
+	string_id default_model_variant; // 0x30
+	tag_reference model; // 0x34
+	tag_reference crate_object; // 0x3c
+	tag_reference modifier_shader; // 0x44
+	tag_reference creation_effect; // 0x4c
+	tag_reference material_effects; // 0x54
+	tag_block<h2x_eqip_ai_properties> ai_properties; // 0x5c
+	tag_block<h2x_eqip_functions> functions; // 0x64
+	real32 apply_collision_damage_scale; // 0x6c
+	real_bounds game_acceleration; // 0x70
+	real_bounds game_scale; // 0x78
+	real_bounds absolute_acceleration; // 0x80
+	real_bounds absolute_scale; // 0x88
+	int16 hud_text_message_index; // 0x90
+	int16 unknown_2; // 0x92
+	tag_block<h2x_eqip_attachments> attachments; // 0x94
+	tag_block<h2x_eqip_widgets> widgets; // 0x9c
+	tag_block<h2x_eqip_old_functions> old_functions; // 0xa4
+	tag_block<h2x_eqip_change_colors> change_colors; // 0xac
+	tag_block<h2x_eqip_predicted_resources> predicted_resources; // 0xb4
+	uint32 flags_2; // 0xbc
+	int16 old_message_index; // 0xc0
+	int16 sort_order; // 0xc2
+	real32 multiplayer_on_ground_scale; // 0xc4
+	real32 campaign_on_ground_scale; // 0xc8
+	string_id pickup_message; // 0xcc
+	string_id swap_message; // 0xd0
+	string_id pickup_or_dual_wield_message; // 0xd4
+	string_id swap_or_dual_wield_message; // 0xd8
+	string_id dual_wield_only_message; // 0xdc
+	string_id picked_up_message; // 0xe0
+	string_id singular_quantity_message; // 0xe4
+	string_id plural_quantity_message; // 0xe8
+	string_id switch_to_message; // 0xec
+	string_id switch_to_from_ai_message; // 0xf0
+	tag_reference unknown_3; // 0xf4
+	tag_reference collision_sound; // 0xfc
+	tag_block<h2x_eqip_predicted_bitmaps> predicted_bitmaps; // 0x104
+	tag_reference detonation_damage_effect; // 0x10c
+	real_bounds detonation_delay; // 0x114
+	tag_reference detonating_effect; // 0x11c
+	tag_reference detonation_effect; // 0x124
+	int16 powerup_type; // 0x12c
+	int16 grenade_type; // 0x12e
+	real32 powerup_time; // 0x130
+	tag_reference pickup_sound; // 0x134
+};
+ASSERT_STRUCT_SIZE(h2x_eqip, 0x13c);
+
 #pragma pack(pop)

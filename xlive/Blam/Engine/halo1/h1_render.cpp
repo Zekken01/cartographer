@@ -7,6 +7,7 @@
 #include "h1_map_loader.h"
 #include "h1_render_models.h"
 #include "h1_render_shaders.h"
+#include "h1_objects.h"
 #include "h1_runtime.h"
 #include "h1_sound.h"
 
@@ -96,7 +97,6 @@ static void h1_render_end(void);
 static void h1_render_structure_pass(e_h1_render_pass pass);
 static void h1_unpack_normal(uint32 packed, real32* out);
 static real32 h1_render_game_time(void);
-static void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_lighting);
 
 /* public code */
 
@@ -124,6 +124,7 @@ void h1_render_structure_opaque(void)
 	{
 		h1_render_model_draw(instance.model_index, instance.permutation, &instance.matrix, &instance.lighting, _h1_render_pass_opaque, false, game_time);
 	}
+	h1_objects_render(_h1_render_pass_opaque, game_time);
 
 	h1_render_end();
 	return;
@@ -143,6 +144,7 @@ void h1_render_structure_transparent(void)
 	{
 		h1_render_model_draw(instance.model_index, instance.permutation, &instance.matrix, &instance.lighting, _h1_render_pass_transparent, false, game_time);
 	}
+	h1_objects_render(_h1_render_pass_transparent, game_time);
 
 	h1_render_end();
 	return;
@@ -633,7 +635,7 @@ static void h1_unpack_normal(uint32 packed, real32* out)
 
 
 // lighting from the lightmapped structure surface below a point: the material's radiosity lights scaled by the lightmap
-static void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_lighting)
+void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_lighting)
 {
 	*out_lighting = g_h1_render.lighting;
 

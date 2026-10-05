@@ -16,5 +16,8 @@ void h1_render_structure_transparent(void);
 // called instead of the halo 2 sky, returns true if the halo 1 sky was drawn
 bool h1_render_sky(void);
 
+// object lighting at a point: the lightmap material under it and its lightmap sample
+void h1_render_lighting_at(const real_point3d* point, struct s_h1_render_lighting* out_lighting);
+
 // frees every Direct3D resource built for the loaded Halo 1 map
 void h1_render_dispose(void);

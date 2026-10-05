@@ -11,3 +11,6 @@ bool h1_structure_bsp_build(int32 h1_bsp_index, datum h2_structure_bsp_index, da
 
 // Halo 2 global material index for a Halo 1 material type
 int16 h1_material_type_to_global_material(int16 h1_material_type);
+
+// copies a Halo 1 collision bsp (structure or model) into a Halo 2 one, surface materials offset by material_offset
+void h1_collision_bsp_build(struct collision_bsp* destination, const struct h1_sbsp_collision_bsp* source, int16 material_offset);

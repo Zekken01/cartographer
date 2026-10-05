@@ -4,6 +4,7 @@
 #include "h1_cache_file.h"
 #include "h1_log.h"
 
+#include "math/matrix_math.h"
 #include "rasterizer/rasterizer_globals.h"
 #include "rasterizer/dx9/rasterizer_dx9_main.h"
 
@@ -19,6 +20,16 @@ struct s_h1_model_vertex
 	real32 lightmap_texcoord[2];
 };
 static_assert(sizeof(s_h1_model_vertex) == 40);
+
+// what skinning needs of every vertex, parallel to the vertex buffer
+struct s_h1_model_skin_vertex
+{
+	real_point3d position;
+	real_vector3d normal;
+	real32 texcoord[2];
+	uint8 nodes[2];
+	real32 node0_weight;
+};
 
 struct s_h1_model_part
 {
@@ -48,6 +59,12 @@ static IDirect3DIndexBuffer9* g_h1_model_index_buffer = NULL;
 static std::unordered_map<datum, s_h1_model> g_h1_models;
 static std::vector<s_h1_model_geometry> g_h1_model_geometries;
 static std::vector<s_h1_model_part> g_h1_model_parts;
+static std::vector<s_h1_model_skin_vertex> g_h1_model_skin_vertices;
+
+// skinned objects are transformed on the cpu into this buffer every frame
+enum { k_h1_skinned_vertex_capacity = 0x10000 };
+static IDirect3DVertexBuffer9* g_h1_skinned_vertex_buffer = NULL;
+static int32 g_h1_skinned_vertex_cursor = 0;
 
 /* prototypes */
 
@@ -110,6 +127,7 @@ bool h1_render_models_initialize(void)
 	int32 vertex_cursor = 0;
 	int32 index_cursor = 0;
 	int32 model_count = 0;
+	g_h1_model_skin_vertices.resize(vertex_count);
 	for (int32 i = 0; i < g_h1_cache_file->tag_count(); i++)
 	{
 		const h1_cache_file_tag_instance* instance = g_h1_cache_file->tag_instance_get_by_absolute_index(i);
@@ -164,6 +182,16 @@ bool h1_render_models_initialize(void)
 					vertex->texcoord[1] = (real32)texcoord[1] / 32767.f * v_scale;
 					vertex->lightmap_texcoord[0] = 0.f;
 					vertex->lightmap_texcoord[1] = 0.f;
+
+					// nodes are stored times 3, the weight of the first node is a byte
+					s_h1_model_skin_vertex* skin = &g_h1_model_skin_vertices[vertex_cursor + v];
+					csmemcpy(&skin->position, vertex->position, sizeof(skin->position));
+					csmemcpy(&skin->normal, vertex->normal, sizeof(skin->normal));
+					skin->texcoord[0] = vertex->texcoord[0];
+					skin->texcoord[1] = vertex->texcoord[1];
+					skin->nodes[0] = source[28] / 3;
+					skin->nodes[1] = source[29] / 3;
+					skin->node0_weight = (real32)source[30] / 255.f;
 				}
 
 				for (int32 n = 0; n < part_index_count; n++)
@@ -192,6 +220,11 @@ bool h1_render_models_initialize(void)
 
 	g_h1_model_vertex_buffer->Unlock();
 	g_h1_model_index_buffer->Unlock();
+	if (FAILED(device->CreateVertexBuffer(k_h1_skinned_vertex_capacity * sizeof(s_h1_model_vertex), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &g_h1_skinned_vertex_buffer, NULL)))
+	{
+		h1_log("models: failed to create the skinned vertex buffer");
+	}
+	g_h1_skinned_vertex_cursor = 0;
 	h1_log("models: %d models, %d vertices, %d indices", model_count, vertex_cursor, index_cursor);
 	return true;
 }
@@ -200,9 +233,12 @@ void h1_render_models_dispose(void)
 {
 	if (g_h1_model_vertex_buffer) g_h1_model_vertex_buffer->Release();
 	if (g_h1_model_index_buffer) g_h1_model_index_buffer->Release();
+	if (g_h1_skinned_vertex_buffer) g_h1_skinned_vertex_buffer->Release();
 	g_h1_model_vertex_buffer = NULL;
 	g_h1_model_index_buffer = NULL;
+	g_h1_skinned_vertex_buffer = NULL;
 	g_h1_models.clear();
+	std::vector<s_h1_model_skin_vertex>().swap(g_h1_model_skin_vertices);
 	std::vector<s_h1_model_geometry>().swap(g_h1_model_geometries);
 	std::vector<s_h1_model_part>().swap(g_h1_model_parts);
 	return;
@@ -261,6 +297,110 @@ void h1_render_model_draw(datum model_tag_index, int16 permutation, const real_m
 					h1_render_shader_unbind();
 				}
 			}
+		}
+	}
+	return;
+}
+
+void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, const real_matrix4x3* node_matrices, int32 node_count, const s_h1_render_lighting* lighting, e_h1_render_pass pass, real32 game_time)
+{
+	auto found = g_h1_models.find(model_tag_index);
+	if (found == g_h1_models.end() || !g_h1_skinned_vertex_buffer || node_count <= 0)
+	{
+		return;
+	}
+	const h1_mode* model = (const h1_mode*)g_h1_cache_file->tag_get('mode', model_tag_index);
+	if (!model)
+	{
+		return;
+	}
+
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	device->SetIndices(g_h1_model_index_buffer);
+	// vertices are skinned into world space
+	h1_render_set_camera_constants(NULL, false);
+
+	const s_h1_model* entry = &found->second;
+	for (int32 r = 0; r < model->regions.count; r++)
+	{
+		const h1_mode_regions* region = g_h1_cache_file->block_get(model->regions, r);
+		if (region->permutations.count <= 0)
+		{
+			continue;
+		}
+		const int16 permutation_index = (int16)PIN(permutation, 0, region->permutations.count - 1);
+		const h1_mode_regions_permutations* region_permutation = g_h1_cache_file->block_get(region->permutations, permutation_index);
+		const int32 geometry_index = region_permutation->super_high_index;
+		if (!VALID_INDEX(geometry_index, entry->geometry_count))
+		{
+			continue;
+		}
+
+		const s_h1_model_geometry* geometry = &g_h1_model_geometries[entry->first_geometry + geometry_index];
+		for (int32 p = 0; p < geometry->part_count; p++)
+		{
+			const s_h1_model_part* part = &g_h1_model_parts[geometry->first_part + p];
+			const h1_mode_shaders* shader_reference = g_h1_cache_file->block_get(model->shaders, part->shader_index);
+			if (!shader_reference || h1_render_shader_pass(shader_reference->shader.group_tag) != pass || part->vertex_count > k_h1_skinned_vertex_capacity)
+			{
+				continue;
+			}
+
+			// append to the dynamic buffer, starting over when it is full
+			DWORD lock_flags = D3DLOCK_NOOVERWRITE;
+			if (g_h1_skinned_vertex_cursor + part->vertex_count > k_h1_skinned_vertex_capacity)
+			{
+				g_h1_skinned_vertex_cursor = 0;
+				lock_flags = D3DLOCK_DISCARD;
+			}
+			s_h1_model_vertex* vertices = NULL;
+			if (FAILED(g_h1_skinned_vertex_buffer->Lock(g_h1_skinned_vertex_cursor * sizeof(s_h1_model_vertex), part->vertex_count * sizeof(s_h1_model_vertex), (void**)&vertices, lock_flags)))
+			{
+				continue;
+			}
+			for (int32 v = 0; v < part->vertex_count; v++)
+			{
+				const s_h1_model_skin_vertex* source = &g_h1_model_skin_vertices[part->base_vertex + v];
+				const real_matrix4x3* first = &node_matrices[source->nodes[0] < node_count ? source->nodes[0] : 0];
+				const real_matrix4x3* second = &node_matrices[source->nodes[1] < node_count ? source->nodes[1] : 0];
+				const real32 weight = source->node0_weight;
+
+				real_point3d a, b;
+				real_vector3d na, nb;
+				matrix4x3_transform_point(first, &source->position, &a);
+				matrix4x3_transform_normal(first, &source->normal, &na);
+				if (weight < 1.f)
+				{
+					matrix4x3_transform_point(second, &source->position, &b);
+					matrix4x3_transform_normal(second, &source->normal, &nb);
+					a.x = a.x * weight + b.x * (1.f - weight);
+					a.y = a.y * weight + b.y * (1.f - weight);
+					a.z = a.z * weight + b.z * (1.f - weight);
+					na.i = na.i * weight + nb.i * (1.f - weight);
+					na.j = na.j * weight + nb.j * (1.f - weight);
+					na.k = na.k * weight + nb.k * (1.f - weight);
+				}
+
+				s_h1_model_vertex* vertex = &vertices[v];
+				vertex->position[0] = a.x; vertex->position[1] = a.y; vertex->position[2] = a.z;
+				vertex->normal[0] = na.i; vertex->normal[1] = na.j; vertex->normal[2] = na.k;
+				vertex->texcoord[0] = source->texcoord[0];
+				vertex->texcoord[1] = source->texcoord[1];
+				vertex->lightmap_texcoord[0] = 0.f;
+				vertex->lightmap_texcoord[1] = 0.f;
+			}
+			g_h1_skinned_vertex_buffer->Unlock();
+
+			device->SetStreamSource(0, g_h1_skinned_vertex_buffer, 0, sizeof(s_h1_model_vertex));
+			for (int32 subpass = 0; subpass < h1_render_shader_subpass_count(shader_reference->shader.group_tag); subpass++)
+			{
+				if (h1_render_shader_bind(shader_reference->shader.group_tag, shader_reference->shader.index, lighting, NULL, game_time, subpass))
+				{
+					device->DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP, g_h1_skinned_vertex_cursor, 0, part->vertex_count, part->first_index, part->index_count - 2);
+					h1_render_shader_unbind();
+				}
+			}
+			g_h1_skinned_vertex_cursor += part->vertex_count;
 		}
 	}
 	return;
