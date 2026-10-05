@@ -800,6 +800,7 @@ static void h1_sprite_build_rotational(const s_h1_shader_effect* shader, datum b
 static void h1_particles_build_sprites(void);
 static void h1_particle_systems_build_sprites(void);
 static void h1_sprites_draw(void);
+static real_matrix4x3 h1_object_origin_matrix(datum object_index, const object_datum* object);
 static void h1_light_volumes_render(void);
 static void h1_light_volume_render(datum object_index, const object_datum* object, datum definition_index);
 static void h1_particle_system_new(datum definition_index, const real_point3d* position, const real_vector3d* velocity, const real_argb_color* color, real32 scale);
@@ -1050,7 +1051,7 @@ void h1_effects_update(void)
 			{
 				object_marker marker;
 				attached_system->position = h1_object_markers_get_third_person(attached_system->attached_object_index, attached_system->attached_marker, &marker, 1) > 0 ?
-					marker.matrix.position : attached_object->object.position;
+					marker.matrix.position : h1_object_origin_matrix(attached_system->attached_object_index, attached_object).position;
 				attached_system->velocity = attached_object->object.translational_velocity;
 			}
 		}
@@ -2984,7 +2985,8 @@ static void h1_attachment_effect_build_locations(s_h1_effect* effect, datum obje
 		}
 		if (instances.empty())
 		{
-			instances.push_back({ object->object.position, object->object.forward, object->object.up, false, object_index, "", 0 });
+			const real_matrix4x3 origin = h1_object_origin_matrix(object_index, object);
+			instances.push_back({ origin.position, origin.vectors.forward, origin.vectors.up, false, object_index, "", 0 });
 		}
 		// the local player's weapon also has its first person model's marker
 		real_matrix4x3 first_person_marker;
@@ -3176,7 +3178,7 @@ static void h1_attachments_update(real32 dt)
 				// game_sound.c update_potentially_audible_looping_sound: at its marker, while the object's function is active
 				object_marker marker;
 				const real_point3d position = h1_object_markers_get(object_index, attachment_definition->marker, &marker, 1) > 0 ?
-					marker.matrix.position : object->object.position;
+					marker.matrix.position : h1_object_origin_matrix(object_index, object).position;
 				h1_sound_looping_attached_update(attachment->sound_handle, &position, function_active, function_value);
 			}
 			else if (group_tag == 'effe')
@@ -3219,9 +3221,10 @@ static void h1_attachments_update(real32 dt)
 				}
 				else
 				{
-					attachment->light.position = object->object.position;
-					attachment->light.forward = object->object.forward;
-					attachment->light.up = object->object.up;
+					const real_matrix4x3 origin = h1_object_origin_matrix(object_index, object);
+					attachment->light.position = origin.position;
+					attachment->light.forward = origin.vectors.forward;
+					attachment->light.up = origin.vectors.up;
 				}
 			}
 		}
@@ -4077,9 +4080,10 @@ static bool h1_effect_location_marker_get(datum object_index, const char* marker
 	}
 	else
 	{
-		*position = object->object.position;
-		*forward = object->object.forward;
-		*up = object->object.up;
+		const real_matrix4x3 origin = h1_object_origin_matrix(object_index, object);
+		*position = origin.position;
+		*forward = origin.vectors.forward;
+		*up = origin.vectors.up;
 	}
 	return true;
 }
@@ -4170,9 +4174,7 @@ static void h1_contrail_add_points(s_h1_contrail* contrail, int16 point_count, b
 	int16 marker_count = h1_object_markers_get_third_person(contrail->object_index, contrail->marker_name, markers, k_h1_maximum_contrail_instances);
 	if (marker_count <= 0)
 	{
-		markers[0].matrix.position = object->object.position;
-		markers[0].matrix.vectors.forward = object->object.forward;
-		markers[0].matrix.vectors.up = object->object.up;
+		markers[0].matrix = h1_object_origin_matrix(contrail->object_index, object);
 		marker_count = 1;
 	}
 
@@ -4699,7 +4701,7 @@ static void h1_attachment_new_contrail_or_particle_system(datum object_index, co
 	else if (group_tag == 'pctl')
 	{
 		object_marker marker;
-		real_point3d position = object->object.position;
+		real_point3d position = h1_object_origin_matrix(object_index, object).position;
 		if (h1_object_markers_get_third_person(object_index, attachment_definition->marker, &marker, 1) > 0)
 		{
 			position = marker.matrix.position;
@@ -4793,8 +4795,9 @@ static void h1_light_volume_render(datum object_index, const object_datum* objec
 	const s_h1_light_volume_frame* frame = g_h1_cache_file->block_get(definition->frames, 0);
 
 	// the marker, the object's origin when it has none of the name
-	real_point3d marker_position = object->object.position;
-	real_vector3d marker_forward = object->object.forward;
+	const real_matrix4x3 origin = h1_object_origin_matrix(object_index, object);
+	real_point3d marker_position = origin.position;
+	real_vector3d marker_forward = origin.vectors.forward;
 	object_marker marker;
 	if (definition->attachment_marker[0] && h1_object_markers_get(object_index, definition->attachment_marker, &marker, 1) == 1)
 	{
@@ -4912,4 +4915,22 @@ static void h1_light_volume_render(datum object_index, const object_datum* objec
 	}
 	g_h1_effects.vertices.clear();
 	return;
+}
+
+// objects.c object_get_marker_by_name's origin: the object's world matrix (its root node's; a held object's position and vectors
+// are in its parent's space)
+static real_matrix4x3 h1_object_origin_matrix(datum object_index, const object_datum* object)
+{
+	const real_matrix4x3* node_matrix = object_get_node_matrix(object_index, 0);
+	if (node_matrix)
+	{
+		return *node_matrix;
+	}
+	real_matrix4x3 matrix;
+	matrix.scale = 1.f;
+	matrix.vectors.forward = object->object.forward;
+	matrix.vectors.up = object->object.up;
+	matrix.vectors.left = h1_cross(&object->object.up, &object->object.forward);
+	matrix.position = object->object.position;
+	return matrix;
 }
