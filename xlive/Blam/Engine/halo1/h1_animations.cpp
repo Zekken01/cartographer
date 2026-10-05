@@ -130,6 +130,35 @@ datum h1_first_person_animation_graph_build(datum h1_animation_graph_index, cons
 		animation->loop_frame_index = h1_animation->loop_frame_index;
 		animation->parent_animation_index = NONE;
 		animation->next_animation_index = NONE;
+		// halo 1's key frames are halo 2's frame events (the melee strike lands on the primary keyframe)
+		{
+			struct { int16 type; int32 frame; } events[] =
+			{
+				{ 0, h1_animation->key_frame_index },
+				{ 1, h1_animation->second_key_frame_index },
+				{ 2, h1_animation->left_foot_frame_index },
+				{ 3, h1_animation->right_foot_frame_index },
+			};
+			int32 event_count = 0;
+			for (const auto& event : events)
+			{
+				event_count += VALID_INDEX(event.frame, h1_animation->frame_count) && (event.type < 2 || event.frame > 0) ? 1 : 0;
+			}
+			if (event_count > 0)
+			{
+				h2x_jmad_animations_frame_events* frame_events = h1_runtime_block_new(&animation->frame_events, event_count);
+				int32 event_index = 0;
+				for (const auto& event : events)
+				{
+					if (VALID_INDEX(event.frame, h1_animation->frame_count) && (event.type < 2 || event.frame > 0))
+					{
+						frame_events[event_index].type = event.type;
+						frame_events[event_index].frame = (int16)event.frame;
+						event_index++;
+					}
+				}
+			}
+		}
 		h1_animation_encode(h1_animation, animation, node_count);
 	}
 
