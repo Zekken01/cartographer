@@ -162,6 +162,8 @@ void h1_first_person_render(real32 game_time)
 	s_h1_render_lighting lighting;
 	h1_render_lighting_at(&global_window_parameters_get()->camera.point, &lighting);
 
+	// the player's active camouflage covers its arms and weapon too
+	const real32 camouflage = unit ? unit->unit.active_camouflage : 0.f;
 	h1_render_set_first_person_projection(true);
 	for (int32 pass = _h1_render_pass_opaque; pass <= _h1_render_pass_transparent; pass++)
 	{
@@ -177,7 +179,7 @@ void h1_first_person_render(real32 game_time)
 			// the weapon's functions (ammunition counters, heat) and change colors
 			const s_h1_object_functions* functions = h1_object_functions_get(model.object_index);
 			h1_render_model_draw_skinned(model.h1_model_index, 0, skinning_matrices, model.node_count, &lighting, (e_h1_render_pass)pass, game_time,
-				functions ? functions->colors : NULL, functions ? functions->outgoing : NULL);
+				functions ? functions->colors : NULL, functions ? functions->outgoing : NULL, camouflage);
 		}
 	}
 
