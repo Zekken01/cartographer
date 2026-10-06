@@ -8,6 +8,7 @@
 #include "h1_log.h"
 #include "h1_scenario_objects.h"
 #include "h1_vehicles.h"
+#include "h1_vehicle_physics.h"
 #include "h1_objects.h"
 #include "h1_projectiles.h"
 #include "h1_scenery.h"
@@ -100,6 +101,7 @@ void h1_equipment_build(scenario* h2_scenario, const h1_scnr* h1_scenario)
 	h1_scenery_reset();
 	h1_projectiles_reset();
 	h1_weapons_reset();
+	h1_vehicle_physics_reset();
 	h1_weapon_logic_reset();
 	h1_projectile_logic_reset();
 	h1_first_person_reset();

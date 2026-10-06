@@ -397,9 +397,8 @@ static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1
 	}
 	const int32 sphere_count = MIN((int32)hull_points.size(), k_maximum_list_children * k_maximum_list_children);
 
-	// the rigid body is on the root node: shapes and the center of mass are in its space, mass points in model space
-	const h1_mode_nodes* root_node = g_h1_cache_file->block_get(h1_model->nodes, 0);
-	const real_matrix4x3* model_to_root = (const real_matrix4x3*)&root_node->inverse_scale;
+	// halo 2 puts the rigid body at the object's origin: shapes and the center of mass are in model space (the root node is offset from it)
+	const real_matrix4x3* model_to_root = global_identity4x3;
 
 	h2x_phmo_spheres* spheres = h1_runtime_block_new(&physics->spheres, sphere_count);
 	real_rectangle3d bounds = { FLT_MAX, -FLT_MAX, FLT_MAX, -FLT_MAX, FLT_MAX, -FLT_MAX };
@@ -896,5 +895,10 @@ static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle
 		phantom->y0 = bounds.y0; phantom->y1 = bounds.y1;
 		phantom->z0 = bounds.z0; phantom->z1 = bounds.z1;
 	}
+
+	// halo 1's physics moves the vehicle (h1_vehicle_physics): halo 2's vehicle forces get nothing to push
+	vehicle->friction_points.count = 0;
+	vehicle->anti_gravity_points.count = 0;
+	vehicle->phantom_shapes.count = 0;
 	return;
 }
