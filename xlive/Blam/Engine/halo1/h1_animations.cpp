@@ -462,6 +462,46 @@ datum h1_animation_graph_build(datum h1_animation_graph_index, const h1_mode* h1
 		}
 	}
 
+	// halo 1 picks a seat's animations by the seat (unit_set_or_test_seat_and_weapon_label: the warthog gunner's "fixed", the driver's
+	// "unarmed"), halo 2 by the rider's weapon class: a seat with one weapon class has it under every class the riders may hold too
+	{
+		std::vector<std::string> classes = { "any" };
+		for (const s_h1_unit_animation_slot& slot : slots)
+		{
+			if (std::find(classes.begin(), classes.end(), slot.weapon_class) == classes.end())
+			{
+				classes.push_back(slot.weapon_class);
+			}
+		}
+		std::vector<s_h1_unit_animation_slot> seat_slots;
+		for (int32 u = 0; u < h1_graph->units.count; u++)
+		{
+			const h1_antr_units* h1_unit = g_h1_cache_file->block_get(h1_graph->units, u);
+			if (_stricmp(h1_unit->label, "stand") == 0 || h1_unit->weapons.count != 1)
+			{
+				continue;
+			}
+			const std::string mode = h1_animation_label(h1_unit->label);
+			const h1_antr_units_weapons* h1_weapon = g_h1_cache_file->block_get(h1_unit->weapons, 0);
+			const std::string seat_class = h1_weapon->name[0] ? h1_animation_label(h1_weapon->name) : "any";
+			for (const s_h1_unit_animation_slot& slot : slots)
+			{
+				if (slot.mode != mode || slot.weapon_class != seat_class)
+				{
+					continue;
+				}
+				for (const std::string& weapon_class : classes)
+				{
+					if (weapon_class != seat_class)
+					{
+						seat_slots.push_back({ mode, weapon_class, slot.weapon_type, slot.label, slot.animation_index });
+					}
+				}
+			}
+		}
+		slots.insert(slots.end(), seat_slots.begin(), seat_slots.end());
+	}
+
 	h2x_jmad_blend_screens* screens = h1_runtime_block_new(&graph->blend_screens, (int32)blend_screens.size());
 	for (size_t i = 0; i < blend_screens.size(); i++)
 	{
@@ -528,6 +568,128 @@ static void h1_animation_frame_decode(const h1_antr_animations* animation, int32
 		}
 	}
 	return;
+}
+
+// quaternions_interpolate_and_normalize
+static real_quaternion h1_quaternion_interpolate(const real_quaternion* a, const real_quaternion* b, real32 t)
+{
+	const real32 side = a->v.i * b->v.i + a->v.j * b->v.j + a->v.k * b->v.k + a->w * b->w < 0.f ? -1.f : 1.f;
+	real_quaternion q =
+	{
+		{ a->v.i + (b->v.i * side - a->v.i) * t, a->v.j + (b->v.j * side - a->v.j) * t, a->v.k + (b->v.k * side - a->v.k) * t },
+		a->w + (b->w * side - a->w) * t,
+	};
+	const real32 length = sqrtf(q.v.i * q.v.i + q.v.j * q.v.j + q.v.k * q.v.k + q.w * q.w);
+	if (length > 0.f)
+	{
+		q = { { q.v.i / length, q.v.j / length, q.v.k / length }, q.w / length };
+	}
+	return q;
+}
+
+bool h1_animation_vehicle_aim_apply(datum h1_animation_graph_index, real32 yaw, real32 pitch, real_orientation* orientations, int32 node_count)
+{
+	const h1_antr* graph = h1_animation_graph_index != NONE ? (const h1_antr*)g_h1_cache_file->tag_get('antr', h1_animation_graph_index) : NULL;
+	const h1_antr_units* unit = graph && graph->units.count > 0 ? g_h1_cache_file->block_get(graph->units, 0) : NULL;
+	const h1_antr_units_weapons* weapon = unit && unit->weapons.count > 0 ? g_h1_cache_file->block_get(unit->weapons, 0) : NULL;
+	if (!weapon || weapon->animations.count <= k_h1_weapon_class_aim_still)
+	{
+		return false;
+	}
+	const int16 animation_index = g_h1_cache_file->block_get(weapon->animations, k_h1_weapon_class_aim_still)->animation_index;
+	if (!VALID_INDEX(animation_index, graph->animations.count))
+	{
+		return false;
+	}
+	const h1_antr_animations* animation = g_h1_cache_file->block_get(graph->animations, animation_index);
+
+	// the aiming screen: yaw from the right (negative) to the left, pitch from down (negative) to up
+	const int32 right_count = weapon->right_frame_count, left_count = weapon->left_frame_count;
+	const int32 down_count = weapon->down_pitch_frame_count, up_count = weapon->up_pitch_frame_count;
+	const int32 grid_width = right_count + left_count + 1;
+	const int32 grid_height = down_count + up_count + 1;
+	if (animation->type != _h1_animation_overlay || animation->frame_count < grid_width * grid_height)
+	{
+		return false;
+	}
+	auto cell = [](real32 angle, real32 negative_delta, real32 positive_delta, int32 negative_count, int32 positive_count, real32* fraction) -> int32
+	{
+		const real32 delta = angle < 0.f ? negative_delta : positive_delta;
+		const real32 frame = delta == 0.f ? 0.f : angle / delta;
+		int32 index = (int32)frame;
+		*fraction = fmodf(frame, 1.f);
+		if (*fraction < 0.f)
+		{
+			*fraction += 1.f;
+			index--;
+		}
+		if (index >= positive_count)
+		{
+			index = positive_count - 1;
+			*fraction = 1.f;
+		}
+		if (index < -negative_count)
+		{
+			index = -negative_count;
+			*fraction = 0.f;
+		}
+		return index + negative_count;
+	};
+	real32 yaw_fraction, pitch_fraction;
+	const int32 yaw_index = cell(yaw, weapon->right_yaw_per_frame, weapon->left_yaw_per_frame, right_count, left_count, &yaw_fraction);
+	const int32 pitch_index = cell(pitch, weapon->down_pitch_per_frame, weapon->up_pitch_per_frame, down_count, up_count, &pitch_fraction);
+	if (yaw_index < 0 || yaw_index >= grid_width || pitch_index < 0 || pitch_index >= grid_height)
+	{
+		return false;
+	}
+	const int32 next_yaw = yaw_index + 1 == grid_width ? yaw_index : yaw_index + 1;
+	const int32 next_pitch = pitch_index + 1 == grid_height ? pitch_index : pitch_index + 1;
+	const int32 frame_indices[4] =
+	{
+		yaw_index + pitch_index * grid_width, next_yaw + pitch_index * grid_width,
+		yaw_index + next_pitch * grid_width, next_yaw + next_pitch * grid_width,
+	};
+	s_h1_node_orientation frames[4][k_h1_maximum_animation_nodes];
+	for (int32 f = 0; f < 4; f++)
+	{
+		for (s_h1_node_orientation& node : frames[f])
+		{
+			node = { { 0.f, 0.f, 0.f, 1.f }, { 0.f, 0.f, 0.f }, 1.f };
+		}
+		h1_animation_frame_decode(animation, frame_indices[f], frames[f]);
+	}
+
+	// overlay_animation_apply: the blended rotation onto the node's (halo 2's conjugates: the node's then the overlay's), the
+	// translation added
+	for (int32 node = 0; node < animation->node_count && node < node_count && node < k_h1_maximum_animation_nodes; node++)
+	{
+		real_orientation* orientation = &orientations[node];
+		if (h1_animation_node_flag(animation->node_rotation_flags_0, animation->node_rotation_flags_1, node))
+		{
+			const real_quaternion yaw0 = h1_quaternion_interpolate(&frames[0][node].rotation, &frames[1][node].rotation, yaw_fraction);
+			const real_quaternion yaw1 = h1_quaternion_interpolate(&frames[2][node].rotation, &frames[3][node].rotation, yaw_fraction);
+			const real_quaternion d = h1_quaternion_interpolate(&yaw0, &yaw1, pitch_fraction);
+			const real_quaternion o = orientation->rotation;
+			orientation->rotation =
+			{
+				{
+					o.w * d.v.i + o.v.i * d.w + o.v.j * d.v.k - o.v.k * d.v.j,
+					o.w * d.v.j - o.v.i * d.v.k + o.v.j * d.w + o.v.k * d.v.i,
+					o.w * d.v.k + o.v.i * d.v.j - o.v.j * d.v.i + o.v.k * d.w,
+				},
+				o.w * d.w - o.v.i * d.v.i - o.v.j * d.v.j - o.v.k * d.v.k,
+			};
+		}
+		if (h1_animation_node_flag(animation->node_transformation_flags_0, animation->node_transformation_flags_1, node))
+		{
+			const real32 w00 = (1.f - yaw_fraction) * (1.f - pitch_fraction), w10 = yaw_fraction * (1.f - pitch_fraction);
+			const real32 w01 = (1.f - yaw_fraction) * pitch_fraction, w11 = yaw_fraction * pitch_fraction;
+			orientation->translation.x += frames[0][node].translation.x * w00 + frames[1][node].translation.x * w10 + frames[2][node].translation.x * w01 + frames[3][node].translation.x * w11;
+			orientation->translation.y += frames[0][node].translation.y * w00 + frames[1][node].translation.y * w10 + frames[2][node].translation.y * w01 + frames[3][node].translation.y * w11;
+			orientation->translation.z += frames[0][node].translation.z * w00 + frames[1][node].translation.z * w10 + frames[2][node].translation.z * w01 + frames[3][node].translation.z * w11;
+		}
+	}
+	return true;
 }
 
 string_id h1_animation_vehicle_weapon_class(datum h1_animation_graph_index)

@@ -1305,6 +1305,20 @@ static void h1_vehicle_preprocess_node_orientations_hook(datum vehicle_index, ui
 		h1_vehicle_animation_state_set(vehicle_index, &found->second);
 	}
 	g_h2_vehicle_preprocess_node_orientations(vehicle_index, node_flags, node_count, orientations);
+
+	// halo 2 doesn't aim its vehicles with the aiming overlay: the turret follows the vehicle's aim as halo 1's does
+	const vehicle_datum* vehicle = found != g_h1_vehicle_states.end() ? (const vehicle_datum*)object_try_and_get_and_verify_type(vehicle_index, _object_mask_vehicle) : NULL;
+	const datum h1_definition_index = vehicle ? h1_objects_h1_definition_get(vehicle->definition_index) : NONE;
+	const h1_vehi* h1_vehicle = h1_definition_index != NONE ? (const h1_vehi*)g_h1_cache_file->tag_get('vehi', h1_definition_index) : NULL;
+	if (h1_vehicle)
+	{
+		real_vector3d left;
+		cross_product3d(&vehicle->object.up, &vehicle->object.forward, &left);
+		const real_vector3d* aim = &vehicle->unit.aiming_vector;
+		const real32 yaw = atan2f(dot_product3d(aim, &left), dot_product3d(aim, &vehicle->object.forward));
+		const real32 pitch = asinf(PIN(dot_product3d(aim, &vehicle->object.up), -1.f, 1.f));
+		h1_animation_vehicle_aim_apply(h1_vehicle->animation_graph.index, yaw, pitch, orientations, node_count);
+	}
 	return;
 }
 

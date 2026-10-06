@@ -30,3 +30,7 @@ bool h1_animation_seat_enter_root_get(datum h1_animation_graph_index, const char
 
 // a vehicle's animation weapon class: its graph's first unit's first weapon (the ghost's "fixed", its aiming), "any" without one
 string_id h1_animation_vehicle_weapon_class(datum h1_animation_graph_index);
+
+// units.c's aiming overlay of a vehicle (its graph's first unit's first weapon's aim-still, aiming_screen_apply) on halo 2's node
+// orientations, the aim's yaw (left positive) and pitch in the vehicle's frame; false without one
+bool h1_animation_vehicle_aim_apply(datum h1_animation_graph_index, real32 yaw, real32 pitch, real_orientation* orientations, int32 node_count);
