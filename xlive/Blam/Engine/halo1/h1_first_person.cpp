@@ -45,6 +45,8 @@ struct s_h1_first_person_model
 /* globals */
 
 static std::unordered_map<datum, datum> g_h1_first_person_models;	// halo 2 render model: halo 1 model
+// halo 2 builds the first person models only while it shows them (not in a vehicle's third person seat): drawn once per build
+static bool g_h1_first_person_frame_submitted = false;
 static std::vector<s_h1_first_person_model> g_h1_first_person_frame;
 
 /* public code */
@@ -68,6 +70,7 @@ void h1_first_person_model_register(datum h2_render_model_index, datum h1_model_
 int32 h1_first_person_models_submit(int32 user_index, s_first_person_model_data* models, int32 model_count)
 {
 	g_h1_first_person_frame.clear();
+	g_h1_first_person_frame_submitted = true;
 	if (!h1_maps_active() || g_h1_first_person_models.empty() || !models)
 	{
 		return model_count;
@@ -140,7 +143,9 @@ bool h1_first_person_marker_get(datum object_index, const char* marker_name, rea
 
 void h1_first_person_render(real32 game_time)
 {
-	if (g_h1_first_person_frame.empty())
+	const bool submitted = g_h1_first_person_frame_submitted;
+	g_h1_first_person_frame_submitted = false;
+	if (!submitted || g_h1_first_person_frame.empty())
 	{
 		return;
 	}
