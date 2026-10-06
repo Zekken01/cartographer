@@ -832,7 +832,6 @@ static int32 hs_sound_looping_set_scale_procedure(const int32* arguments) { hs_s
 // animation), unit_try_and_exit_seat, seat filled, unit can enter seat, unit action start
 typedef void (__cdecl* t_objects_attach)(datum parent_index, string_id parent_marker, datum child_index, string_id child_marker);
 typedef void (__cdecl* t_objects_detach)(datum parent_index, datum child_index);
-typedef void (__cdecl* t_unit_enter_vehicle)(datum unit_index, datum vehicle_index, string_id seat);
 typedef bool (__cdecl* t_unit_seat_filled)(datum vehicle_index, int16 seat_index);
 typedef bool (__cdecl* t_unit_can_enter_seat)(datum unit_index, datum vehicle_index, int16 seat_index);
 typedef void (__cdecl* t_unit_exit_seat_end)(datum unit_index, int32 ticks);
@@ -921,14 +920,35 @@ static int32 hs_objects_detach(const int32* arguments)
 	return 0;
 }
 
-// unit_scripting_enter_vehicle: the seat labeled so (halo 2's seat animation is the label, h1_vehicles)
+// unit_scripting_enter_vehicle: the first free seat labeled so (out of the unit's seat first), entered at once
 static int32 hs_unit_enter_vehicle(const int32* arguments)
 {
 	const datum unit_index = ARGUMENT_LONG(0), vehicle_index = ARGUMENT_LONG(1);
 	const char* seat_name = ARGUMENT_STRING(2);
-	if (hs_object_is_unit(unit_index) && hs_object_is_unit(vehicle_index) && seat_name && *seat_name)
+	const h1_vehi* h1_vehicle = hs_object_is_unit(vehicle_index) ? hs_h1_vehicle_get(vehicle_index) : NULL;
+	if (!hs_object_is_unit(unit_index) || !h1_vehicle || !seat_name || !*seat_name || hs_unit_is_dead(unit_index))
 	{
-		H2_FUNCTION(0x18505F, t_unit_enter_vehicle)(unit_index, vehicle_index, hs_animation_name(seat_name));
+		return 0;
+	}
+	const unit_datum* unit = (const unit_datum*)object_get(unit_index);
+	if (unit->object.parent_object_index != NONE)
+	{
+		if (unit->unit.parent_seat_index != NONE)
+		{
+			H2_FUNCTION(0x165E7D, t_unit_exit_seat_end)(unit_index, 0);
+		}
+		if (unit->object.parent_object_index != NONE)
+		{
+			return 0;
+		}
+	}
+	for (int16 seat_index = 0; seat_index < h1_vehicle->seats.count; seat_index++)
+	{
+		if (!_stricmp(seat_name, hs_h1_seat_label(h1_vehicle, seat_index)) && !H2_FUNCTION(0x13A1AC, t_unit_seat_filled)(vehicle_index, seat_index))
+		{
+			hs_unit_enter_seat(unit_index, vehicle_index, seat_index);
+			break;
+		}
 	}
 	return 0;
 }

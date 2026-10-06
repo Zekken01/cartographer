@@ -86,6 +86,7 @@ static std::unordered_map<datum, int8> g_h1_collection_classification;
 static const s_h1_object_substitute* h1_object_substitute_get(const char* h1_name);
 static datum h1_item_collection_get(datum h1_collection_index, int8* out_classification);
 static void h1_simulation_definition_table_extend(scenario* h2_scenario);
+static void h1_starting_profiles_build(scenario* h2_scenario, const h1_scnr* h1_scenario);
 static datum h1_vehicle_collection_get(datum h1_vehicle_index, int8* out_classification);
 static e_item_spawn_game_type h1_equipment_game_type(int16 h1_game_type);
 static bool h1_netgame_item_rest_pose(datum h1_collection_index, const real_point3d* point, real_point3d* out_position, real_euler_angles3d* out_orientation);
@@ -220,12 +221,50 @@ void h1_equipment_build(scenario* h2_scenario, const h1_scnr* h1_scenario)
 	h1_first_person_hands_build();
 	h1_bipeds_build_player();
 	h1_scenario_objects_build();
+	h1_starting_profiles_build(h2_scenario, h1_scenario);
 	h1_simulation_definition_table_extend(h2_scenario);
 	h1_log("equipment: %d netgame items and vehicles from %d halo 1 items and %d vehicles, %d starting equipment", count, h1_item_count, vehicle_count, starting_count);
 	return;
 }
 
 /* private code */
+
+// players.c player_add_equipment: a campaign player spawns with the scenario's starting profile (halo 2 gives its own the same way)
+static void h1_starting_profiles_build(scenario* h2_scenario, const h1_scnr* h1_scenario)
+{
+	const int32 profile_count = h1_scenario->player_starting_profile.count;
+	if (h1_scenario->type != 0 || profile_count <= 0)
+	{
+		return;
+	}
+	h2x_scnr_player_starting_profile* profiles = (h2x_scnr_player_starting_profile*)h1_runtime_block_allocate(
+		&h2_scenario->player_starting_profile, sizeof(h2x_scnr_player_starting_profile), profile_count);
+	for (int32 i = 0; i < profile_count; i++)
+	{
+		const h1_scnr_player_starting_profile* source = g_h1_cache_file->block_get(h1_scenario->player_starting_profile, i);
+		h2x_scnr_player_starting_profile* destination = &profiles[i];
+		csmemcpy(destination->name, source->name, sizeof(destination->name));
+		// halo 1 adds its modifiers to an emptied unit's vitality, halo 2 takes the damage off a full one
+		destination->starting_health_damage = source->starting_health_modifier > 0.f ? PIN(1.f - source->starting_health_modifier, 0.f, 1.f) : 0.f;
+		destination->starting_shield_damage = source->starting_shield_modifier > 0.f ? PIN(1.f - source->starting_shield_modifier, 0.f, 1.f) : 0.f;
+		const datum primary = source->primary_weapon.index != NONE ? h1_weapon_definition_build(source->primary_weapon.index) : NONE;
+		const datum secondary = source->secondary_weapon.index != NONE ? h1_weapon_definition_build(source->secondary_weapon.index) : NONE;
+		h1_runtime_reference_set(&destination->primary_weapon, primary != NONE ? 'weap' : (tag_group)NONE, primary);
+		h1_runtime_reference_set(&destination->secondary_weapon, secondary != NONE ? 'weap' : (tag_group)NONE, secondary);
+		destination->primary_rounds_loaded = source->primary_rounds_loaded;
+		destination->primary_rounds_total = source->primary_rounds_total;
+		destination->secondary_rounds_loaded = source->secondary_rounds_loaded;
+		destination->secondary_rounds_total = source->secondary_rounds_total;
+		destination->starting_frag_grenade_count = (uint8)MAX(source->starting_fragmentation_grenade_count, 0);
+		destination->starting_plasma_grenade_count = (uint8)MAX(source->starting_plasma_grenade_count, 0);
+		destination->starting_grenade_3_count = 0;
+		destination->starting_grenade_4_count = 0;
+		h1_log("equipment: starting profile %s: %s, %s", source->name,
+			primary != NONE ? g_h1_cache_file->tag_name_get(source->primary_weapon.index) : "none",
+			secondary != NONE ? g_h1_cache_file->tag_name_get(source->secondary_weapon.index) : "none");
+	}
+	return;
+}
 
 static const s_h1_object_substitute* h1_object_substitute_get(const char* h1_name)
 {

@@ -192,6 +192,30 @@ int32 datum_new(data_array* data)
 	return NONE;
 }
 
+// data.c datum_new_at_index: the datum at a given index (and identifier) when it is free
+int32 datum_new_at_index(data_array* data, int32 index)
+{
+	const int16 absolute_index = DATUM_INDEX_TO_ABSOLUTE_INDEX(index);
+	const int16 identifier = DATUM_INDEX_TO_IDENTIFIER(index);
+	if (!data->valid || absolute_index < 0 || absolute_index >= data->maximum_count || identifier == 0)
+	{
+		return NONE;
+	}
+	int16* header = datum_identifier(data, absolute_index);
+	if (*header != 0)
+	{
+		return NONE;
+	}
+	data->actual_count++;
+	if (absolute_index >= data->count)
+	{
+		data->count = (int16)(absolute_index + 1);
+	}
+	csmemset(header, 0, data->size);
+	*header = identifier;
+	return DATUM_INDEX_NEW(absolute_index, identifier);
+}
+
 void datum_delete(data_array* data, int32 index)
 {
 	int16* identifier = datum_get(data, index);
@@ -306,6 +330,65 @@ collision_bsp* global_collision_bsp_get(void)
 {
 	structure_bsp* bsp = global_structure_bsp_get();
 	return bsp ? TAG_BLOCK_GET_ELEMENT(&bsp->collision_bsp, 0, collision_bsp) : NULL;
+}
+
+// scenario.c: the collision bsp's 3d bsp (its first blocks)
+struct bsp3d* global_bsp3d_get(void)
+{
+	return (struct bsp3d*)global_collision_bsp_get();
+}
+
+long scenario_leaf_index_from_point(const union real_point3d* point)
+{
+	return bsp3d_test_point(global_bsp3d_get(), 0, point);
+}
+
+/* ---------- collision_usage.c: the collision users (collision_log_initialize pushes the first) */
+
+short global_current_collision_user_depth = 1;
+short global_current_collision_users[MAXIMUM_COLLISION_USER_STACK_DEPTH];
+
+/* ---------- structures.c: the clusters a search has visited */
+
+static struct
+{
+	boolean cluster_marker_initialized;
+	uint32 cluster_marker;
+	uint32 cluster_magic_numbers[MAXIMUM_CLUSTERS_PER_STRUCTURE];
+} structure_globals;
+
+void structure_cluster_marker_begin(void)
+{
+	ASSERT(!structure_globals.cluster_marker_initialized);
+	structure_globals.cluster_marker++;
+	structure_globals.cluster_marker_initialized = TRUE;
+	return;
+}
+
+void structure_cluster_marker_end(void)
+{
+	ASSERT(structure_globals.cluster_marker_initialized);
+	structure_globals.cluster_marker_initialized = FALSE;
+	return;
+}
+
+boolean structure_cluster_unmarked(short cluster_index)
+{
+	ASSERT(structure_globals.cluster_marker_initialized);
+	ASSERT(cluster_index >= 0 && cluster_index < MAXIMUM_CLUSTERS_PER_STRUCTURE);
+	return (boolean)(structure_globals.cluster_magic_numbers[cluster_index] != structure_globals.cluster_marker);
+}
+
+boolean structure_cluster_mark(short cluster_index)
+{
+	ASSERT(structure_globals.cluster_marker_initialized);
+	ASSERT(cluster_index >= 0 && cluster_index < MAXIMUM_CLUSTERS_PER_STRUCTURE);
+	if (structure_globals.cluster_magic_numbers[cluster_index] != structure_globals.cluster_marker)
+	{
+		structure_globals.cluster_magic_numbers[cluster_index] = structure_globals.cluster_marker;
+		return TRUE;
+	}
+	return FALSE;
 }
 
 } // namespace h1_ai

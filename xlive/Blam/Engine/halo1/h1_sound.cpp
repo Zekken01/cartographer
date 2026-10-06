@@ -36,6 +36,13 @@ enum e_h1_sound_compression
 	_h1_sound_compression_xbox_adpcm = 1,
 };
 
+enum e_h1_looping_sound_flags
+{
+	_h1_looping_sound_deafening_bit = 0,
+	// sound_definitions.h: the tracks play their linked permutations once, in order, and the sound ends (cutscene foley)
+	_h1_looping_sound_fake_impulse_sound_bit,
+};
+
 enum e_h1_looping_sound_track_flags
 {
 	_h1_looping_sound_track_fade_in_at_start_bit = 0,
@@ -131,6 +138,8 @@ struct s_h1_looping_sound
 	bool stopping;
 	bool held = true;		// an attached sound's object function is active
 	real32 scale = 1.f;
+	bool fake_impulse = false;
+	bool played = false;	// a fake impulse sound's tracks have finished
 	real32 maximum_distance;
 	std::vector<std::shared_ptr<s_h1_voice>> track_voices;
 	std::vector<real32> track_gains;
@@ -571,7 +580,9 @@ static std::unique_ptr<s_h1_looping_sound> h1_looping_sound_new(datum definition
 	loop->position = position ? *position : real_point3d{};
 	loop->stopping = false;
 	loop->fade = 0.f;
-	loop->fade_in_rate = 1.f / k_h1_sound_default_fade_duration;
+	loop->fake_impulse = TEST_BIT(definition->flags, _h1_looping_sound_fake_impulse_sound_bit);
+	// a fake impulse sound starts at full volume unless its tracks fade in
+	loop->fade_in_rate = loop->fake_impulse ? FLT_MAX : 1.f / k_h1_sound_default_fade_duration;
 	loop->fade_out_rate = 1.f / k_h1_sound_default_fade_duration;
 	loop->maximum_distance = definition->maximum_distance;
 
@@ -613,7 +624,7 @@ static void h1_looping_sound_start_voices(s_h1_looping_sound* loop)
 	for (int32 i = 0; i < definition->tracks.count; i++)
 	{
 		const h1_lsnd_tracks* track = g_h1_cache_file->block_get(definition->tracks, i);
-		loop->track_voices.push_back(h1_sound_voice_new(track->loop.index, true));
+		loop->track_voices.push_back(h1_sound_voice_new(track->loop.index, !loop->fake_impulse));
 		loop->track_pitches.push_back(0.f);
 	}
 	return;
@@ -644,7 +655,22 @@ static bool h1_looping_sound_update(s_h1_looping_sound* loop, real32 dt)
 		vector_from_points3d(&g_h1_sound.listener_point, &loop->position, &offset);
 		distance = magnitude3d(&offset);
 	}
-	const bool audible = !loop->stopping && loop->held && (!loop->positional || distance < loop->maximum_distance);
+	// a fake impulse sound ends once its tracks have played
+	if (loop->fake_impulse && !loop->played && !loop->track_voices.empty())
+	{
+		bool finished = true;
+		for (const auto& voice : loop->track_voices)
+		{
+			finished = finished && (!voice || voice->finished);
+		}
+		if (finished)
+		{
+			loop->played = true;
+			h1_looping_sound_stop_voices(loop);
+			loop->fade = 0.f;
+		}
+	}
+	const bool audible = !loop->stopping && !loop->played && loop->held && (!loop->positional || distance < loop->maximum_distance);
 
 	if (audible && loop->track_voices.empty())
 	{

@@ -218,6 +218,9 @@ const char* tag_name_strip_path(const char* name);
 tag tag_get_group_tag(datum tag_index);
 // a tag block's elements (its xbox address resolved)
 c_void_pointer tag_block_address(const tag_block* block);
+// a tag data's bytes (its xbox address resolved)
+c_void_pointer tag_data_address(const tag_data* data);
+inline c_void_pointer tag_data_get_pointer(const tag_data* data, long offset, long size) { return { (uint8*)(void*)tag_data_address(data) + offset }; }
 
 #undef TAG_BLOCK_GET_ELEMENT
 #define TAG_BLOCK_GET_ELEMENT(block, index, type) ((type*)tag_block_get_element((block), (index), (int32)sizeof(type)))
@@ -279,17 +282,7 @@ struct scenario
 };
 static_assert(offsetof(scenario, ai_encounters) == 0x42C && offsetof(scenario, structure_bsps) == 0x5A4);
 
-struct structure_bsp
-{
-	uint8 pad_0[0xB0];
-	tag_block collision_bsp;			// 0xB0
-	uint8 pad_bc[0x134 - 0xBC];
-	tag_block clusters;					// 0x134
-	uint8 pad_140[0x1E4 - 0x140];
-	tag_block pathfinding_surfaces;		// 0x1E4
-	tag_block pathfinding_edges;		// 0x1F0
-};
-static_assert(offsetof(structure_bsp, pathfinding_edges) == 0x1F0);
+struct structure_bsp;
 
 struct collision_bsp;
 
@@ -297,6 +290,16 @@ scenario* global_scenario_get(void);
 scenario* global_scenario_try_and_get(void);
 structure_bsp* global_structure_bsp_get(void);
 collision_bsp* global_collision_bsp_get(void);
+struct bsp3d* global_bsp3d_get(void);
+#define global_collision_bsp (global_collision_bsp_get())
+long scenario_leaf_index_from_point(const union real_point3d* point);
+long scenario_fog_region_get_fog_index(short fog_region_index);
+
+// structures.c: the clusters a search has visited
+void structure_cluster_marker_begin(void);
+boolean structure_cluster_unmarked(short cluster_index);
+boolean structure_cluster_mark(short cluster_index);
+void structure_cluster_marker_end(void);
 int16 global_structure_bsp_index_get(void);
 
 /* ---------- system and game */

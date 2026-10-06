@@ -29,7 +29,7 @@ data_array* player_data = NULL;
 static bool g_ai_running = false;
 static bool g_ai_initialized = false;
 // actors_update and the rest of ai_update: on once the engine functions they call are implemented over carto
-static bool g_ai_update_enabled = false;
+static bool g_ai_update_enabled = true;
 static int32 g_last_ai_time = NONE;
 
 /* ---------- game.c */
@@ -77,6 +77,11 @@ tag tag_get_group_tag(datum tag_index)
 c_void_pointer tag_block_address(const tag_block* block)
 {
 	return { block && block->count > 0 && g_h1_cache_file ? g_h1_cache_file->address_get(block->address, 1) : NULL };
+}
+
+c_void_pointer tag_data_address(const tag_data* data)
+{
+	return { data && data->size > 0 && g_h1_cache_file ? g_h1_cache_file->address_get(data->address, 1) : NULL };
 }
 
 /* ---------- players: halo 1's player datums of carto's players */
@@ -177,11 +182,6 @@ boolean unit_add_equipment_to_inventory(long unit_index, long equipment_index, s
 	return FALSE;
 }
 
-void unit_set_actively_controlled(long unit_index, boolean actively_controlled)
-{
-	return;
-}
-
 // color_math.c rgb_colors_interpolate: from the lower bound to the upper (flags bit 0: through hue, saturation and value)
 union real_rgb_color* rgb_colors_interpolate(union real_rgb_color* rgb_result, unsigned long flags, union real_rgb_color const* rgb_lower_bound,
 	union real_rgb_color const* rgb_upper_bound, real u)
@@ -201,6 +201,7 @@ static void ai_tick(void)
 	if (g_ai_update_enabled)
 	{
 		ai_update();
+		h1_ai_units_control_update();
 	}
 	return;
 }

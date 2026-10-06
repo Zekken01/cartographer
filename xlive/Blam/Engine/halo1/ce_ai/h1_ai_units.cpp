@@ -1,0 +1,266 @@
+#include "stdafx.h"
+
+#include "units/unit_control.h"
+#include "units/units.h"
+
+#include "h1_ai_internal.h"
+#include "h1_ai_objects.h"
+
+/*
+* units.c over carto: the AI controls halo 2's units. unit_control sets the unit's halo 1 control (in its mirror) as halo 1's does;
+* each AI tick, after the actors have run, unit_update's control of the units halo 1 controls (the ones the AI actively controls,
+* runs blindly or holds a persistent control on) goes to halo 2's unit_control.
+*/
+
+namespace h1_ai
+{
+
+/* ---------- constants */
+
+// halo 2's unit control flags (its player actions')
+enum : uint64
+{
+	k_h2_unit_control_crouch = FLAG(0),
+	k_h2_unit_control_jump = FLAG(1),
+	k_h2_unit_control_primary_trigger_pressed = FLAG(8),
+	k_h2_unit_control_grenade_pressed = FLAG(13),
+	k_h2_unit_control_primary_trigger_held = FLAG(18),
+	k_h2_unit_control_grenade_held = FLAG(23),
+	k_h2_unit_control_reload = FLAG(30),
+};
+
+/* ---------- private prototypes */
+
+static void unit_running_blind(long unit_index, real_vector3d* run_vector);
+
+/* ---------- public code */
+
+// units.c unit_control: the control the unit's next update uses
+void unit_control(long unit_index, struct unit_control_data const* control_data)
+{
+	unit_datum* unit = (unit_datum*)unit_get(unit_index);
+	unit->unit.throttle = control_data->throttle;
+	unit->unit.primary_trigger = control_data->primary_trigger;
+	unit->unit.aiming_speed = control_data->aiming_speed;
+	if (control_data->weapon_index != NONE)
+	{
+		unit->unit.desired_weapon_index = control_data->weapon_index;
+	}
+	if (control_data->grenade_index != NONE)
+	{
+		unit->unit.desired_grenade_index = (char)control_data->grenade_index;
+	}
+	unit->unit.desired_zoom_level = (char)control_data->zoom_level;
+	unit->unit.control_flags = control_data->control_flags;
+	unit->unit.desired_looking_vector = control_data->looking_vector;
+	unit->unit.desired_aiming_vector = control_data->aiming_vector;
+	unit->unit.desired_facing_vector = control_data->facing_vector;
+	unit->unit.animation.desired_state = control_data->animation_state;
+	return;
+}
+
+void unit_persistent_control(long unit_index, long control_ticks, unsigned long persistent_control_flags)
+{
+	unit_datum* unit = (unit_datum*)unit_get(unit_index);
+	unit->unit.persistent_control_flags = persistent_control_flags;
+	unit->unit.persistent_control_timer = control_ticks;
+	return;
+}
+
+void unit_set_actively_controlled(long unit_index, boolean actively_controlled)
+{
+	unit_datum* unit = (unit_datum*)unit_get(unit_index);
+	if (unit->unit.actor_index != NONE || unit->unit.swarm_actor_index != NONE || unit->unit.player_index != NONE)
+	{
+		actively_controlled = TRUE;
+	}
+	actively_controlled = !TEST_FLAG(unit->object.damage_flags, _object_dead_bit) && actively_controlled;
+	SET_FLAG(unit->unit.flags, _unit_actively_controlled_bit, actively_controlled);
+	SET_FLAG(unit->unit.flags, _unit_controllable_bit, actively_controlled);
+	return;
+}
+
+void unit_start_running_blindly(long unit_index)
+{
+	unit_datum* unit = (unit_datum*)unit_get(unit_index);
+	if (!TEST_FLAG(unit->unit.flags, _unit_running_blindly_bit))
+	{
+		real angle_range;
+		real_vector3d run_vector;
+		SET_FLAG(unit->unit.flags, _unit_running_blindly_bit, TRUE);
+		if (unit->unit.actor_index != NONE && actor_get_running_blind_vector(unit->unit.actor_index, &run_vector))
+		{
+			unit->unit.run_blindly_angle = 0.0f;
+			angle_range = DEGREES_TO_RADIANS(25.0f);
+		}
+		else
+		{
+			real_euler_angles2d facing_angles;
+			euler_angles2d_from_vector3d(&facing_angles, &unit->object.forward);
+			if (facing_angles.yaw > _pi)
+			{
+				facing_angles.yaw -= 2.0f * _pi;
+			}
+			unit->unit.run_blindly_angle = facing_angles.yaw;
+			angle_range = DEGREES_TO_RADIANS(100.0f);
+		}
+		unit->unit.run_blindly_angle += real_seed_random_range(get_global_random_seed_address(), -angle_range, angle_range);
+	}
+	return;
+}
+
+void unit_stop_running_blindly(long unit_index)
+{
+	unit_datum* unit = (unit_datum*)unit_get(unit_index);
+	SET_FLAG(unit->unit.flags, _unit_running_blindly_bit, FALSE);
+	return;
+}
+
+// unit_update's control: halo 1's control of a unit it controls as halo 2's (whether halo 1 controlled it the tick before in
+// controlled_last, the tick it stops it gets halo 1's uncontrolled control once)
+void h1_ai_unit_control_update(long unit_index, unit_datum* unit, bool* controlled_last)
+{
+	const bool running_blindly = TEST_FLAG(unit->unit.flags, _unit_running_blindly_bit);
+	const bool actively_controlled = TEST_FLAG(unit->unit.flags, _unit_actively_controlled_bit);
+	const bool controlled = unit->unit.player_index == NONE && !TEST_FLAG(unit->object.damage_flags, _object_dead_bit) &&
+		(running_blindly || actively_controlled || unit->unit.persistent_control_timer > 0);
+	if (!controlled && !*controlled_last)
+	{
+		return;
+	}
+	*controlled_last = controlled;
+
+	if (running_blindly)
+	{
+		unit_running_blind(unit_index, &unit->unit.desired_facing_vector);
+		unit->unit.desired_aiming_vector = unit->unit.desired_facing_vector;
+		unit->unit.desired_looking_vector = unit->unit.desired_facing_vector;
+		unit->unit.throttle = *global_forward3d;
+		unit->unit.control_flags = 0;
+	}
+	else if (!actively_controlled)
+	{
+		unit->unit.desired_looking_vector = unit->object.forward;
+		unit->unit.desired_aiming_vector = unit->object.forward;
+		unit->unit.desired_facing_vector = unit->object.forward;
+		unit->unit.throttle = *global_zero_vector3d;
+		unit->unit.control_flags = 0;
+	}
+	if (unit->unit.persistent_control_timer > 0)
+	{
+		unit->unit.control_flags = unit->unit.persistent_control_flags | unit->unit.control_flags;
+		if (TEST_FLAG(unit->unit.persistent_control_flags, _unit_control_weapon_primary_trigger_bit))
+		{
+			SET_FLAG(unit->unit.control_flags, _unit_control_weapon_primary_trigger_bit, (unit->unit.persistent_control_timer % 7) == 0);
+			unit->unit.primary_trigger = 1.f;
+		}
+		else
+		{
+			unit->unit.primary_trigger = 0.f;
+		}
+		if (--unit->unit.persistent_control_timer == 0)
+		{
+			unit->unit.persistent_control_flags = 0;
+		}
+	}
+
+	::unit_control_data data;
+	Memory::GetAddress<void(__cdecl*)(::unit_control_data*)>(0x138C92)(&data);
+	const unsigned long flags = unit->unit.control_flags;
+	uint64 h2_flags = 0;
+	if (TEST_FLAG(flags, _unit_control_crouch_modifier_bit)) h2_flags |= k_h2_unit_control_crouch;
+	if (TEST_FLAG(flags, _unit_control_jump_bit)) h2_flags |= k_h2_unit_control_jump;
+	if (TEST_FLAG(flags, _unit_control_weapon_primary_trigger_bit)) h2_flags |= k_h2_unit_control_primary_trigger_pressed | k_h2_unit_control_primary_trigger_held;
+	if (TEST_FLAG(flags, _unit_control_throw_grenade_bit)) h2_flags |= k_h2_unit_control_grenade_pressed | k_h2_unit_control_grenade_held;
+	if (TEST_FLAG(flags, _unit_control_weapon_reload_bit)) h2_flags |= k_h2_unit_control_reload;
+	data.control_flags = (int64)h2_flags;
+	data.aiming_speed = (uint16)unit->unit.aiming_speed;
+	data.throttle = *(const ::real_vector3d*)&unit->unit.throttle;
+	data.primary_trigger = unit->unit.primary_trigger;
+	if (unit->unit.desired_grenade_index != NONE)
+	{
+		data.grenade_index = (uint16)unit->unit.desired_grenade_index;
+	}
+	data.zoom_level = (uint16)unit->unit.desired_zoom_level;
+	auto normalized = [](const real_vector3d* vector, ::real_vector3d* out)
+	{
+		*out = *(const ::real_vector3d*)vector;
+		if (::normalize3d(out) == 0.f)
+		{
+			*out = *::global_forward3d;
+		}
+	};
+	normalized(&unit->unit.desired_facing_vector, &data.facing_vector);
+	normalized(&unit->unit.desired_aiming_vector, &data.aiming_vector);
+	normalized(&unit->unit.desired_looking_vector, &data.looking_vector);
+	::unit_control(unit_index, &data);
+	return;
+}
+
+/* ---------- private code */
+
+// units.c unit_running_blind: the direction a unit running blindly runs in, wandering
+static void unit_running_blind(long unit_index, real_vector3d* run_vector)
+{
+	unit_datum* unit = (unit_datum*)unit_get(unit_index);
+	boolean actor_controlled = FALSE;
+	if (unit->unit.actor_index == NONE || !actor_get_running_blind_vector(unit->unit.actor_index, run_vector))
+	{
+		*run_vector = *global_forward3d;
+	}
+	else
+	{
+		actor_controlled = TRUE;
+	}
+
+	real angular_acceleration_this_tick;
+	real positive_angle_allowed = 1.f;
+	real negative_angle_allowed = 1.f;
+	if (actor_controlled)
+	{
+		const real negative_angle_bounds_dist = DEGREES_TO_RADIANS(45) - unit->unit.run_blindly_angle;
+		const real positive_angle_bounds_dist = DEGREES_TO_RADIANS(45) + unit->unit.run_blindly_angle;
+		negative_angle_allowed = MIN(negative_angle_allowed, negative_angle_bounds_dist / DEGREES_TO_RADIANS(13.5f));
+		positive_angle_allowed = MIN(positive_angle_allowed, positive_angle_bounds_dist / DEGREES_TO_RADIANS(13.5f));
+	}
+	const real negative_velocity_bounds_dist = DEGREES_TO_RADIANS(12.f) - unit->unit.run_blindly_angle_delta;
+	const real positive_velocity_bounds_dist = DEGREES_TO_RADIANS(12.f) + unit->unit.run_blindly_angle_delta;
+	negative_angle_allowed = MIN(negative_angle_allowed, negative_velocity_bounds_dist * 15.915494f);
+	positive_angle_allowed = MIN(positive_angle_allowed, positive_velocity_bounds_dist * 15.915494f);
+	if (negative_angle_allowed < positive_angle_allowed)
+	{
+		if (negative_angle_allowed < -1.f)
+		{
+			angular_acceleration_this_tick = -0.020943951f;
+		}
+		else
+		{
+			angular_acceleration_this_tick = real_random_range(-0.020943951f, 0.020943951f * MIN(1.f, negative_angle_allowed));
+		}
+	}
+	else
+	{
+		if (positive_angle_allowed < -1.f)
+		{
+			angular_acceleration_this_tick = 0.020943951f;
+		}
+		else
+		{
+			angular_acceleration_this_tick = real_random_range(-0.020943951f * MIN(1.f, positive_angle_allowed), 0.020943951f);
+		}
+	}
+	unit->unit.run_blindly_angle_delta += angular_acceleration_this_tick;
+	unit->unit.run_blindly_angle += unit->unit.run_blindly_angle_delta;
+	if (unit->unit.run_blindly_angle < -_pi)
+	{
+		unit->unit.run_blindly_angle += 2.f * _pi;
+	}
+	else if (unit->unit.run_blindly_angle > _pi)
+	{
+		unit->unit.run_blindly_angle -= 2.f * _pi;
+	}
+	rotate_vector_about_axis(run_vector, global_up3d, sine(unit->unit.run_blindly_angle), cosine(unit->unit.run_blindly_angle));
+	return;
+}
+
+} // namespace h1_ai

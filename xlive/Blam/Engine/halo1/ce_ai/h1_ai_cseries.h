@@ -54,9 +54,16 @@ extern const real_rgb_color* global_real_rgb_violet;
 #define render_debug_line(...) ((void)0)
 #define render_debug_point(...) ((void)0)
 #define render_debug_sphere(...) ((void)0)
+#define render_debug_cylinder(...) ((void)0)
+#define render_debug_vectors(...) ((void)0)
 #define render_debug_circle(...) ((void)0)
 #define render_debug_vector(...) ((void)0)
 #define render_debug_string_at_point(...) ((void)0)
+
+// collision_usage.c: halo 1's collision profiling
+inline void collision_log_start_time(LARGE_INTEGER* start_time) { start_time->QuadPart = 0; }
+inline void collision_log_end_time(short collision_function, __int64 end_time) { }
+inline void collision_log_usage(short collision_function) { }
 
 inline const char* hs_runtime_get_executing_thread_name(void) { return "ai"; }
 inline boolean input_key_is_down(int32 key) { return FALSE; }

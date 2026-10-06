@@ -11,6 +11,7 @@
 #include "game/game_time.h"
 #include "memory/data.h"
 #include "objects/objects.h"
+#include "units/bipeds.h"
 #include "units/units.h"
 #include "../h2_tag_definitions_generated.h"
 
@@ -50,6 +51,8 @@ struct s_object_mirror
 	u_object_mirror_data data;
 	int32 sync_time;
 	bool seen;
+	// halo 1 controlled the unit the last AI tick
+	bool controlled;
 };
 
 /* ---------- globals */
@@ -141,6 +144,19 @@ void h1_ai_objects_update(void)
 	return;
 }
 
+void h1_ai_units_control_update(void)
+{
+	for (auto& entry : g_object_mirrors)
+	{
+		s_object_mirror* mirror = &entry.second;
+		if (mirror->seen && TEST_FLAG(_object_mask_unit, mirror->data.object.object.type))
+		{
+			h1_ai_unit_control_update(entry.first, &mirror->data.unit, &mirror->controlled);
+		}
+	}
+	return;
+}
+
 void h1_ai_object_mirror_forget(datum object_index)
 {
 	g_object_mirrors.erase(object_index);
@@ -226,6 +242,72 @@ void object_get_velocities(long object_index, real_vector3d* translational_veloc
 real_matrix4x3* object_get_node_matrix(long object_index, short node_index)
 {
 	return (real_matrix4x3*)::object_get_node_matrix(object_index, node_index);
+}
+
+real_matrix4x3* object_get_node_matrices(long object_index)
+{
+	int32 node_count;
+	return (real_matrix4x3*)::object_get_node_matrices(object_index, &node_count);
+}
+
+void object_get_orientation(long object_index, real_vector3d* forward, real_vector3d* up)
+{
+	const ::object_datum* object = (const ::object_datum*)::object_try_and_get_and_verify_type(object_index, -1);
+	if (object && forward)
+	{
+		*forward = *(const real_vector3d*)&object->object.forward;
+	}
+	if (object && up)
+	{
+		*up = *(const real_vector3d*)&object->object.up;
+	}
+	return;
+}
+
+// halo 2 names halo 1's markers with underscores for spaces; no marker is the object's first node (the origin for "")
+short object_get_marker_by_name(long object_index, char const* name, struct object_marker* markers, short maximum_marker_count)
+{
+	ASSERT(maximum_marker_count > 0);
+	char marker_name[32] = "";
+	strncpy_s(marker_name, name ? name : "", _TRUNCATE);
+	for (char* c = marker_name; *c; c++)
+	{
+		if (*c == ' ')
+		{
+			*c = '_';
+		}
+	}
+	short marker_count = 0;
+	if (marker_name[0])
+	{
+		::object_marker h2_markers[8];
+		marker_count = ::object_get_markers_by_string_id(object_index, ::string_id_find_or_add(marker_name), h2_markers, (int16)MIN(maximum_marker_count, NUMBEROF(h2_markers)));
+		for (short i = 0; i < marker_count; i++)
+		{
+			markers[i].node_index = h2_markers[i].node_index;
+			markers[i].node_matrix = *(const real_matrix4x3*)&h2_markers[i].node_matrix;
+			markers[i].matrix = *(const real_matrix4x3*)&h2_markers[i].matrix;
+		}
+	}
+	if (marker_count == 0)
+	{
+		markers[0].node_index = 0;
+		matrix4x3_identity(&markers[0].node_matrix);
+		const real_matrix4x3* node_matrix = object_get_node_matrix(object_index, 0);
+		if (node_matrix)
+		{
+			markers[0].matrix = *node_matrix;
+		}
+		else
+		{
+			object_get_world_matrix(object_index, &markers[0].matrix);
+		}
+		if (name && name[0] == '\0')
+		{
+			marker_count = 1;
+		}
+	}
+	return marker_count;
 }
 
 real_matrix4x3* object_get_world_matrix(long object_index, real_matrix4x3* matrix)
@@ -653,6 +735,14 @@ static void object_mirror_sync(datum object_index, s_object_mirror* mirror)
 		unit->time_of_death = h2_unit->unit.time_of_death;
 		unit->killing_spree_count = h2_unit->unit.killing_spree_count;
 		SET_FLAG(unit->flags, _unit_active_camouflaged_bit, h2_unit->unit.active_camouflage > 0.f);
+
+		if (data->type == _object_type_biped)
+		{
+			const ::biped_datum* h2_biped = (const ::biped_datum*)h2_object;
+			_biped_datum* biped = &mirror->data.biped.biped;
+			biped->airborne_ticks = (char)MIN(h2_biped->biped.airborne_ticks, 127);
+			biped->crouch = h2_unit->unit.crouch;
+		}
 
 		// a vehicle's driver and gunner: the riders in its driver and gunner seats
 		unit->driver_object_index = NONE;
