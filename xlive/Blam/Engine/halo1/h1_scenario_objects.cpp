@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "h1_scenario_objects.h"
 
+#include "h1_bipeds.h"
 #include "h1_cache_file.h"
 #include "h1_hs.h"
 #include "h1_items.h"
@@ -141,6 +142,9 @@ void h1_scenario_objects_build(void)
 			{
 			case _h1_object_type_weapon:
 				definition_index = h1_weapon_definition_build(h1_definition_index);
+				break;
+			case _h1_object_type_biped:
+				definition_index = h1_biped_definition_build(h1_definition_index);
 				break;
 			case _h1_object_type_equipment:
 				definition_index = h1_equipment_definition_build(h1_definition_index);

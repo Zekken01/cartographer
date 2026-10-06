@@ -47,6 +47,34 @@ enum
 	k_h1_first_person_shotgun_exit_empty = 24,
 };
 
+static const char* const k_h1_unit_seat_animation_names[] =
+{
+	"airborne_dead", "landing_dead", "acc_front_back", "acc_left_right", "acc_up_down", "push", "twist", "enter", "exit",
+	"look", "talk", "emotions", NULL, "user0", "user1", "user2", "user3", "user4", "user5", "user6", "user7", "user8", "user9",
+	"flying_front", "flying_back", "flying_left", "flying_right", "opening", "closing", "hovering",
+};
+
+static const char* const k_h1_weapon_class_animation_names[] =
+{
+	"idle", "gesture", "turn_left", "turn_right", "dive_front", "dive_back", "dive_left", "dive_right",
+	"move_front", "move_back", "move_left", "move_right", "slide_front", "slide_back", "slide_left", "slide_right",
+	"airborne", "land_soft", "land_hard", NULL, "throw_grenade", "disarm", "drop", "ready", "put_away",
+	"aim_still_up", "aim_move_up", "surprise_front", "surprise_back", "berserk", "evade_left", "evade_right",
+	"signal_move", "signal_attack", "warn", "stunned_front", "stunned_back", "stunned_left", "stunned_right",
+	"melee", "celebrate", "panic", "melee_airborne", "flaming", "resurrect_front", "resurrect_back",
+	"melee_continuous", "feeding", "leap_start", "leap_airborne", "leap_melee", "zapping",
+};
+enum
+{
+	k_h1_weapon_class_aim_still = 25,
+	k_h1_weapon_class_aim_move = 26,
+};
+
+static const char* const k_h1_weapon_type_animation_names[] =
+{
+	"reload_1", "reload_2", "chamber_1", "chamber_2", "fire_1", "fire_2", "charged_1", "charged_2", "melee", "overheat",
+};
+
 /* structures */
 
 struct s_h1_node_orientation
@@ -62,11 +90,24 @@ struct s_h1_animation_slot
 	int16 animation_index;
 };
 
+// a third person animation reached through a mode, weapon class and weapon type
+struct s_h1_unit_animation_slot
+{
+	std::string mode;
+	std::string weapon_class;
+	std::string weapon_type;
+	std::string label;
+	int16 animation_index;
+};
+
 /* prototypes */
 
 static bool h1_animation_node_flag(int32 flags_0, int32 flags_1, int32 node_index);
 static void h1_animation_frame_decode(const h1_antr_animations* animation, int32 frame_index, s_h1_node_orientation* out_nodes);
 static void h1_animation_encode(const h1_antr_animations* animation, h2x_jmad_animations* destination, int32 model_node_count);
+static int16 h1_blend_screen_add(std::vector<h2x_jmad_blend_screens>& screens, const char* label, real32 right_yaw, real32 left_yaw, int16 right_count, int16 left_count, real32 down_pitch, real32 up_pitch, int16 down_count, int16 up_count);
+static std::string h1_animation_label(const char* h1_name);
+static void h1_animation_modes_build(h2x_jmad* graph, const std::vector<s_h1_unit_animation_slot>& slots);
 
 /* public code */
 
@@ -227,6 +268,141 @@ datum h1_first_person_animation_graph_build(datum h1_animation_graph_index, cons
 	return graph_index;
 }
 
+datum h1_animation_graph_build(datum h1_animation_graph_index, const h1_mode* h1_model, const char* name)
+{
+	const datum existing = h1_runtime_tag_find('jmad', name);
+	if (existing != NONE)
+	{
+		return existing;
+	}
+	h2x_jmad* graph = NULL;
+	const datum graph_index = h1_runtime_tag_new('jmad', name, &graph);
+	if (graph_index == NONE)
+	{
+		return NONE;
+	}
+	h1_runtime_reference_set(&graph->parent_animation_graph, (tag_group)NONE, NONE);
+
+	const h1_antr* h1_graph = h1_animation_graph_index != NONE ? (const h1_antr*)g_h1_cache_file->tag_get('antr', h1_animation_graph_index) : NULL;
+
+	// the skeleton is the model's node list (units need as many graph nodes as model nodes), with the graph's joints
+	const int32 node_count = MIN(h1_model->nodes.count, (int32)k_h1_maximum_animation_nodes);
+	h2x_jmad_skeleton_nodes* nodes = h1_runtime_block_new(&graph->skeleton_nodes, node_count);
+	for (int32 i = 0; i < node_count; i++)
+	{
+		const h1_mode_nodes* h1_node = g_h1_cache_file->block_get(h1_model->nodes, i);
+		nodes[i].name = string_id_find_or_add(h1_node->name);
+		nodes[i].next_sibling_node_index = h1_node->next_sibling_node_index;
+		nodes[i].first_child_node_index = h1_node->first_child_node_index;
+		nodes[i].parent_node_index = h1_node->parent_node_index;
+		nodes[i].z_position = h1_node->default_translation.z;
+		const h1_antr_nodes* h1_graph_node = h1_graph && h1_graph->nodes.count == h1_model->nodes.count ? g_h1_cache_file->block_get(h1_graph->nodes, i) : NULL;
+		if (h1_graph_node)
+		{
+			nodes[i].node_joint_flags = (uint8)h1_graph_node->node_joint_flags;
+			nodes[i].base_vector = h1_graph_node->base_vector;
+			nodes[i].vector_range = h1_graph_node->vector_range;
+		}
+	}
+	if (!h1_graph)
+	{
+		return graph_index;
+	}
+
+	h2x_jmad_animations* animations = h1_runtime_block_new(&graph->animations, h1_graph->animations.count);
+	for (int32 i = 0; i < h1_graph->animations.count; i++)
+	{
+		const h1_antr_animations* h1_animation = g_h1_cache_file->block_get(h1_graph->animations, i);
+		h2x_jmad_animations* animation = &animations[i];
+		animation->name = string_id_find_or_add(h1_animation_label(h1_animation->name).c_str());
+		animation->node_list_checksum = h1_model->node_list_checksum;
+		animation->type = (int8)h1_animation->type;
+		animation->frame_info_type = 0;
+		animation->blend_screen_index = NONE;
+		animation->node_count = (uint8)node_count;
+		animation->frame_count = h1_animation->frame_count;
+		animation->internal_flags = k_h2_animation_internal_flags;
+		animation->desired_compression = k_h2_animation_compression;
+		animation->current_compression = k_h2_animation_compression;
+		animation->weight = h1_animation->weight;
+		animation->loop_frame_index = h1_animation->loop_frame_index;
+		animation->parent_animation_index = NONE;
+		animation->next_animation_index = NONE;
+		h1_animation_encode(h1_animation, animation, node_count);
+	}
+
+	std::vector<h2x_jmad_blend_screens> blend_screens;
+	std::vector<s_h1_unit_animation_slot> slots;
+
+	// unit seats, their weapon classes and weapon types
+	for (int32 u = 0; u < h1_graph->units.count; u++)
+	{
+		const h1_antr_units* h1_unit = g_h1_cache_file->block_get(h1_graph->units, u);
+		const std::string mode = _stricmp(h1_unit->label, "stand") == 0 ? "combat" : h1_animation_label(h1_unit->label);
+
+		for (int32 i = 0; i < h1_unit->animations.count && i < NUMBEROF(k_h1_unit_seat_animation_names); i++)
+		{
+			const int16 animation_index = g_h1_cache_file->block_get(h1_unit->animations, i)->animation_index;
+			if (k_h1_unit_seat_animation_names[i] && VALID_INDEX(animation_index, h1_graph->animations.count))
+			{
+				slots.push_back({ mode, "any", "any", k_h1_unit_seat_animation_names[i], animation_index });
+			}
+		}
+
+		for (int32 w = 0; w < h1_unit->weapons.count; w++)
+		{
+			const h1_antr_units_weapons* h1_weapon = g_h1_cache_file->block_get(h1_unit->weapons, w);
+			const std::string weapon_class = h1_weapon->name[0] ? h1_animation_label(h1_weapon->name) : "any";
+			int16 aim_screen = NONE;
+
+			for (int32 i = 0; i < h1_weapon->animations.count && i < NUMBEROF(k_h1_weapon_class_animation_names); i++)
+			{
+				const int16 animation_index = g_h1_cache_file->block_get(h1_weapon->animations, i)->animation_index;
+				if (!k_h1_weapon_class_animation_names[i] || !VALID_INDEX(animation_index, h1_graph->animations.count))
+				{
+					continue;
+				}
+				slots.push_back({ mode, weapon_class, "any", k_h1_weapon_class_animation_names[i], animation_index });
+				// aiming overlays are aiming screens over yaw and pitch
+				if (i == k_h1_weapon_class_aim_still || i == k_h1_weapon_class_aim_move)
+				{
+					if (aim_screen == NONE)
+					{
+						aim_screen = h1_blend_screen_add(blend_screens, (mode + ":" + weapon_class + ":aim").c_str(),
+							h1_weapon->right_yaw_per_frame, h1_weapon->left_yaw_per_frame, h1_weapon->right_frame_count, h1_weapon->left_frame_count,
+							h1_weapon->down_pitch_per_frame, h1_weapon->up_pitch_per_frame, h1_weapon->down_pitch_frame_count, h1_weapon->up_pitch_frame_count);
+					}
+					animations[animation_index].blend_screen_index = (int8)aim_screen;
+				}
+			}
+
+			for (int32 t = 0; t < h1_weapon->weapon_types.count; t++)
+			{
+				const h1_antr_units_weapons_weapon_types* h1_type = g_h1_cache_file->block_get(h1_weapon->weapon_types, t);
+				const std::string weapon_type = h1_type->label[0] ? h1_animation_label(h1_type->label) : "any";
+				for (int32 i = 0; i < h1_type->animations.count && i < NUMBEROF(k_h1_weapon_type_animation_names); i++)
+				{
+					const int16 animation_index = g_h1_cache_file->block_get(h1_type->animations, i)->animation_index;
+					if (VALID_INDEX(animation_index, h1_graph->animations.count))
+					{
+						slots.push_back({ mode, weapon_class, weapon_type, k_h1_weapon_type_animation_names[i], animation_index });
+					}
+				}
+			}
+		}
+	}
+
+	h2x_jmad_blend_screens* screens = h1_runtime_block_new(&graph->blend_screens, (int32)blend_screens.size());
+	for (size_t i = 0; i < blend_screens.size(); i++)
+	{
+		screens[i] = blend_screens[i];
+	}
+	h1_animation_modes_build(graph, slots);
+
+	h1_log("animations: %s has %d animations, %d modes, %d blend screens", name, graph->animations.count, graph->modes.count, graph->blend_screens.count);
+	return graph_index;
+}
+
 /* private code */
 
 static bool h1_animation_node_flag(int32 flags_0, int32 flags_1, int32 node_index)
@@ -374,5 +550,113 @@ static void h1_animation_encode(const h1_antr_animations* animation, h2x_jmad_an
 	// packed data sizes: node flags size and animated codec size, no static codec or movement data
 	destination->unknown_3 = (int8)(flags_vector_size * 3);
 	destination->unknown_8 = (int32)animated_size;
+	return;
+}
+
+static std::string h1_animation_label(const char* h1_name)
+{
+	std::string label = h1_name;
+	for (char& c : label)
+	{
+		c = (c == '-' || c == ' ') ? '_' : c;
+	}
+	return label;
+}
+
+static int16 h1_blend_screen_add(std::vector<h2x_jmad_blend_screens>& screens, const char* label, real32 right_yaw, real32 left_yaw, int16 right_count, int16 left_count, real32 down_pitch, real32 up_pitch, int16 down_count, int16 up_count)
+{
+	h2x_jmad_blend_screens screen = {};
+	screen.label = string_id_find_or_add(label);
+	screen.right_yaw_per_frame = right_yaw;
+	screen.left_yaw_per_frame = left_yaw;
+	screen.right_frame_count = right_count;
+	screen.left_frame_count = left_count;
+	screen.down_pitch_per_frame = down_pitch;
+	screen.up_pitch_per_frame = up_pitch;
+	screen.down_pitch_frame_count = down_count;
+	screen.up_pitch_frame_count = up_count;
+	screens.push_back(screen);
+	return (int16)(screens.size() - 1);
+}
+
+// the labels of a level of the graph once each, sorted by string id (halo 2 binary searches them)
+static std::vector<std::string> h1_animation_labels_sorted(std::vector<std::string> labels)
+{
+	std::sort(labels.begin(), labels.end());
+	labels.erase(std::unique(labels.begin(), labels.end()), labels.end());
+	std::sort(labels.begin(), labels.end(), [](const std::string& a, const std::string& b)
+	{
+		return (uint32)string_id_find_or_add(a.c_str()) < (uint32)string_id_find_or_add(b.c_str());
+	});
+	return labels;
+}
+
+// nests the slots into modes, weapon classes and weapon types; overlays and actions by animation type
+static void h1_animation_modes_build(h2x_jmad* graph, const std::vector<s_h1_unit_animation_slot>& slots)
+{
+	std::vector<std::string> mode_labels;
+	for (const s_h1_unit_animation_slot& slot : slots) mode_labels.push_back(slot.mode);
+	const std::vector<std::string> modes = h1_animation_labels_sorted(mode_labels);
+
+	const h2x_jmad_animations* animations = graph->animations.count > 0 ? graph->animations[0] : NULL;
+	h2x_jmad_modes* mode_entries = h1_runtime_block_new(&graph->modes, (int32)modes.size());
+	for (size_t m = 0; m < modes.size(); m++)
+	{
+		mode_entries[m].label = string_id_find_or_add(modes[m].c_str());
+
+		std::vector<std::string> class_labels;
+		for (const s_h1_unit_animation_slot& slot : slots) if (slot.mode == modes[m]) class_labels.push_back(slot.weapon_class);
+		const std::vector<std::string> classes = h1_animation_labels_sorted(class_labels);
+		h2x_jmad_modes_weapon_class* class_entries = h1_runtime_block_new(&mode_entries[m].weapon_class, (int32)classes.size());
+		for (size_t c = 0; c < classes.size(); c++)
+		{
+			class_entries[c].label = string_id_find_or_add(classes[c].c_str());
+
+			std::vector<std::string> type_labels;
+			for (const s_h1_unit_animation_slot& slot : slots) if (slot.mode == modes[m] && slot.weapon_class == classes[c]) type_labels.push_back(slot.weapon_type);
+			const std::vector<std::string> types = h1_animation_labels_sorted(type_labels);
+			h2x_jmad_modes_weapon_class_weapon_type* type_entries = h1_runtime_block_new(&class_entries[c].weapon_type, (int32)types.size());
+			for (size_t t = 0; t < types.size(); t++)
+			{
+				type_entries[t].label = string_id_find_or_add(types[t].c_str());
+
+				std::vector<const s_h1_unit_animation_slot*> actions, overlays;
+				for (const s_h1_unit_animation_slot& slot : slots)
+				{
+					if (slot.mode != modes[m] || slot.weapon_class != classes[c] || slot.weapon_type != types[t])
+					{
+						continue;
+					}
+					const bool overlay = animations && animations[slot.animation_index].type == _h1_animation_overlay;
+					std::vector<const s_h1_unit_animation_slot*>& list = overlay ? overlays : actions;
+					// one animation per label
+					if (std::find_if(list.begin(), list.end(), [&](const s_h1_unit_animation_slot* other) { return other->label == slot.label; }) == list.end())
+					{
+						list.push_back(&slot);
+					}
+				}
+				auto by_label = [](const s_h1_unit_animation_slot* a, const s_h1_unit_animation_slot* b)
+				{
+					return (uint32)string_id_find_or_add(a->label.c_str()) < (uint32)string_id_find_or_add(b->label.c_str());
+				};
+				std::sort(actions.begin(), actions.end(), by_label);
+				std::sort(overlays.begin(), overlays.end(), by_label);
+				h2x_jmad_modes_weapon_class_weapon_type_actions* action_entries = h1_runtime_block_new(&type_entries[t].actions, (int32)actions.size());
+				for (size_t a = 0; a < actions.size(); a++)
+				{
+					action_entries[a].label = string_id_find_or_add(actions[a]->label.c_str());
+					action_entries[a].graph_index = NONE;
+					action_entries[a].animation_index = actions[a]->animation_index;
+				}
+				h2x_jmad_modes_weapon_class_weapon_type_overlays* overlay_entries = h1_runtime_block_new(&type_entries[t].overlays, (int32)overlays.size());
+				for (size_t o = 0; o < overlays.size(); o++)
+				{
+					overlay_entries[o].label = string_id_find_or_add(overlays[o]->label.c_str());
+					overlay_entries[o].graph_index = NONE;
+					overlay_entries[o].animation_index = overlays[o]->animation_index;
+				}
+			}
+		}
+	}
 	return;
 }

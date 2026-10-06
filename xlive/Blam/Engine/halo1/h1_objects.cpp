@@ -17,7 +17,9 @@
 #include "objects/objects.h"
 #include "units/units.h"
 #include "objects/object_placement.h"
+#include "camera/director.h"
 #include "game/game.h"
+#include "game/players.h"
 #include "game/game_time.h"
 
 #include <algorithm>
@@ -152,6 +154,22 @@ void h1_objects_render_frame_begin(void)
 	return;
 }
 
+// the unit a local player sees through in first person: halo 2 doesn't draw it or what it holds
+static bool h1_object_is_first_person_unit(datum object_index)
+{
+	const datum ultimate_parent = object_get_ultimate_parent(object_index);
+	for (int32 user_index = 0; user_index < k_number_of_users; user_index++)
+	{
+		const datum player_index = player_index_from_user_index(user_index);
+		const player_datum* player = player_index != NONE ? player_get(player_index) : NULL;
+		if (player && player->unit_index != NONE && player->unit_index == ultimate_parent && director_get_perspective(user_index) == _director_mode_game)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 void h1_objects_render(e_h1_render_pass pass, real32 game_time)
 {
 	if (g_h1_object_bindings.empty())
@@ -163,7 +181,7 @@ void h1_objects_render(e_h1_render_pass pass, real32 game_time)
 	{
 		const object_datum* object = (const object_datum*)object_try_and_get(object_index);
 		auto found = object ? g_h1_object_bindings.find(object->definition_index) : g_h1_object_bindings.end();
-		if (found == g_h1_object_bindings.end())
+		if (found == g_h1_object_bindings.end() || h1_object_is_first_person_unit(object_index))
 		{
 			continue;
 		}
