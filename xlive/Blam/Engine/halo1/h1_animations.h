@@ -28,6 +28,11 @@ const char* h1_mass_point_marker_name(const char* mass_point_name, char(&buffer)
 // root of its first frame), false without one
 bool h1_animation_seat_enter_root_get(datum h1_animation_graph_index, const char* seat_label, real_point3d* out_position);
 
+// units.c unit_set_or_test_seat_and_weapon_label's weapon class for a seat and weapon label: its hand marker (the unit's) and grip
+// marker (the weapon's) a held weapon attaches by, false without one
+bool h1_animation_weapon_markers_get(datum h1_animation_graph_index, const char* seat_label, const char* weapon_label, const char** out_hand_marker,
+	const char** out_grip_marker);
+
 // a vehicle's animation weapon class: its graph's first unit's first weapon (the ghost's "fixed", its aiming), "any" without one
 string_id h1_animation_vehicle_weapon_class(datum h1_animation_graph_index);
 

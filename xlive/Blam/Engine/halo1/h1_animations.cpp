@@ -842,6 +842,35 @@ string_id h1_animation_vehicle_weapon_class(datum h1_animation_graph_index)
 	return string_id_find_or_add(weapon && weapon->name[0] ? h1_animation_label(weapon->name).c_str() : "any");
 }
 
+bool h1_animation_weapon_markers_get(datum h1_animation_graph_index, const char* seat_label, const char* weapon_label, const char** out_hand_marker,
+	const char** out_grip_marker)
+{
+	const h1_antr* graph = (const h1_antr*)g_h1_cache_file->tag_get('antr', h1_animation_graph_index);
+	for (int32 u = 0; graph && u < graph->units.count; u++)
+	{
+		const h1_antr_units* unit = g_h1_cache_file->block_get(graph->units, u);
+		if (seat_label && _stricmp(seat_label, unit->label) != 0)
+		{
+			continue;
+		}
+		for (int32 w = 0; w < unit->weapons.count; w++)
+		{
+			const h1_antr_units_weapons* weapon = g_h1_cache_file->block_get(unit->weapons, w);
+			for (int32 t = 0; t < weapon->weapon_types.count; t++)
+			{
+				const h1_antr_units_weapons_weapon_types* type = g_h1_cache_file->block_get(weapon->weapon_types, t);
+				if (!weapon_label || (strcmp(weapon_label, "unarmed") == 0 && type->label[0] == 0) || _stricmp(weapon_label, type->label) == 0)
+				{
+					*out_hand_marker = weapon->hand_marker;
+					*out_grip_marker = weapon->grip_marker;
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
 bool h1_animation_seat_enter_root_get(datum h1_animation_graph_index, const char* seat_label, real_point3d* out_position)
 {
 	const h1_antr* graph = h1_animation_graph_index != NONE ? (const h1_antr*)g_h1_cache_file->tag_get('antr', h1_animation_graph_index) : NULL;

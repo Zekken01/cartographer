@@ -2,6 +2,7 @@
 #include "h1_weapon_logic.h"
 #include "ce_ai/h1_ai.h"
 
+#include "h1_animations.h"
 #include "h1_cache_file.h"
 #include "h1_effects.h"
 #include "h1_first_person_weapon.h"
@@ -346,8 +347,60 @@ static void h1_projectile_distribute(real_vector3d* forward, const real_vector3d
 
 /* public code */
 
+// units.c unit_update_weapons' attachment of the weapon it readies: object_attach_to_marker(unit, its weapon class's hand marker, weapon,
+// its grip marker). Halo 2 attaches by the unit tag's right or left hand node and preferred gun node (FUN_0053aa9a), halo 1's
+// animation graph names them per seat and weapon class (the elite's "right hand elite", the jackal's "left hand jackal")
+typedef void(__cdecl* t_unit_attach_weapon)(datum weapon_index, datum unit_index, int32 left_hand);
+static void __cdecl h1_unit_attach_weapon(datum weapon_index, datum unit_index, int32 left_hand)
+{
+	const object_datum* unit = h1_maps_active() && !left_hand ? (const object_datum*)object_try_and_get_and_verify_type(unit_index, _object_mask_unit) : NULL;
+	const object_datum* weapon = unit ? (const object_datum*)object_try_and_get_and_verify_type(weapon_index, _object_mask_weapon) : NULL;
+	const datum h1_unit_index = unit ? h1_objects_h1_definition_get(unit->definition_index) : NONE;
+	const datum h1_weapon_index = weapon ? h1_objects_h1_definition_get(weapon->definition_index) : NONE;
+	if (h1_unit_index != NONE && h1_weapon_index != NONE)
+	{
+		// the seat: its parent's seat's label, standing without one (units.c unit_get_seat_label)
+		const char* seat_label = "stand";
+		const unit_datum* rider = (const unit_datum*)unit;
+		if (unit->object.parent_object_index != NONE && rider->unit.parent_seat_index != NONE)
+		{
+			const object_datum* parent = object_get(unit->object.parent_object_index);
+			const datum h1_parent_index = h1_objects_h1_definition_get(parent->definition_index);
+			const h1_vehi* h1_parent = h1_parent_index != NONE ? (const h1_vehi*)g_h1_cache_file->tag_get('vehi', h1_parent_index) : NULL;
+			const h1_vehi_seats* seat = h1_parent ? g_h1_cache_file->block_get(h1_parent->seats, rider->unit.parent_seat_index) : NULL;
+			if (seat)
+			{
+				seat_label = seat->label;
+			}
+		}
+		const h1_bipd* h1_unit = (const h1_bipd*)g_h1_cache_file->tag_get('unit', h1_unit_index);	// (a unit's animation graph is at the object's)
+		const h1_weap* h1_weapon = (const h1_weap*)g_h1_cache_file->tag_get('weap', h1_weapon_index);
+		const char* hand_marker = NULL;
+		const char* grip_marker = NULL;
+		if (h1_unit && h1_weapon && h1_animation_weapon_markers_get(h1_unit->animation_graph.index, seat_label, h1_weapon->label, &hand_marker, &grip_marker))
+		{
+			// marker names as the models': lowercase, spaces as underscores
+			auto marker_string_id = [](const char* name) -> string_id
+			{
+				char marker[32];
+				strncpy_s(marker, name, _TRUNCATE);
+				for (char* c = marker; *c; c++)
+				{
+					*c = *c == ' ' ? '_' : (char)tolower((unsigned char)*c);
+				}
+				return marker[0] ? string_id_find_or_add(marker) : _string_id_empty_string;
+			};
+			Memory::GetAddress<void(__cdecl*)(datum, datum, string_id, string_id)>(0x18167C)(weapon_index, unit_index, marker_string_id(hand_marker), marker_string_id(grip_marker));
+			return;
+		}
+	}
+	Memory::GetAddress<t_unit_attach_weapon>(0x13AA9A)(weapon_index, unit_index, left_hand);
+	return;
+}
+
 void h1_weapon_logic_apply_patches(void)
 {
+	PatchCall(Memory::GetAddress(0x169DDA), h1_unit_attach_weapon);
 	// the weapon part of the weapon object type: its update runs halo 1's after halo 2's for the halo 1 weapons
 	object_type_definition* weapon_type = object_type_definition_get(_object_type_weapon);
 	for (int32 i = 0; i < k_max_object_type_inheritence; i++)

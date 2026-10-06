@@ -349,6 +349,13 @@ static datum h1_render_model_build(const h1_mode* h1_model, const char* name, co
 	{
 		const h1_mode_markers* h1_marker = g_h1_cache_file->block_get(h1_model->markers, i);
 		groups[i].name = h1_marker_string_id(h1_marker->name);
+		// a seat's marker places its rider (units.c unit_enter_seat): its rotation is halo 1's, as the nodes' default ones (the
+		// dropship's and pelican's side seats face out and across, not into the hull)
+		bool seat_marker = false;
+		for (int32 s = 0; s < h1_vehicle->seats.count && !seat_marker; s++)
+		{
+			seat_marker = _stricmp(g_h1_cache_file->block_get(h1_vehicle->seats, s)->marker_name, h1_marker->name) == 0;
+		}
 		h2x_mode_marker_groups_markers* markers = h1_runtime_block_new(&groups[i].markers, h1_marker->instances.count);
 		for (int32 j = 0; j < h1_marker->instances.count; j++)
 		{
@@ -357,7 +364,7 @@ static datum h1_render_model_build(const h1_mode* h1_model, const char* name, co
 			markers[j].permutation_index = instance->permutation_index;
 			markers[j].node_index = instance->node_index;
 			markers[j].translation = instance->translation;
-			markers[j].rotation = instance->rotation;
+			markers[j].rotation = seat_marker ? h1_quaternion_to_h2(&instance->rotation) : instance->rotation;
 			markers[j].scale = 1.f;
 		}
 	}
