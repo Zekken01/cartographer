@@ -14,8 +14,12 @@
 datum h1_first_person_animation_graph_build(datum h1_animation_graph_index, const char* name);
 
 struct h1_mode;
+struct h1_phys;
 
 // the halo 2 third person animation graph of a halo 1 model and its animation graph (NONE: only the skeleton): the halo 1 units'
 // seats become modes ("stand" is "combat"), their weapon classes weapon classes, their animations actions, overlays and aiming
 // blend screens
-datum h1_animation_graph_build(datum h1_animation_graph_index, const h1_mode* h1_model, const char* name);
+datum h1_animation_graph_build(datum h1_animation_graph_index, const h1_mode* h1_model, const char* name, const h1_phys* h1_physics = NULL);
+
+// the marker placed at a halo 1 mass point (vehicles' wheels and hover pads, their suspension)
+const char* h1_mass_point_marker_name(const char* mass_point_name, char(&buffer)[64]);

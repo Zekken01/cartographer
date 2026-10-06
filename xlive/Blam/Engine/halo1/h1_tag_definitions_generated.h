@@ -5464,4 +5464,77 @@ struct h1_bipd
 };
 ASSERT_STRUCT_SIZE(h1_bipd, 0x4f4);
 
+struct h1_phys_inertial_matrix_and_inverse
+{
+	real_vector3d yy_zz_xy_zx; // 0x0
+	real_vector3d xy_zz_xx_yz; // 0xc
+	real_vector3d zx_yz_xx_yy; // 0x18
+};
+ASSERT_STRUCT_SIZE(h1_phys_inertial_matrix_and_inverse, 0x24);
+
+struct h1_phys_powered_mass_points
+{
+	char name[32]; // 0x0
+	uint32 flags; // 0x20
+	real32 antigrav_strength; // 0x24
+	real32 antigrav_offset; // 0x28
+	real32 antigrav_height; // 0x2c
+	real32 antigrav_damp_fraction; // 0x30
+	real32 antigrav_normal_k1; // 0x34
+	real32 antigrav_normal_k0; // 0x38
+	int8 pad_3c[68];
+};
+ASSERT_STRUCT_SIZE(h1_phys_powered_mass_points, 0x80);
+
+struct h1_phys_mass_points
+{
+	char name[32]; // 0x0
+	int16 powered_mass_point_index; // 0x20
+	int16 model_node; // 0x22
+	uint32 flags; // 0x24
+	real32 relative_mass; // 0x28
+	real32 mass; // 0x2c
+	real32 relative_density; // 0x30
+	real32 density; // 0x34
+	real_point3d position; // 0x38
+	real_vector3d forward; // 0x44
+	real_vector3d up; // 0x50
+	int16 friction_type; // 0x5c
+	int16 unknown; // 0x5e
+	real32 friction_parallel_scale; // 0x60
+	real32 friction_perpendicular_scale; // 0x64
+	real32 radius; // 0x68
+	int8 pad_6c[20];
+};
+ASSERT_STRUCT_SIZE(h1_phys_mass_points, 0x80);
+
+struct h1_phys
+{
+	real32 radius; // 0x0
+	real32 moment_scale; // 0x4
+	real32 mass; // 0x8
+	real_point3d center_of_mass; // 0xc
+	real32 density; // 0x18
+	real32 gravity_scale; // 0x1c
+	real32 ground_friction; // 0x20
+	real32 ground_depth; // 0x24
+	real32 ground_damp_fraction; // 0x28
+	real32 ground_normal_k1; // 0x2c
+	real32 ground_normal_k0; // 0x30
+	int8 pad_34[4];
+	real32 water_friction; // 0x38
+	real32 water_depth; // 0x3c
+	real32 water_density; // 0x40
+	int8 pad_44[4];
+	real32 air_friction; // 0x48
+	int8 pad_4c[4];
+	real32 xx_moment; // 0x50
+	real32 yy_moment; // 0x54
+	real32 zz_moment; // 0x58
+	h1_tag_block<h1_phys_inertial_matrix_and_inverse> inertial_matrix_and_inverse; // 0x5c
+	h1_tag_block<h1_phys_powered_mass_points> powered_mass_points; // 0x68
+	h1_tag_block<h1_phys_mass_points> mass_points; // 0x74
+};
+ASSERT_STRUCT_SIZE(h1_phys, 0x80);
+
 #pragma pack(pop)

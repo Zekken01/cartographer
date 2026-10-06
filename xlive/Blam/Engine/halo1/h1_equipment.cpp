@@ -7,6 +7,7 @@
 #include "h1_bipeds.h"
 #include "h1_log.h"
 #include "h1_scenario_objects.h"
+#include "h1_vehicles.h"
 #include "h1_objects.h"
 #include "h1_projectiles.h"
 #include "h1_scenery.h"
@@ -84,7 +85,7 @@ static std::unordered_map<datum, int8> g_h1_collection_classification;
 static const s_h1_object_substitute* h1_object_substitute_get(const char* h1_name);
 static datum h1_item_collection_get(datum h1_collection_index, int8* out_classification);
 static void h1_simulation_definition_table_extend(scenario* h2_scenario);
-static datum h1_vehicle_collection_get(const char* h1_vehicle_name, int8* out_classification);
+static datum h1_vehicle_collection_get(datum h1_vehicle_index, int8* out_classification);
 static e_item_spawn_game_type h1_equipment_game_type(int16 h1_game_type);
 static bool h1_netgame_item_rest_pose(datum h1_collection_index, const real_point3d* point, real_point3d* out_position, real_euler_angles3d* out_orientation);
 
@@ -166,7 +167,7 @@ void h1_equipment_build(scenario* h2_scenario, const h1_scnr* h1_scenario)
 		}
 
 		int8 classification = _h2_classification_primary_light_land;
-		const datum collection = h1_vehicle_collection_get(g_h1_cache_file->tag_name_get(palette->name.index), &classification);
+		const datum collection = h1_vehicle_collection_get(palette->name.index, &classification);
 		if (collection == NONE)
 		{
 			continue;
@@ -343,28 +344,24 @@ static datum h1_item_collection_get(datum h1_collection_index, int8* out_classif
 	return result;
 }
 
-static datum h1_vehicle_collection_get(const char* h1_vehicle_name, int8* out_classification)
+static datum h1_vehicle_collection_get(datum h1_vehicle_index, int8* out_classification)
 {
+	const char* h1_vehicle_name = g_h1_cache_file->tag_name_get(h1_vehicle_index);
+	// the substitute table only supplies the netgame classification, the vehicle is built from the halo 1 vehicle's own tags
 	const s_h1_object_substitute* substitute = h1_object_substitute_get(h1_vehicle_name);
-	if (!substitute || substitute->h2_group != 'vehi')
-	{
-		h1_log("equipment: no halo 2 vehicle for %s", h1_vehicle_name);
-		return NONE;
-	}
-	*out_classification = substitute->classification;
+	*out_classification = substitute ? substitute->classification : _h2_classification_primary_light_land;
 
 	char name[256];
-	sprintf_s(name, "halo1\\vehicle collections\\%s", substitute->h2_name);
+	sprintf_s(name, "halo1\\vehicle collections\\%s", h1_vehicle_name);
 	const datum existing = h1_runtime_tag_find('vehc', name);
 	if (existing != NONE)
 	{
 		return existing;
 	}
 
-	const datum vehicle = h1_runtime_tag_find('vehi', substitute->h2_name);
+	const datum vehicle = h1_vehicle_build(h1_vehicle_index);
 	if (vehicle == NONE)
 	{
-		h1_log("equipment: missing halo 2 tag %s", substitute->h2_name);
 		return NONE;
 	}
 

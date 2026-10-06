@@ -47,6 +47,8 @@ enum
 	k_h1_first_person_shotgun_exit_empty = 24,
 };
 
+static const char* const k_h1_vehicle_animation_names[] = { "steering", "roll", "throttle", "velocity", "braking", "ground_speed" };
+
 static const char* const k_h1_unit_seat_animation_names[] =
 {
 	"airborne_dead", "landing_dead", "acc_front_back", "acc_left_right", "acc_up_down", "push", "twist", "enter", "exit",
@@ -268,7 +270,7 @@ datum h1_first_person_animation_graph_build(datum h1_animation_graph_index, cons
 	return graph_index;
 }
 
-datum h1_animation_graph_build(datum h1_animation_graph_index, const h1_mode* h1_model, const char* name)
+datum h1_animation_graph_build(datum h1_animation_graph_index, const h1_mode* h1_model, const char* name, const h1_phys* h1_physics)
 {
 	const datum existing = h1_runtime_tag_find('jmad', name);
 	if (existing != NONE)
@@ -349,6 +351,47 @@ datum h1_animation_graph_build(datum h1_animation_graph_index, const h1_mode* h1
 	std::vector<h2x_jmad_blend_screens> blend_screens;
 	std::vector<s_h1_unit_animation_slot> slots;
 
+	// vehicle overlays
+	const h1_antr_vehicles* h1_vehicle = g_h1_cache_file->block_get(h1_graph->vehicles, 0);
+	if (h1_vehicle)
+	{
+		for (int32 i = 0; i < h1_vehicle->animations.count && i < NUMBEROF(k_h1_vehicle_animation_names); i++)
+		{
+			const int16 animation_index = g_h1_cache_file->block_get(h1_vehicle->animations, i)->animation_index;
+			if (!VALID_INDEX(animation_index, h1_graph->animations.count))
+			{
+				continue;
+			}
+			slots.push_back({ "any", "any", "any", k_h1_vehicle_animation_names[i], animation_index });
+			// steering is an aiming screen over the turn
+			if (i == 0)
+			{
+				animations[animation_index].blend_screen_index = (int8)h1_blend_screen_add(blend_screens, "steering",
+					h1_vehicle->right_yaw_per_frame, h1_vehicle->left_yaw_per_frame, h1_vehicle->right_frame_count, h1_vehicle->left_frame_count,
+					h1_vehicle->down_pitch_per_frame, h1_vehicle->up_pitch_per_frame, h1_vehicle->down_pitch_frame_count, h1_vehicle->up_pitch_frame_count);
+			}
+		}
+
+		// suspension at the wheel mass point markers, halo 1 ground depths are negative
+		h2x_jmad_vehicle_suspension* suspension = h1_runtime_block_new(&graph->vehicle_suspension, h1_vehicle->suspension_animations.count);
+		for (int32 i = 0; i < h1_vehicle->suspension_animations.count; i++)
+		{
+			const h1_antr_vehicles_suspension_animations* h1_suspension = g_h1_cache_file->block_get(h1_vehicle->suspension_animations, i);
+			const h1_phys_mass_points* mass_point = h1_physics ? g_h1_cache_file->block_get(h1_physics->mass_points, h1_suspension->mass_point_index) : NULL;
+			char label[64], marker[64];
+			sprintf_s(label, "suspension:%d", i);
+			suspension[i].label = string_id_find_or_add(label);
+			suspension[i].graph_index = NONE;
+			suspension[i].animation_index = VALID_INDEX(h1_suspension->animation_index, h1_graph->animations.count) ? h1_suspension->animation_index : NONE;
+			suspension[i].marker_name = mass_point ? string_id_find_or_add(h1_mass_point_marker_name(mass_point->name, marker)) : _string_id_empty_string;
+			suspension[i].full_extension_ground_depth = -h1_suspension->full_extension_ground_depth;
+			suspension[i].full_compression_ground_depth = -h1_suspension->full_compression_ground_depth;
+			suspension[i].destroyed_region_name = _string_id_empty_string;
+			suspension[i].destroyed_full_extension_ground_depth = suspension[i].full_extension_ground_depth;
+			suspension[i].destroyed_full_compression_ground_depth = suspension[i].full_compression_ground_depth;
+		}
+	}
+
 	// unit seats, their weapon classes and weapon types
 	for (int32 u = 0; u < h1_graph->units.count; u++)
 	{
@@ -414,8 +457,14 @@ datum h1_animation_graph_build(datum h1_animation_graph_index, const h1_mode* h1
 	}
 	h1_animation_modes_build(graph, slots);
 
-	h1_log("animations: %s has %d animations, %d modes, %d blend screens", name, graph->animations.count, graph->modes.count, graph->blend_screens.count);
+	h1_log("animations: %s has %d animations, %d modes, %d blend screens, %d suspension animations", name, graph->animations.count, graph->modes.count, graph->blend_screens.count, graph->vehicle_suspension.count);
 	return graph_index;
+}
+
+const char* h1_mass_point_marker_name(const char* mass_point_name, char(&buffer)[64])
+{
+	sprintf_s(buffer, "mass point %s", mass_point_name);
+	return buffer;
 }
 
 /* private code */

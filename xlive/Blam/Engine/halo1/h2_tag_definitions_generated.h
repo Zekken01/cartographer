@@ -8956,4 +8956,1073 @@ struct h2x_bipd
 };
 ASSERT_STRUCT_SIZE(h2x_bipd, 0x314);
 
+struct h2x_vehi_ai_properties
+{
+	uint32 flags; // 0x0
+	string_id ai_type_name; // 0x4
+	int8 pad_8[4];
+	int16 ai_size; // 0xc
+	int16 leap_jump_speed; // 0xe
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_ai_properties, 0x10);
+
+struct h2x_vehi_functions
+{
+	uint32 flags; // 0x0
+	string_id import_name; // 0x4
+	string_id export_name; // 0x8
+	string_id turn_off_with; // 0xc
+	real32 minimum_value; // 0x10
+	tag_data default_function; // 0x14
+	string_id scale_by; // 0x1c
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_functions, 0x20);
+
+struct h2x_vehi_attachments
+{
+	tag_reference type; // 0x0
+	string_id marker; // 0x8
+	int16 change_color; // 0xc
+	int16 unknown; // 0xe
+	string_id primary_scale; // 0x10
+	string_id secondary_scale; // 0x14
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_attachments, 0x18);
+
+struct h2x_vehi_widgets
+{
+	tag_reference type; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_widgets, 0x8);
+
+struct h2x_vehi_old_functions
+{
+	int8 pad_0[76];
+	string_id unknown; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_old_functions, 0x50);
+
+struct h2x_vehi_change_colors_initial_permutations
+{
+	real32 weight; // 0x0
+	real_rgb_color color_lower_bound; // 0x4
+	real_rgb_color color_upper_bound; // 0x10
+	string_id variant_name; // 0x1c
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_change_colors_initial_permutations, 0x20);
+
+struct h2x_vehi_change_colors_functions
+{
+	int8 pad_0[4];
+	uint32 scale_flags; // 0x4
+	real_rgb_color color_lower_bound; // 0x8
+	real_rgb_color color_upper_bound; // 0x14
+	string_id darken_by; // 0x20
+	string_id scale_by; // 0x24
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_change_colors_functions, 0x28);
+
+struct h2x_vehi_change_colors
+{
+	tag_block<h2x_vehi_change_colors_initial_permutations> initial_permutations; // 0x0
+	tag_block<h2x_vehi_change_colors_functions> functions; // 0x8
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_change_colors, 0x10);
+
+struct h2x_vehi_predicted_resources
+{
+	int16 type; // 0x0
+	int16 resource_index; // 0x2
+	datum tag_index; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_predicted_resources, 0x8);
+
+struct h2x_vehi_camera_tracks
+{
+	tag_reference track; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_camera_tracks, 0x8);
+
+struct h2x_vehi_postures
+{
+	string_id name; // 0x0
+	real_vector3d pill_offset; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_postures, 0x10);
+
+struct h2x_vehi_new_hud_interfaces
+{
+	tag_reference new_unit_hud_interface; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_new_hud_interfaces, 0x8);
+
+struct h2x_vehi_dialogue_variants
+{
+	int16 variant_number; // 0x0
+	int16 unknown; // 0x2
+	tag_reference dialogue; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_dialogue_variants, 0xc);
+
+struct h2x_vehi_powered_seats
+{
+	real32 driver_powerup_time; // 0x0
+	real32 driver_powerdown_time; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_powered_seats, 0x8);
+
+struct h2x_vehi_weapons
+{
+	tag_reference weapon; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_weapons, 0x8);
+
+struct h2x_vehi_seats_camera_tracks
+{
+	tag_reference track; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_seats_camera_tracks, 0x8);
+
+struct h2x_vehi_seats_unit_hud_interface
+{
+	tag_reference new_unit_hud_interface; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_seats_unit_hud_interface, 0x8);
+
+struct h2x_vehi_seats
+{
+	uint32 flags; // 0x0
+	string_id seat_animation; // 0x4
+	string_id seat_marker_name; // 0x8
+	string_id entry_marker_s_name; // 0xc
+	string_id boarding_grenade_marker; // 0x10
+	string_id boarding_grenade_string; // 0x14
+	string_id boarding_melee_string; // 0x18
+	real32 ping_scale; // 0x1c
+	real32 turnover_time; // 0x20
+	real_vector3d acceleration_range; // 0x24
+	real32 acceleration_action_scale; // 0x30
+	real32 acceleration_attach_scale; // 0x34
+	real32 ai_scariness; // 0x38
+	int16 ai_seat_type; // 0x3c
+	int16 boarding_seat_index; // 0x3e
+	real32 listener_interpolation_factor; // 0x40
+	real_bounds yaw_rate_bounds; // 0x44
+	real_bounds pitch_rate_bounds; // 0x4c
+	real32 minimum_speed_reference; // 0x54
+	real32 maximum_speed_reference; // 0x58
+	real32 speed_exponent; // 0x5c
+	string_id camera_marker_name; // 0x60
+	string_id camera_submerged_marker_name; // 0x64
+	real32 pitch_auto_level; // 0x68
+	real_bounds pitch_range; // 0x6c
+	tag_block<h2x_vehi_seats_camera_tracks> camera_tracks; // 0x74
+	tag_block<h2x_vehi_seats_unit_hud_interface> unit_hud_interface; // 0x7c
+	string_id enter_seat_string; // 0x84
+	real_bounds yaw; // 0x88
+	tag_reference built_in_gunner; // 0x90
+	real32 entry_radius; // 0x98
+	real32 entry_marker_cone_angle; // 0x9c
+	real32 entry_marker_facing_angle; // 0xa0
+	real32 maximum_relative_velocity; // 0xa4
+	string_id invisible_seat_region; // 0xa8
+	int32 invisible_seat_region_index; // 0xac
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_seats, 0xb0);
+
+struct h2x_vehi_gears
+{
+	real32 minimum_torque; // 0x0
+	real32 maximum_torque; // 0x4
+	real32 peak_torque_scale; // 0x8
+	real32 past_peak_torque_exponent; // 0xc
+	real32 torque_at_maximum_angular_velocity; // 0x10
+	real32 torque_at_2x_maximum_angular_velocity; // 0x14
+	real32 minimum_torque_2; // 0x18
+	real32 maximum_torque_2; // 0x1c
+	real32 peak_torque_scale_2; // 0x20
+	real32 past_peak_torque_exponent_2; // 0x24
+	real32 torque_at_maximum_angular_velocity_2; // 0x28
+	real32 torque_at_2x_maximum_angular_velocity_2; // 0x2c
+	real32 minimum_time_to_up_shift; // 0x30
+	real32 engine_up_shift_scale; // 0x34
+	real32 gear_ratio; // 0x38
+	real32 minimum_time_to_down_shift; // 0x3c
+	real32 engine_down_shift_scale; // 0x40
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_gears, 0x44);
+
+struct h2x_vehi_anti_gravity_points
+{
+	string_id marker_name; // 0x0
+	uint32 flags; // 0x4
+	real32 antigrav_strength; // 0x8
+	real32 antigrav_offset; // 0xc
+	real32 antigrav_height; // 0x10
+	real32 antigrav_damp_factor; // 0x14
+	real32 antigrav_normal_k1; // 0x18
+	real32 antigrav_normal_k0; // 0x1c
+	real32 radius; // 0x20
+	int8 pad_24[12];
+	int16 unknown; // 0x30
+	int16 damage_source_region_index; // 0x32
+	string_id damage_source_region_name; // 0x34
+	real32 default_state_error; // 0x38
+	real32 minor_damage_error; // 0x3c
+	real32 medium_damage_error; // 0x40
+	real32 major_damage_error; // 0x44
+	real32 destroyed_state_error; // 0x48
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_anti_gravity_points, 0x4c);
+
+struct h2x_vehi_friction_points
+{
+	string_id marker_name; // 0x0
+	uint32 flags; // 0x4
+	real32 fraction_of_total_mass; // 0x8
+	real32 radius; // 0xc
+	real32 damaged_radius; // 0x10
+	int16 friction_type; // 0x14
+	int16 unknown; // 0x16
+	real32 moving_friction_velocity_differential; // 0x18
+	real32 e_brake_moving_friction; // 0x1c
+	real32 e_brake_friction; // 0x20
+	real32 e_brake_moving_friction_velocity_differential; // 0x24
+	int8 pad_28[20];
+	string_id collision_global_material_name; // 0x3c
+	int16 collision_global_material_index; // 0x40
+	int16 model_state_destroyed; // 0x42
+	string_id region_name; // 0x44
+	int16 region_index; // 0x48
+	int16 unknown_2; // 0x4a
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_friction_points, 0x4c);
+
+struct h2x_vehi_phantom_shapes
+{
+	uint32 runtime_code_pointer; // 0x0
+	int16 size; // 0x4
+	int16 count; // 0x6
+	int8 pad_8[4];
+	uint32 user_data; // 0xc
+	int32 child_shapes_size; // 0x10
+	uint32 child_shapes_capacity; // 0x14
+	int16 shape_type_0; // 0x18
+	int16 shape_index_0; // 0x1a
+	int32 collision_filter_0; // 0x1c
+	int16 shape_type_1; // 0x20
+	int16 shape_index_1; // 0x22
+	int32 collision_filter_1; // 0x24
+	int16 shape_type_2; // 0x28
+	int16 shape_index_2; // 0x2a
+	int32 collision_filter_2; // 0x2c
+	int16 shape_type_3; // 0x30
+	int16 shape_index_3; // 0x32
+	int32 collision_filter_3; // 0x34
+	uint32 multisphere_count; // 0x38
+	uint32 flags; // 0x3c
+	int8 pad_40[8];
+	real32 x0; // 0x48
+	real32 x1; // 0x4c
+	real32 y0; // 0x50
+	real32 y1; // 0x54
+	real32 z0; // 0x58
+	real32 z1; // 0x5c
+	uint32 runtime_code_pointer_2; // 0x60
+	int16 size_2; // 0x64
+	int16 count_2; // 0x66
+	uint32 user_data_2; // 0x68
+	uint32 number_of_spheres; // 0x6c
+	real_vector3d sphere_0; // 0x70
+	real32 w_sphere_0; // 0x7c
+	real_vector3d sphere_1; // 0x80
+	real32 w_sphere_1; // 0x8c
+	real_vector3d sphere_2; // 0x90
+	real32 w_sphere_2; // 0x9c
+	real_vector3d sphere_3; // 0xa0
+	real32 w_sphere_3; // 0xac
+	real_vector3d sphere_4; // 0xb0
+	real32 w_sphere_4; // 0xbc
+	real_vector3d sphere_5; // 0xc0
+	real32 w_sphere_5; // 0xcc
+	real_vector3d sphere_6; // 0xd0
+	real32 w_sphere_6; // 0xdc
+	real_vector3d sphere_7; // 0xe0
+	real32 w_sphere_7; // 0xec
+};
+ASSERT_STRUCT_SIZE(h2x_vehi_phantom_shapes, 0xf0);
+
+struct h2x_vehi
+{
+	int16 object_type; // 0x0
+	uint16 flags; // 0x2
+	real32 bounding_radius; // 0x4
+	real_point3d bounding_offset; // 0x8
+	real32 acceleration_scale; // 0x14
+	int16 lightmap_shadow_mode; // 0x18
+	int8 sweetener_size; // 0x1a
+	int8 unknown; // 0x1b
+	uint32 runtime_flags; // 0x1c
+	real32 dynamic_light_sphere_radius; // 0x20
+	real_point3d dynamic_light_sphere_offset; // 0x24
+	string_id default_model_variant; // 0x30
+	tag_reference model; // 0x34
+	tag_reference crate_object; // 0x3c
+	tag_reference modifier_shader; // 0x44
+	tag_reference creation_effect; // 0x4c
+	tag_reference material_effects; // 0x54
+	tag_block<h2x_vehi_ai_properties> ai_properties; // 0x5c
+	tag_block<h2x_vehi_functions> functions; // 0x64
+	real32 apply_collision_damage_scale; // 0x6c
+	real_bounds game_acceleration; // 0x70
+	real_bounds game_scale; // 0x78
+	real_bounds absolute_acceleration; // 0x80
+	real_bounds absolute_scale; // 0x88
+	int16 hud_text_message_index; // 0x90
+	int16 unknown_2; // 0x92
+	tag_block<h2x_vehi_attachments> attachments; // 0x94
+	tag_block<h2x_vehi_widgets> widgets; // 0x9c
+	tag_block<h2x_vehi_old_functions> old_functions; // 0xa4
+	tag_block<h2x_vehi_change_colors> change_colors; // 0xac
+	tag_block<h2x_vehi_predicted_resources> predicted_resources; // 0xb4
+	uint32 flags_2; // 0xbc
+	int16 default_team; // 0xc0
+	int16 constant_sound_volume; // 0xc2
+	tag_reference integrated_light_toggle; // 0xc4
+	real32 camera_field_of_view; // 0xcc
+	real32 camera_stiffness; // 0xd0
+	string_id camera_marker_name; // 0xd4
+	string_id camera_submerged_marker_name; // 0xd8
+	real32 pitch_auto_level; // 0xdc
+	real_bounds pitch_range; // 0xe0
+	tag_block<h2x_vehi_camera_tracks> camera_tracks; // 0xe8
+	real_vector3d acceleration_range; // 0xf0
+	real32 acceleration_action_scale; // 0xfc
+	real32 acceleration_attach_scale; // 0x100
+	real32 soft_ping_threshold; // 0x104
+	real32 soft_ping_interrupt_time; // 0x108
+	real32 hard_ping_threshold; // 0x10c
+	real32 hard_ping_interrupt_time; // 0x110
+	real32 hard_death_threshold; // 0x114
+	real32 feign_death_threshold; // 0x118
+	real32 feign_death_time; // 0x11c
+	real32 distance_of_evade_animation; // 0x120
+	real32 distance_of_dive_animation; // 0x124
+	real32 stunned_movement_threshold; // 0x128
+	real32 feign_death_chance; // 0x12c
+	real32 feign_repeat_chance; // 0x130
+	tag_reference spawned_turret_character; // 0x134
+	short_bounds spawned_actor_count; // 0x13c
+	real32 spawned_velocity; // 0x140
+	real32 aiming_velocity_maximum; // 0x144
+	real32 aiming_acceleration_maximum; // 0x148
+	real32 casual_aiming_modifier; // 0x14c
+	real32 looking_velocity_maximum; // 0x150
+	real32 looking_acceleration_maximum; // 0x154
+	string_id right_hand_node; // 0x158
+	string_id left_hand_node; // 0x15c
+	string_id preferred_gun_node; // 0x160
+	tag_reference melee_damage; // 0x164
+	tag_reference boarding_melee_damage; // 0x16c
+	tag_reference boarding_melee_response; // 0x174
+	tag_reference landing_melee_damage; // 0x17c
+	tag_reference flurry_melee_damage; // 0x184
+	tag_reference obstacle_smash_damage; // 0x18c
+	int16 motion_sensor_blip_size; // 0x194
+	int16 unknown_3; // 0x196
+	tag_block<h2x_vehi_postures> postures; // 0x198
+	tag_block<h2x_vehi_new_hud_interfaces> new_hud_interfaces; // 0x1a0
+	tag_block<h2x_vehi_dialogue_variants> dialogue_variants; // 0x1a8
+	real32 grenade_velocity; // 0x1b0
+	int16 grenade_type; // 0x1b4
+	int16 grenade_count; // 0x1b6
+	tag_block<h2x_vehi_powered_seats> powered_seats; // 0x1b8
+	tag_block<h2x_vehi_weapons> weapons; // 0x1c0
+	tag_block<h2x_vehi_seats> seats; // 0x1c8
+	real32 boost_peak_power; // 0x1d0
+	real32 boost_rise_power; // 0x1d4
+	real32 boost_peak_time; // 0x1d8
+	real32 boost_fall_power; // 0x1dc
+	real32 boost_dead_time; // 0x1e0
+	real32 lipsync_attack_weight; // 0x1e4
+	real32 lipsync_decay_weight; // 0x1e8
+	uint32 flags_3; // 0x1ec
+	int16 type; // 0x1f0
+	int16 control; // 0x1f2
+	real32 maximum_forward_speed; // 0x1f4
+	real32 maximum_reverse_speed; // 0x1f8
+	real32 speed_acceleration; // 0x1fc
+	real32 speed_deceleration; // 0x200
+	real32 maximum_left_turn; // 0x204
+	real32 maximum_right_turn_negative; // 0x208
+	real32 wheel_circumference; // 0x20c
+	real32 turn_rate; // 0x210
+	real32 blur_speed; // 0x214
+	int16 specific_type; // 0x218
+	int16 player_training_vehicle_type; // 0x21a
+	string_id flip_message; // 0x21c
+	real32 turn_scale; // 0x220
+	real32 speed_turn_penalty_power; // 0x224
+	real32 speed_turn_penalty; // 0x228
+	real32 maximum_left_slide; // 0x22c
+	real32 maximum_right_slide; // 0x230
+	real32 slide_acceleration; // 0x234
+	real32 slide_deceleration; // 0x238
+	real32 minimum_flipping_angular_velocity; // 0x23c
+	real32 maximum_flipping_angular_velocity; // 0x240
+	int16 vehicle_size; // 0x244
+	int16 unknown_4; // 0x246
+	real32 fixed_gun_yaw; // 0x248
+	real32 fixed_gun_pitch; // 0x24c
+	real32 overdampen_cusp_angle; // 0x250
+	real32 overdampen_exponent; // 0x254
+	real32 crouch_transition_time; // 0x258
+	real32 unknown_5; // 0x25c
+	real32 engine_moment; // 0x260
+	real32 engine_maximum_angular_velocity; // 0x264
+	tag_block<h2x_vehi_gears> gears; // 0x268
+	real32 flying_torque_scale; // 0x270
+	real32 seat_entrance_acceleration_scale; // 0x274
+	real32 seat_exit_acceleration_scale; // 0x278
+	real32 air_friction_deceleration; // 0x27c
+	real32 thrust_scale; // 0x280
+	tag_reference suspension_sound; // 0x284
+	tag_reference crash_sound; // 0x28c
+	tag_reference unknown_6; // 0x294
+	tag_reference special_effect; // 0x29c
+	tag_reference unknown_effect; // 0x2a4
+	uint32 flags_4; // 0x2ac
+	real32 ground_friction; // 0x2b0
+	real32 ground_depth; // 0x2b4
+	real32 ground_damp_factor; // 0x2b8
+	real32 ground_moving_friction; // 0x2bc
+	real32 ground_maximum_slope_0; // 0x2c0
+	real32 ground_maximum_slope_1; // 0x2c4
+	int8 pad_2c8[16];
+	real32 anti_gravity_bank_lift; // 0x2d8
+	real32 steering_bank_reaction_scale; // 0x2dc
+	real32 gravity_scale; // 0x2e0
+	real32 radius; // 0x2e4
+	tag_block<h2x_vehi_anti_gravity_points> anti_gravity_points; // 0x2e8
+	tag_block<h2x_vehi_friction_points> friction_points; // 0x2f0
+	tag_block<h2x_vehi_phantom_shapes> phantom_shapes; // 0x2f8
+};
+ASSERT_STRUCT_SIZE(h2x_vehi, 0x300);
+
+struct h2x_phmo_phantom_types
+{
+	uint32 flags; // 0x0
+	int8 minimum_size; // 0x4
+	int8 maximum_size; // 0x5
+	int16 unknown; // 0x6
+	string_id marker_name; // 0x8
+	string_id alignment_marker_name; // 0xc
+	int8 pad_10[8];
+	real32 hooke_s_law_e; // 0x18
+	real32 linear_dead_radius; // 0x1c
+	real32 center_acceleration; // 0x20
+	real32 center_maximum_velocity; // 0x24
+	real32 axis_acceleration; // 0x28
+	real32 axis_maximum_velocity; // 0x2c
+	real32 direction_acceleration; // 0x30
+	real32 direction_maximum_velocity; // 0x34
+	real32 orbit_acceleration; // 0x38
+	real32 orbit_maximum_velocity; // 0x3c
+	int8 pad_40[20];
+	real32 alignment_hooke_s_law_e; // 0x54
+	real32 alignment_acceleration; // 0x58
+	real32 alignment_maximum_velocity; // 0x5c
+	int8 pad_60[8];
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_phantom_types, 0x68);
+
+struct h2x_phmo_node_edges_constraints
+{
+	int16 type; // 0x0
+	int16 index; // 0x2
+	uint32 flags; // 0x4
+	real32 friction; // 0x8
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_node_edges_constraints, 0xc);
+
+struct h2x_phmo_node_edges
+{
+	int16 node_a_global_material_index; // 0x0
+	int16 node_b_global_material_index; // 0x2
+	int16 node_a_index; // 0x4
+	int16 node_b_index; // 0x6
+	tag_block<h2x_phmo_node_edges_constraints> constraints; // 0x8
+	string_id node_a_global_material_name; // 0x10
+	string_id node_b_global_material_name; // 0x14
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_node_edges, 0x18);
+
+struct h2x_phmo_rigid_bodies
+{
+	int16 node_index; // 0x0
+	int16 region_index; // 0x2
+	int16 permutation_index; // 0x4
+	int16 unknown; // 0x6
+	real_point3d bounding_sphere_offset; // 0x8
+	real32 bounding_sphere_radius; // 0x14
+	uint16 flags; // 0x18
+	int16 motion_type; // 0x1a
+	int16 no_phantom_power_alternative_rigid_body_index; // 0x1c
+	int16 size; // 0x1e
+	real32 inertia_tensor_scale; // 0x20
+	real32 linear_damping; // 0x24
+	real32 angular_damping; // 0x28
+	real_vector3d center_of_mass_offset; // 0x2c
+	int16 shape_type; // 0x38
+	int16 shape_index; // 0x3a
+	real32 mass; // 0x3c
+	real_vector3d center_of_mass; // 0x40
+	real32 w_center_of_mass; // 0x4c
+	real_vector3d inertia_tensor_x; // 0x50
+	real32 w_inertia_tensor_x; // 0x5c
+	real_vector3d inertia_tensor_y; // 0x60
+	real32 w_inertia_tensor_y; // 0x6c
+	real_vector3d inertia_tensor_z; // 0x70
+	real32 w_inertia_tensor_z; // 0x7c
+	real32 bounding_sphere_pad; // 0x80
+	int8 pad_84[8];
+	int8 collision_quality_override_type; // 0x8c
+	int8 unknown_2; // 0x8d
+	uint16 runtime_flags; // 0x8e
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_rigid_bodies, 0x90);
+
+struct h2x_phmo_materials
+{
+	string_id name; // 0x0
+	string_id global_material_name; // 0x4
+	int16 phantom_type_index; // 0x8
+	uint16 flags; // 0xa
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_materials, 0xc);
+
+struct h2x_phmo_spheres
+{
+	string_id name; // 0x0
+	int16 material_index; // 0x4
+	uint16 flags; // 0x6
+	real32 relative_mass_scale; // 0x8
+	real32 friction; // 0xc
+	real32 restitution; // 0x10
+	real32 volume; // 0x14
+	real32 mass; // 0x18
+	int16 mass_distribution_index; // 0x1c
+	int8 phantom_type_index; // 0x1e
+	int8 collision_group; // 0x1f
+	uint32 runtime_code_pointer; // 0x20
+	int16 size; // 0x24
+	int16 count; // 0x26
+	uint32 user_data; // 0x28
+	real32 radius; // 0x2c
+	uint32 runtime_code_pointer_2; // 0x30
+	int16 size_2; // 0x34
+	int16 count_2; // 0x36
+	int8 pad_38[4];
+	uint32 user_data_2; // 0x3c
+	real_vector3d rotation_i; // 0x40
+	real32 w_rotation_i; // 0x4c
+	real_vector3d rotation_j; // 0x50
+	real32 w_rotation_j; // 0x5c
+	real_vector3d rotation_k; // 0x60
+	real32 w_rotation_k; // 0x6c
+	real_vector3d translation; // 0x70
+	real32 w_translation; // 0x7c
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_spheres, 0x80);
+
+struct h2x_phmo_multi_spheres
+{
+	string_id name; // 0x0
+	int16 material_index; // 0x4
+	uint16 flags; // 0x6
+	real32 relative_mass_scale; // 0x8
+	real32 friction; // 0xc
+	real32 restitution; // 0x10
+	real32 volume; // 0x14
+	real32 mass; // 0x18
+	int16 mass_distribution_index; // 0x1c
+	int8 phantom_type_index; // 0x1e
+	int8 collision_group; // 0x1f
+	uint32 runtime_code_pointer; // 0x20
+	int16 size; // 0x24
+	int16 count; // 0x26
+	uint32 user_data; // 0x28
+	int32 number_of_spheres; // 0x2c
+	real_vector3d sphere_0; // 0x30
+	real32 w_sphere_0; // 0x3c
+	real_vector3d sphere_1; // 0x40
+	real32 w_sphere_1; // 0x4c
+	real_vector3d sphere_2; // 0x50
+	real32 w_sphere_2; // 0x5c
+	real_vector3d sphere_3; // 0x60
+	real32 w_sphere_3; // 0x6c
+	real_vector3d sphere_4; // 0x70
+	real32 w_sphere_4; // 0x7c
+	real_vector3d sphere_5; // 0x80
+	real32 w_sphere_5; // 0x8c
+	real_vector3d sphere_6; // 0x90
+	real32 w_sphere_6; // 0x9c
+	real_vector3d sphere_7; // 0xa0
+	real32 w_sphere_7; // 0xac
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_multi_spheres, 0xb0);
+
+struct h2x_phmo_pills
+{
+	string_id name; // 0x0
+	int16 material_index; // 0x4
+	uint16 flags; // 0x6
+	real32 relative_mass_scale; // 0x8
+	real32 friction; // 0xc
+	real32 restitution; // 0x10
+	real32 volume; // 0x14
+	real32 mass; // 0x18
+	int16 mass_distribution_index; // 0x1c
+	int8 phantom_type_index; // 0x1e
+	int8 collision_group; // 0x1f
+	uint32 runtime_code_pointer; // 0x20
+	int16 size; // 0x24
+	int16 count; // 0x26
+	uint32 user_data; // 0x28
+	real32 radius; // 0x2c
+	real_vector3d bottom; // 0x30
+	real32 w_bottom; // 0x3c
+	real_vector3d top; // 0x40
+	real32 w_top; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_pills, 0x50);
+
+struct h2x_phmo_boxes
+{
+	string_id name; // 0x0
+	int16 material_index; // 0x4
+	uint16 flags; // 0x6
+	real32 relative_mass_scale; // 0x8
+	real32 friction; // 0xc
+	real32 restitution; // 0x10
+	real32 volume; // 0x14
+	real32 mass; // 0x18
+	int16 mass_distribution_index; // 0x1c
+	int8 phantom_type_index; // 0x1e
+	int8 collision_group; // 0x1f
+	uint32 runtime_code_pointer; // 0x20
+	int16 size; // 0x24
+	int16 count; // 0x26
+	uint32 user_data; // 0x28
+	real32 radius; // 0x2c
+	real_vector3d half_extents; // 0x30
+	real32 w_half_extents; // 0x3c
+	uint32 runtime_code_pointer_2; // 0x40
+	int16 size_2; // 0x44
+	int16 count_2; // 0x46
+	int8 pad_48[4];
+	uint32 user_data_2; // 0x4c
+	real_vector3d rotation_i; // 0x50
+	real32 w_rotation_i; // 0x5c
+	real_vector3d rotation_j; // 0x60
+	real32 w_rotation_j; // 0x6c
+	real_vector3d rotation_k; // 0x70
+	real32 w_rotation_k; // 0x7c
+	real_vector3d translation; // 0x80
+	real32 w_translation; // 0x8c
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_boxes, 0x90);
+
+struct h2x_phmo_triangles
+{
+	string_id name; // 0x0
+	int16 material_index; // 0x4
+	uint16 flags; // 0x6
+	real32 relative_mass_scale; // 0x8
+	real32 friction; // 0xc
+	real32 restitution; // 0x10
+	real32 volume; // 0x14
+	real32 mass; // 0x18
+	int16 mass_distribution_index; // 0x1c
+	int8 phantom_type_index; // 0x1e
+	int8 collision_group; // 0x1f
+	uint32 runtime_code_pointer; // 0x20
+	int16 size; // 0x24
+	int16 count; // 0x26
+	uint32 user_data; // 0x28
+	real32 radius; // 0x2c
+	real_vector3d point_a; // 0x30
+	real32 w_point_a; // 0x3c
+	real_vector3d point_b; // 0x40
+	real32 w_point_b; // 0x4c
+	real_vector3d point_c; // 0x50
+	real32 w_point_c; // 0x5c
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_triangles, 0x60);
+
+struct h2x_phmo_polyhedra
+{
+	string_id name; // 0x0
+	int16 material_index; // 0x4
+	uint16 flags; // 0x6
+	real32 relative_mass_scale; // 0x8
+	real32 friction; // 0xc
+	real32 restitution; // 0x10
+	real32 volume; // 0x14
+	real32 mass; // 0x18
+	int16 mass_distribution_index; // 0x1c
+	int8 phantom_type_index; // 0x1e
+	int8 collision_group; // 0x1f
+	uint32 runtime_code_pointer; // 0x20
+	int16 size; // 0x24
+	int16 count; // 0x26
+	uint32 user_data; // 0x28
+	real32 radius; // 0x2c
+	real_vector3d axis_aligned_bounding_box_half_extents; // 0x30
+	real32 w_axis_aligned_bounding_box_half_extents; // 0x3c
+	real_vector3d axis_aligned_bounding_box_center; // 0x40
+	real32 w_axis_aligned_bounding_box_center; // 0x4c
+	uint32 runtime_four_vectors_pointer; // 0x50
+	int32 four_vectors_size; // 0x54
+	uint32 four_vectors_capacity; // 0x58
+	int8 pad_5c[4];
+	real_vector3d four_vectors_0_x; // 0x60
+	real32 w_four_vectors_0_x; // 0x6c
+	real_vector3d four_vectors_0_y; // 0x70
+	real32 w_four_vectors_0_y; // 0x7c
+	real_vector3d four_vectors_0_z; // 0x80
+	real32 w_four_vectors_0_z; // 0x8c
+	real_vector3d four_vectors_1_x; // 0x90
+	real32 w_four_vectors_1_x; // 0x9c
+	real_vector3d four_vectors_1_y; // 0xa0
+	real32 w_four_vectors_1_y; // 0xac
+	real_vector3d four_vectors_1_z; // 0xb0
+	real32 w_four_vectors_1_z; // 0xbc
+	real_vector3d four_vectors_2_x; // 0xc0
+	real32 w_four_vectors_2_x; // 0xcc
+	real_vector3d four_vectors_2_y; // 0xd0
+	real32 w_four_vectors_2_y; // 0xdc
+	real_vector3d four_vectors_2_z; // 0xe0
+	real32 w_four_vectors_2_z; // 0xec
+	int32 number_of_vertices; // 0xf0
+	uint32 runtime_plane_equations_pointer; // 0xf4
+	int32 plane_equations_size; // 0xf8
+	uint32 plane_equations_capacity; // 0xfc
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_polyhedra, 0x100);
+
+struct h2x_phmo_polyhedron_four_vectors
+{
+	real_vector3d four_vectors_x; // 0x0
+	real32 w_four_vectors_x; // 0xc
+	real_vector3d four_vectors_y; // 0x10
+	real32 w_four_vectors_y; // 0x1c
+	real_vector3d four_vectors_z; // 0x20
+	real32 w_four_vectors_z; // 0x2c
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_polyhedron_four_vectors, 0x30);
+
+struct h2x_phmo_polyhedron_plane_equations
+{
+	real_vector3d plane_equations; // 0x0
+	real32 w_plane_equations; // 0xc
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_polyhedron_plane_equations, 0x10);
+
+struct h2x_phmo_mass_distributions
+{
+	real_vector3d center_of_mass; // 0x0
+	real32 w_center_of_mass; // 0xc
+	real_vector3d inertia_tensor_i; // 0x10
+	real32 w_inertia_tensor_i; // 0x1c
+	real_vector3d inertia_tensor_j; // 0x20
+	real32 w_inertia_tensor_j; // 0x2c
+	real_vector3d inertia_tensor_k; // 0x30
+	real32 w_inertia_tensor_k; // 0x3c
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_mass_distributions, 0x40);
+
+struct h2x_phmo_lists
+{
+	uint32 runtime_code_pointer; // 0x0
+	int16 size; // 0x4
+	int16 count; // 0x6
+	int8 pad_8[4];
+	uint32 user_data; // 0xc
+	int32 child_shapes_size; // 0x10
+	uint32 child_shapes_capacity; // 0x14
+	int16 shape_type_0; // 0x18
+	int16 shape_index_0; // 0x1a
+	int32 collision_filter_0; // 0x1c
+	int16 shape_type_1; // 0x20
+	int16 shape_index_1; // 0x22
+	int32 collision_filter_1; // 0x24
+	int16 shape_type_2; // 0x28
+	int16 shape_index_2; // 0x2a
+	int32 collision_filter_2; // 0x2c
+	int16 shape_type_3; // 0x30
+	int16 shape_index_3; // 0x32
+	int32 collision_filter_3; // 0x34
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_lists, 0x38);
+
+struct h2x_phmo_list_shapes
+{
+	int16 shape_type; // 0x0
+	int16 shape_index; // 0x2
+	int32 collision_filter; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_list_shapes, 0x8);
+
+struct h2x_phmo_mopps
+{
+	uint32 runtime_code_pointer; // 0x0
+	int16 size; // 0x4
+	int16 count; // 0x6
+	uint32 user_data; // 0x8
+	int16 shape_type; // 0xc
+	int16 shape_index; // 0xe
+	uint32 runtime_mopp_code_pointer; // 0x10
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_mopps, 0x14);
+
+struct h2x_phmo_hinge_constraints
+{
+	string_id name; // 0x0
+	int16 node_a_index; // 0x4
+	int16 node_b_index; // 0x6
+	real32 a_scale; // 0x8
+	real_vector3d a_forward; // 0xc
+	real_vector3d a_left; // 0x18
+	real_vector3d a_up; // 0x24
+	real_point3d a_position; // 0x30
+	real32 b_scale; // 0x3c
+	real_vector3d b_forward; // 0x40
+	real_vector3d b_left; // 0x4c
+	real_vector3d b_up; // 0x58
+	real_point3d b_position; // 0x64
+	int16 edge_index; // 0x70
+	int16 unknown; // 0x72
+	int8 pad_74[4];
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_hinge_constraints, 0x78);
+
+struct h2x_phmo_ragdoll_constraints
+{
+	string_id name; // 0x0
+	int16 node_a_index; // 0x4
+	int16 node_b_index; // 0x6
+	real32 a_scale; // 0x8
+	real_vector3d a_forward; // 0xc
+	real_vector3d a_left; // 0x18
+	real_vector3d a_up; // 0x24
+	real_point3d a_position; // 0x30
+	real32 b_scale; // 0x3c
+	real_vector3d b_forward; // 0x40
+	real_vector3d b_left; // 0x4c
+	real_vector3d b_up; // 0x58
+	real_point3d b_position; // 0x64
+	int16 edge_index; // 0x70
+	int16 unknown; // 0x72
+	int8 pad_74[4];
+	real_bounds twist; // 0x78
+	real_bounds cone; // 0x80
+	real_bounds plane; // 0x88
+	real32 maximum_friction_torque; // 0x90
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_ragdoll_constraints, 0x94);
+
+struct h2x_phmo_regions_permutations_rigid_bodies
+{
+	int16 rigid_body_index; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_regions_permutations_rigid_bodies, 0x2);
+
+struct h2x_phmo_regions_permutations
+{
+	string_id name; // 0x0
+	tag_block<h2x_phmo_regions_permutations_rigid_bodies> rigid_bodies; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_regions_permutations, 0xc);
+
+struct h2x_phmo_regions
+{
+	string_id name; // 0x0
+	tag_block<h2x_phmo_regions_permutations> permutations; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_regions, 0xc);
+
+struct h2x_phmo_nodes
+{
+	string_id name; // 0x0
+	uint16 flags; // 0x4
+	int16 parent_index; // 0x6
+	int16 sibling_index; // 0x8
+	int16 child_index; // 0xa
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_nodes, 0xc);
+
+struct h2x_phmo_point_to_path_curves_points
+{
+	real_point3d position; // 0x0
+	real32 t_value; // 0xc
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_point_to_path_curves_points, 0x10);
+
+struct h2x_phmo_point_to_path_curves
+{
+	string_id name; // 0x0
+	int16 node_index; // 0x4
+	int16 unknown; // 0x6
+	tag_block<h2x_phmo_point_to_path_curves_points> points; // 0x8
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_point_to_path_curves, 0x10);
+
+struct h2x_phmo_limited_hinge_constraints
+{
+	string_id name; // 0x0
+	int16 node_a_index; // 0x4
+	int16 node_b_index; // 0x6
+	real32 a_scale; // 0x8
+	real_vector3d a_forward; // 0xc
+	real_vector3d a_left; // 0x18
+	real_vector3d a_up; // 0x24
+	real_point3d a_position; // 0x30
+	real32 b_scale; // 0x3c
+	real_vector3d b_forward; // 0x40
+	real_vector3d b_left; // 0x4c
+	real_vector3d b_up; // 0x58
+	real_point3d b_position; // 0x64
+	int16 edge_index; // 0x70
+	int16 unknown; // 0x72
+	int8 pad_74[4];
+	real32 limit_friction; // 0x78
+	real_bounds limit_angle; // 0x7c
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_limited_hinge_constraints, 0x84);
+
+struct h2x_phmo_ball_and_socket_constraints
+{
+	string_id name; // 0x0
+	int16 node_a_index; // 0x4
+	int16 node_b_index; // 0x6
+	real32 a_scale; // 0x8
+	real_vector3d a_forward; // 0xc
+	real_vector3d a_left; // 0x18
+	real_vector3d a_up; // 0x24
+	real_point3d a_position; // 0x30
+	real32 b_scale; // 0x3c
+	real_vector3d b_forward; // 0x40
+	real_vector3d b_left; // 0x4c
+	real_vector3d b_up; // 0x58
+	real_point3d b_position; // 0x64
+	int16 edge_index; // 0x70
+	int16 unknown; // 0x72
+	int8 pad_74[4];
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_ball_and_socket_constraints, 0x78);
+
+struct h2x_phmo_stiff_spring_constraints
+{
+	string_id name; // 0x0
+	int16 node_a_index; // 0x4
+	int16 node_b_index; // 0x6
+	real32 a_scale; // 0x8
+	real_vector3d a_forward; // 0xc
+	real_vector3d a_left; // 0x18
+	real_vector3d a_up; // 0x24
+	real_point3d a_position; // 0x30
+	real32 b_scale; // 0x3c
+	real_vector3d b_forward; // 0x40
+	real_vector3d b_left; // 0x4c
+	real_vector3d b_up; // 0x58
+	real_point3d b_position; // 0x64
+	int16 edge_index; // 0x70
+	int16 unknown; // 0x72
+	int8 pad_74[4];
+	real32 spring_length; // 0x78
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_stiff_spring_constraints, 0x7c);
+
+struct h2x_phmo_prismatic_constraints
+{
+	string_id name; // 0x0
+	int16 node_a_index; // 0x4
+	int16 node_b_index; // 0x6
+	real32 a_scale; // 0x8
+	real_vector3d a_forward; // 0xc
+	real_vector3d a_left; // 0x18
+	real_vector3d a_up; // 0x24
+	real_point3d a_position; // 0x30
+	real32 b_scale; // 0x3c
+	real_vector3d b_forward; // 0x40
+	real_vector3d b_left; // 0x4c
+	real_vector3d b_up; // 0x58
+	real_point3d b_position; // 0x64
+	int16 edge_index; // 0x70
+	int16 unknown; // 0x72
+	int8 pad_74[4];
+	real_bounds limit_angle; // 0x78
+	real32 maximum_friction_force; // 0x80
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_prismatic_constraints, 0x84);
+
+struct h2x_phmo_phantoms
+{
+	uint32 runtime_code_pointer; // 0x0
+	int16 size; // 0x4
+	int16 count; // 0x6
+	uint32 user_data; // 0x8
+	int16 shape_type; // 0xc
+	int16 shape_index; // 0xe
+	int32 collision_filter; // 0x10
+	uint32 runtime_code_pointer_2; // 0x14
+	int16 size_2; // 0x18
+	int16 count_2; // 0x1a
+	uint32 user_data_2; // 0x1c
+};
+ASSERT_STRUCT_SIZE(h2x_phmo_phantoms, 0x20);
+
+struct h2x_phmo
+{
+	uint32 flags; // 0x0
+	real32 mass; // 0x4
+	real32 low_frequency_deactivation_scale; // 0x8
+	real32 high_frequency_deactivation_scale; // 0xc
+	real32 unknown; // 0x10
+	int8 pad_14[20];
+	tag_block<h2x_phmo_phantom_types> phantom_types; // 0x28
+	tag_block<h2x_phmo_node_edges> node_edges; // 0x30
+	tag_block<h2x_phmo_rigid_bodies> rigid_bodies; // 0x38
+	tag_block<h2x_phmo_materials> materials; // 0x40
+	tag_block<h2x_phmo_spheres> spheres; // 0x48
+	tag_block<h2x_phmo_multi_spheres> multi_spheres; // 0x50
+	tag_block<h2x_phmo_pills> pills; // 0x58
+	tag_block<h2x_phmo_boxes> boxes; // 0x60
+	tag_block<h2x_phmo_triangles> triangles; // 0x68
+	tag_block<h2x_phmo_polyhedra> polyhedra; // 0x70
+	tag_block<h2x_phmo_polyhedron_four_vectors> polyhedron_four_vectors; // 0x78
+	tag_block<h2x_phmo_polyhedron_plane_equations> polyhedron_plane_equations; // 0x80
+	tag_block<h2x_phmo_mass_distributions> mass_distributions; // 0x88
+	tag_block<h2x_phmo_lists> lists; // 0x90
+	tag_block<h2x_phmo_list_shapes> list_shapes; // 0x98
+	tag_block<h2x_phmo_mopps> mopps; // 0xa0
+	tag_data mopp_codes; // 0xa8
+	tag_block<h2x_phmo_hinge_constraints> hinge_constraints; // 0xb0
+	tag_block<h2x_phmo_ragdoll_constraints> ragdoll_constraints; // 0xb8
+	tag_block<h2x_phmo_regions> regions; // 0xc0
+	tag_block<h2x_phmo_nodes> nodes; // 0xc8
+	uint32 import_info_block; // 0xd0
+	uint32 import_info_block_2; // 0xd4
+	uint32 errors_block; // 0xd8
+	uint32 errors_block_2; // 0xdc
+	tag_block<h2x_phmo_point_to_path_curves> point_to_path_curves; // 0xe0
+	tag_block<h2x_phmo_limited_hinge_constraints> limited_hinge_constraints; // 0xe8
+	tag_block<h2x_phmo_ball_and_socket_constraints> ball_and_socket_constraints; // 0xf0
+	tag_block<h2x_phmo_stiff_spring_constraints> stiff_spring_constraints; // 0xf8
+	tag_block<h2x_phmo_prismatic_constraints> prismatic_constraints; // 0x100
+	tag_block<h2x_phmo_phantoms> phantoms; // 0x108
+};
+ASSERT_STRUCT_SIZE(h2x_phmo, 0x110);
+
 #pragma pack(pop)
