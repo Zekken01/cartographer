@@ -10,6 +10,7 @@
 #include "h1_object_tags.h"
 #include "h1_objects.h"
 #include "h1_runtime.h"
+#include "h1_vehicles.h"
 #include "h1_weapons.h"
 #include "h2_tag_definitions_generated.h"
 
@@ -149,6 +150,9 @@ void h1_scenario_objects_build(void)
 				break;
 			case _h1_object_type_equipment:
 				definition_index = h1_equipment_definition_build(h1_definition_index);
+				break;
+			case _h1_object_type_vehicle:
+				definition_index = h1_vehicle_build(h1_definition_index);
 				break;
 			default:
 				definition_index = h1_object_shell_definition_build(h1_definition_index);

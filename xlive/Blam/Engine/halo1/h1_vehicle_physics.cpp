@@ -410,7 +410,8 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 	if (state->at_rest)
 	{
 		const unit_datum* unit = (const unit_datum*)object_get_and_verify_type(vehicle_index, _object_mask_unit);
-		const bool controlled = unit->unit.driver_seat_power > 0.f || h1_vehicle_driver_get(vehicle_index) != NONE;
+		const bool controlled = unit->unit.driver_seat_power > 0.f || h1_vehicle_driver_get(vehicle_index) != NONE ||
+			unit->unit.throttle.i != 0.f || unit->unit.throttle.j != 0.f || unit->unit.throttle.k != 0.f;
 		const bool moved = magnitude_squared3d(&state->linear_velocity) > 0.0011111111f || magnitude_squared3d(&state->angular_velocity) > 0.0027415568f;
 		if (!controlled && !moved)
 		{
@@ -889,9 +890,10 @@ static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, cons
 	// the vehicle's controls are its driver's
 	const datum driver_index = h1_vehicle_driver_get(vehicle_index);
 	const unit_datum* driver = driver_index != NONE ? (const unit_datum*)object_get(driver_index) : NULL;
-	static const real_vector3d k_no_throttle = { 0.f, 0.f, 0.f };
-	const real_vector3d* throttle = driver ? &driver->unit.throttle : &k_no_throttle;
-	const real_vector3d* desired_facing = driver ? &driver->unit.desired_facing_vector : forward;
+	// without a driver its own (a recording or a script controlling the vehicle: recorded_animations.c's unit_control)
+	const real_vector3d* throttle = driver ? &driver->unit.throttle : &unit->unit.throttle;
+	const bool own_facing = !driver && magnitude_squared3d(&unit->unit.desired_facing_vector) > 0.5f;
+	const real_vector3d* desired_facing = driver ? &driver->unit.desired_facing_vector : own_facing ? &unit->unit.desired_facing_vector : forward;
 
 	// braking: controls opposite the speed
 	SET_BIT(state->flags, _h1_vehicle_braking_bit,

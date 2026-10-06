@@ -94,19 +94,33 @@ datum h1_vehicle_build(datum h1_vehicle_index)
 	const h1_mode* h1_model = h1_vehicle ? (const h1_mode*)g_h1_cache_file->tag_get('mode', h1_vehicle->model.index) : NULL;
 	const h1_coll* h1_collision = h1_vehicle ? (const h1_coll*)g_h1_cache_file->tag_get('coll', h1_vehicle->collision_model.index) : NULL;
 	const h1_phys* h1_physics = h1_vehicle ? (const h1_phys*)g_h1_cache_file->tag_get('phys', h1_vehicle->physics.index) : NULL;
-	if (!h1_model || !h1_collision || !h1_physics)
+	if (!h1_model)
 	{
-		h1_log("vehicles: %s is missing its model, collision model or physics", h1_name);
+		h1_log("vehicles: %s is missing its model", h1_name);
 		return NONE;
+	}
+	// the campaign's props and cinematic vehicles (the cryotubes, chairs, the astral pelican) have no physics or collision: they never
+	// move by themselves, riders still sit in them and scripts animate them
+	static const h1_phys k_no_physics = {};
+	static const h1_coll k_no_collision = {};
+	const bool has_physics = h1_physics != NULL && h1_physics->mass > 0.f && h1_physics->mass_points.count > 0;
+	const bool has_collision = h1_collision != NULL;
+	if (!has_physics)
+	{
+		h1_physics = &k_no_physics;
+	}
+	if (!has_collision)
+	{
+		h1_collision = &k_no_collision;
 	}
 
 	s_h1_vehicle_tags tags;
 	tags.render_model = h1_render_model_build(h1_model, name, h1_physics, h1_vehicle);
-	tags.collision_model = h1_collision_model_build(h1_collision, h1_model, name);
-	tags.physics_model = h1_physics_model_build(h1_physics, h1_model, h1_collision, name);
+	tags.collision_model = has_collision ? h1_collision_model_build(h1_collision, h1_model, name) : NONE;
+	tags.physics_model = has_physics && has_collision ? h1_physics_model_build(h1_physics, h1_model, h1_collision, name) : NONE;
 	tags.animation_graph = h1_animation_graph_build(h1_vehicle->animation_graph.index, h1_model, name, h1_physics);
 	tags.model = h1_model_build(&tags, h1_model, h1_collision, name);
-	if (tags.render_model == NONE || tags.collision_model == NONE || tags.physics_model == NONE || tags.model == NONE)
+	if (tags.render_model == NONE || tags.model == NONE)
 	{
 		return NONE;
 	}
@@ -749,9 +763,11 @@ static datum h1_model_build(const s_h1_vehicle_tags* tags, const h1_mode* h1_mod
 	h1_runtime_reference_set(&damage->overshield_shader, (tag_group)NONE, NONE);
 
 	// collision regions map to the collision model's regions
-	const h2x_coll* collision = (const h2x_coll*)tag_get('coll', tags->collision_model);
-	h2x_hlmt_collision_regions* collision_regions = h1_runtime_block_new(&model->collision_regions, collision->regions.count);
-	for (int32 r = 0; r < collision->regions.count; r++)
+	// (none without a collision model: the devices and dropships without one)
+	const h2x_coll* collision = tags->collision_model != NONE ? (const h2x_coll*)tag_get('coll', tags->collision_model) : NULL;
+	const int32 collision_region_count = collision ? collision->regions.count : 0;
+	h2x_hlmt_collision_regions* collision_regions = h1_runtime_block_new(&model->collision_regions, collision_region_count);
+	for (int32 r = 0; r < collision_region_count; r++)
 	{
 		const h2x_coll_regions* region = collision->regions[r];
 		collision_regions[r].name = region->name;
