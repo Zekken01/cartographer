@@ -15,7 +15,10 @@
 #include "objects/objects.h"
 #include "rasterizer/dx9/rasterizer_dx9_main.h"
 #include "cutscene/cinematics.h"
+#include "math/matrix_math.h"
+#include "physics/collisions.h"
 #include "rasterizer/rasterizer_text.h"
+#include "render/render_cameras.h"
 #include "text/draw_string.h"
 #include "text/font_group.h"
 #include "render/render.h"
@@ -813,7 +816,8 @@ static void h1_hud_calculate_point(const h1_hud_absolute_placement* absolute_pla
 static void h1_hud_bitmap_bounds(int16 corner, const real_rectangle2d* clip, real32 width, real32 height, bool interface_bitmap, real_rectangle2d* bounds);
 static bool h1_hud_bitmap_get(datum bitmap_tag_index, int16 sequence_index, int16 frame_index, int16* bitmap_index, const real_rectangle2d** clip, real_rectangle2d* clip_storage);
 static void h1_hud_draw_bitmap(datum bitmap_tag_index, int16 bitmap_index, const real_point2d* point, int16 corner, const real_rectangle2d* clip,
-	const real_vector2d* xy_scale, uint32 color, const s_h1_meter_parameters* meter);
+	const real_vector2d* xy_scale, uint32 color, const s_h1_meter_parameters* meter, real32 rotation = 0.f);
+static void h1_hud_render_nav_points(datum unit_index);
 static void h1_hud_draw_bitmap_placed(datum bitmap_tag_index, int16 sequence_index, int16 frame_index, const h1_hud_absolute_placement* absolute_placement,
 	const h1_hud_placement* placement, real32 scale, uint32 color, const s_h1_meter_parameters* meter, bool use_sprite_clip);
 static void h1_hud_draw_static(const h1_hud_absolute_placement* absolute_placement, const h1_hud_static_element* element, int16 draw_flags, int32 flash_reference_time);
@@ -868,8 +872,8 @@ void h1_hud_render_screen_effect(void)
 		return;
 	}
 	datum unit_index;
-	datum weapon_index;
-	const h1_weap* definition;
+	datum weapon_index = NONE;
+	const h1_weap* definition = NULL;
 	if (!h1_hud_weapon_get(&unit_index, &weapon_index, &definition))
 	{
 		return;
@@ -1013,12 +1017,18 @@ void h1_hud_render(void)
 		return;
 	}
 	datum unit_index;
-	datum weapon_index;
-	const h1_weap* definition;
+	datum weapon_index = NONE;
+	const h1_weap* definition = NULL;
 	s_h1_weapon_interface_state weapon_state;
-	if (!h1_hud_weapon_get(&unit_index, &weapon_index, &definition) || !h1_weapon_logic_interface_state(weapon_index, &weapon_state))
+	// the weapon's and unit's interfaces with a weapon, the nav points without
+	const bool has_weapon = h1_hud_weapon_get(&unit_index, &weapon_index, &definition) && h1_weapon_logic_interface_state(weapon_index, &weapon_state);
+	if (!has_weapon)
 	{
-		return;
+		unit_index = h1_first_person_weapon_unit_get();
+		if (!object_try_and_get_and_verify_type(unit_index, _object_mask_unit))
+		{
+			return;
+		}
 	}
 	if (!h1_hud_initialize())
 	{
@@ -1060,6 +1070,14 @@ void h1_hud_render(void)
 	device->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
 	device->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, FALSE);
 
+	if (!has_weapon)
+	{
+		h1_hud_render_nav_points(unit_index);
+		state_block->Apply();
+		state_block->Release();
+		return;
+	}
+
 	// hud_update_weapon and hud_render_weapon_interface
 	g_h1_hud_unit_index = unit_index;
 	g_h1_hud_weapon_state = &weapon_state;
@@ -1069,6 +1087,7 @@ void h1_hud_render(void)
 	h1_hud_render_grenades(unit_index, definition);
 	g_h1_hud.last_weapon_index = weapon_index;
 	h1_hud_render_unit(unit_index);
+	h1_hud_render_nav_points(unit_index);
 	g_h1_hud_weapon_state = NULL;
 	g_h1_hud_motion_sensor_shown = false;
 	for (DWORD stage = 0; stage < k_h1_multitexture_maps; stage++)
@@ -1755,7 +1774,7 @@ static bool h1_hud_bitmap_get(datum bitmap_tag_index, int16 sequence_index, int1
 
 // hud_draw.c hud_draw_bitmap_internal and rasterizer_xbox_dynavobgeom.c _rasterizer_psuedo_dynamic_screen_quad_draw
 static void h1_hud_draw_bitmap(datum bitmap_tag_index, int16 bitmap_index, const real_point2d* point, int16 corner, const real_rectangle2d* clip,
-	const real_vector2d* xy_scale, uint32 color, const s_h1_meter_parameters* meter)
+	const real_vector2d* xy_scale, uint32 color, const s_h1_meter_parameters* meter, real32 rotation)
 {
 	const h1_bitm* group = (const h1_bitm*)g_h1_cache_file->tag_get('bitm', bitmap_tag_index);
 	if (!group || !VALID_INDEX(bitmap_index, group->bitmaps.count))
@@ -1789,8 +1808,12 @@ static void h1_hud_draw_bitmap(datum bitmap_tag_index, int16 bitmap_index, const
 		const real32 texture_y = i > 1 ? clip->y1 : clip->y0;
 		const real32 bound_x = ((i + 1) & 2) ? bounds.x1 : bounds.x0;
 		const real32 bound_y = i > 1 ? bounds.y1 : bounds.y0;
-		const real32 x = (point->x + (real32)(int32)(bound_x * xy_scale->i)) * pixel_scale;
-		const real32 y = (point->y + (real32)(int32)(bound_y * xy_scale->j)) * pixel_scale;
+		// rotated about the point (the nav points' arrows off the screen)
+		const real32 offset_x = (real32)(int32)(bound_x * xy_scale->i);
+		const real32 offset_y = (real32)(int32)(bound_y * xy_scale->j);
+		const real32 cosine = cosf(rotation), sine = sinf(rotation);
+		const real32 x = (point->x + offset_x * cosine - offset_y * sine) * pixel_scale;
+		const real32 y = (point->y + offset_x * sine + offset_y * cosine) * pixel_scale;
 		vertices[i].x = (x - 0.5f) * 2.f / (real32)viewport.Width - 1.f;
 		vertices[i].y = 1.f - (y - 0.5f) * 2.f / (real32)viewport.Height;
 		vertices[i].z = 0.f;
@@ -2642,6 +2665,279 @@ static void h1_hud_render_grenades(datum unit_index, const h1_weap* weapon_defin
 		overlays.bitmap = definition->overlay_bitmap;
 		overlays.items = definition->overlay_items;
 		h1_hud_draw_overlays(&definition->absolute_placement, &overlays, overlay_flags, g_h1_unit_hud.last_grenade_flash_time, draw_flags);
+	}
+	return;
+}
+
+
+/* ---------- nav points (hud_nav_points.c) */
+
+static const uint8* h1_hud_globals_get(void);
+
+enum
+{
+	k_h1_maximum_nav_points = 4,
+
+	_h1_nav_point_type_flag = 0,
+	_h1_nav_point_type_object,
+
+	_h1_waypoint_on_screen = 0,
+	_h1_waypoint_off_screen,
+	_h1_waypoint_occluded,
+
+	_h1_waypoint_dont_rotate_offscreen_bit = 0,
+
+	k_h2_collision_result_object = 3,	// collision_result type of an object (h1_projectile_logic)
+};
+
+// hud_globals_definition's waypoint (hud_waypoint_definition) and its arrows (hud_waypoint_arrow)
+constexpr uint32 k_h1_hud_globals_waypoint_offset = 0x120;
+
+struct s_h1_hud_waypoint
+{
+	real32 top_offset;
+	real32 bottom_offset;
+	real32 left_offset;
+	real32 right_offset;
+	int32 unused0[8];
+	h1_tag_reference arrow_bitmap;
+	h1_tag_block<uint8> arrows;
+};
+
+struct s_h1_hud_waypoint_arrow
+{
+	char name[32];
+	int32 unused0[2];
+	uint32 color;
+	real32 opacity;
+	real32 fade;
+	int16 sequence_indices[3];
+	int16 pad;
+	int32 unused1[4];
+	uint32 flags;
+	int32 unused2[6];
+};
+static_assert(sizeof(s_h1_hud_waypoint_arrow) == 0x68);
+
+struct s_h1_nav_point
+{
+	int16 nav_index;
+	int16 type;
+	int16 screen_type;
+	real32 z_offset;
+	datum reference_index;
+};
+
+static s_h1_nav_point g_h1_nav_points[k_h1_maximum_nav_points];
+
+void h1_hud_nav_points_reset(void)
+{
+	for (s_h1_nav_point& nav_point : g_h1_nav_points)
+	{
+		nav_point = { NONE, NONE, _h1_waypoint_on_screen, 0.f, NONE };
+	}
+	return;
+}
+
+// hud_activate_nav_point for the one local player (its team is the scripts' player team)
+static void h1_hud_nav_point_activate(int16 nav_index, int16 type, datum reference_index, real32 vertical_offset)
+{
+	if (reference_index == NONE || nav_index == NONE)
+	{
+		return;
+	}
+	int16 empty_index = NONE;
+	for (int16 index = 0; index < k_h1_maximum_nav_points; index++)
+	{
+		s_h1_nav_point* nav_point = &g_h1_nav_points[index];
+		if (nav_point->type == type && nav_point->reference_index == reference_index)
+		{
+			nav_point->nav_index = nav_index;
+			nav_point->z_offset = vertical_offset;
+			return;
+		}
+		if (nav_point->type == NONE)
+		{
+			empty_index = index;
+		}
+	}
+	if (empty_index == NONE)
+	{
+		h1_log("hud: could not add another nav point");
+		return;
+	}
+	g_h1_nav_points[empty_index] = { nav_index, type, _h1_waypoint_on_screen, vertical_offset, reference_index };
+	return;
+}
+
+static void h1_hud_nav_point_deactivate(int16 type, datum reference_index)
+{
+	for (s_h1_nav_point& nav_point : g_h1_nav_points)
+	{
+		if (nav_point.type == type && nav_point.reference_index == reference_index)
+		{
+			nav_point = { NONE, NONE, _h1_waypoint_on_screen, 0.f, NONE };
+			break;
+		}
+	}
+	return;
+}
+
+void h1_hud_activate_nav_point_flag(int16 nav_index, int16 flag_index, real32 vertical_offset) { h1_hud_nav_point_activate(nav_index, _h1_nav_point_type_flag, flag_index, vertical_offset); }
+void h1_hud_activate_nav_point_object(int16 nav_index, datum object_index, real32 vertical_offset) { h1_hud_nav_point_activate(nav_index, _h1_nav_point_type_object, object_index, vertical_offset); }
+void h1_hud_deactivate_nav_point_flag(int16 flag_index) { h1_hud_nav_point_deactivate(_h1_nav_point_type_flag, flag_index); }
+void h1_hud_deactivate_nav_point_object(datum object_index) { h1_hud_nav_point_deactivate(_h1_nav_point_type_object, object_index); }
+
+// the nav point's world position, false when its object is gone (or dead: it goes)
+static bool h1_hud_nav_point_position(s_h1_nav_point* nav_point, real_point3d* position, datum* reference_object_index)
+{
+	*reference_object_index = NONE;
+	if (nav_point->type == _h1_nav_point_type_flag)
+	{
+		const h1_scnr_cutscene_flags* flag = g_h1_cache_file->block_get(g_h1_cache_file->scenario_get()->cutscene_flags, (int16)nav_point->reference_index);
+		if (!flag)
+		{
+			return false;
+		}
+		*position = flag->position;
+	}
+	else
+	{
+		const object_datum* object = object_try_and_get(nav_point->reference_index);
+		if (!object || TEST_BIT(*(const uint8*)((const uint8*)object + 0x10A), 2))
+		{
+			*nav_point = { NONE, NONE, _h1_waypoint_on_screen, 0.f, NONE };
+			return false;
+		}
+		*position = object->object.center;
+		*reference_object_index = nav_point->reference_index;
+	}
+	position->z += nav_point->z_offset;
+	return true;
+}
+
+// hud_update_nav_points (hud_get_nav_point_render_type) and hud_render_nav_points (custom_render_nav_point)
+static void h1_hud_render_nav_points(datum unit_index)
+{
+	const uint8* hud_globals = h1_hud_globals_get();
+	const s_h1_hud_waypoint* waypoint = hud_globals ? (const s_h1_hud_waypoint*)(hud_globals + k_h1_hud_globals_waypoint_offset) : NULL;
+	if (!waypoint || waypoint->arrow_bitmap.index == NONE)
+	{
+		return;
+	}
+	const s_render* render = render_get();
+	real_point3d camera_position;
+	unit_get_camera_position(unit_index, &camera_position);
+	for (s_h1_nav_point& nav_point : g_h1_nav_points)
+	{
+		if (nav_point.nav_index == NONE || nav_point.reference_index == NONE || nav_point.type == NONE)
+		{
+			nav_point.type = NONE;
+			continue;
+		}
+		real_point3d position;
+		datum reference_object_index;
+		if (!h1_hud_nav_point_position(&nav_point, &position, &reference_object_index))
+		{
+			continue;
+		}
+		const s_h1_hud_waypoint_arrow* arrow = (const s_h1_hud_waypoint_arrow*)g_h1_cache_file->block_get(waypoint->arrows, 0);
+		arrow = arrow && VALID_INDEX(nav_point.nav_index, waypoint->arrows.count) ? arrow + nav_point.nav_index : NULL;
+		if (!arrow)
+		{
+			continue;
+		}
+
+		// occluded when the line of sight hits something other than the object
+		{
+			real_vector3d vector;
+			vector_from_points3d(&camera_position, &position, &vector);
+			collision_result collision;
+			const uint32 flags = FLAG(_collision_test_structure_bit) | FLAG(_collision_test_instanced_geometry_bit) | FLAG(_collision_test_objects_bit);
+			const bool occluded = collision_test_vector(flags, &camera_position, &vector, unit_index, NONE, &collision) &&
+				(collision.type != k_h2_collision_result_object || collision.object_index != reference_object_index);
+			nav_point.screen_type = (int16)(occluded ? _h1_waypoint_occluded : _h1_waypoint_on_screen);
+		}
+
+		const real32 distance = distance3d(&camera_position, &position);
+		const real32 arrow_scale = distance > 15.f ? 0.5f : powf(1.f - distance / 15.f, 0.7f) + 0.5f;
+
+		// halo 2's view space looks down negative z (halo 1's down positive x): the point on the screen, in hud pixels from its center
+		real_point3d view_point;
+		matrix4x3_transform_point(&render->projection.world_to_view, &position, &view_point);
+		int16 waypoint_type = nav_point.screen_type;
+		real_point2d screen_point;
+		const D3DVIEWPORT9& viewport = g_h1_hud_window.viewport;
+		const real32 pixel_scale = g_h1_hud_window.pixel_scale;
+		if (!render_camera_world_to_screen(&render->camera, &render->projection, NULL, &view_point, &screen_point))
+		{
+			// behind or beside: its direction on the screen's plane
+			screen_point.x = view_point.x;
+			screen_point.y = -view_point.y;
+			waypoint_type = _h1_waypoint_off_screen;
+		}
+		else
+		{
+			screen_point.x = (screen_point.x - (real32)render->camera.viewport_bounds.left - viewport.Width * 0.5f) / pixel_scale;
+			screen_point.y = (screen_point.y - (real32)render->camera.viewport_bounds.top - viewport.Height * 0.5f) / pixel_scale;
+		}
+		const real32 horizontal_radius = (g_h1_hud_window.screen_width - (waypoint->right_offset + waypoint->left_offset)) * 0.5f;
+		const real32 vertical_radius = (480.f - (waypoint->bottom_offset + waypoint->top_offset)) * 0.5f;
+		const real32 radius_product = vertical_radius * horizontal_radius;
+		const real32 vertical_component = vertical_radius * screen_point.x;
+		const real32 horizontal_component = horizontal_radius * screen_point.y;
+		real32 theta = 0.f;
+		const real32 extent = vertical_component * vertical_component + horizontal_component * horizontal_component;
+		if (waypoint_type == _h1_waypoint_off_screen || radius_product * radius_product <= extent)
+		{
+			// held on the ellipse inside the screen's edges, pointing out
+			const real32 scale = extent > 0.f ? sqrtf(radius_product * radius_product / extent) : 0.f;
+			waypoint_type = _h1_waypoint_off_screen;
+			screen_point.x *= scale;
+			screen_point.y *= scale;
+			if (!TEST_BIT(arrow->flags, _h1_waypoint_dont_rotate_offscreen_bit))
+			{
+				theta = -atan2f(screen_point.x, screen_point.y);
+			}
+		}
+		const real_point2d point = { (real32)(int32)(screen_point.x + g_h1_hud_window.screen_width * 0.5f), (real32)(int32)(screen_point.y + 240.f) };
+
+		int16 bitmap_index;
+		real_rectangle2d clip_storage;
+		const real_rectangle2d* clip;
+		if (!h1_hud_bitmap_get(waypoint->arrow_bitmap.index, arrow->sequence_indices[waypoint_type], 0, &bitmap_index, &clip, &clip_storage))
+		{
+			continue;
+		}
+		const uint8 alpha = (uint8)PIN((int32)arrow->opacity * 255, 0, 255);
+		const real32 fade = PIN(1.f - arrow->fade, 0.f, 1.f);
+		const uint32 color = ((uint32)alpha << 24) |
+			((uint32)(((arrow->color >> 16) & 0xFF) * fade) << 16) |
+			((uint32)(((arrow->color >> 8) & 0xFF) * fade) << 8) |
+			(uint32)((arrow->color & 0xFF) * fade);
+		const real_vector2d xy_scale = { arrow_scale, arrow_scale };
+		h1_hud_draw_bitmap(waypoint->arrow_bitmap.index, bitmap_index, &point, _h1_hud_anchor_center, clip, &xy_scale, color, NULL, theta);
+
+		if (waypoint_type != _h1_waypoint_off_screen && clip)
+		{
+			// its distance in meters, below and right of it
+			const h1_bitm* group = (const h1_bitm*)g_h1_cache_file->tag_get('bitm', waypoint->arrow_bitmap.index);
+			const h1_bitm_bitmaps* bitmap = g_h1_cache_file->block_get(group->bitmaps, bitmap_index);
+			const real32 meters = distance * 3.0480001f;
+			h1_hud_absolute_placement placement = {};
+			placement.corner = _h1_hud_anchor_top_left;
+			h1_hud_number_element numbers = {};
+			numbers.colors.color = color;
+			numbers.colors.flash_color = color;
+			numbers.digits = 3;
+			numbers.fractional_digits = 1;
+			numbers.number_flags = FLAG(_h1_hud_number_show_all_leading_zeros_bit) | FLAG(_h1_hud_number_show_trailing_m_bit);
+			numbers.placement.scale = { 1.f, 1.f };
+			numbers.placement.offset.x = (int16)((clip->x1 - clip->x0) * (real32)bitmap->width * 0.5f * arrow_scale * 0.33f + point.x - g_h1_hud_window.x0);
+			numbers.placement.offset.y = (int16)((clip->y1 - clip->y0) * (real32)bitmap->height * 0.5f * arrow_scale * 0.66f + point.y - g_h1_hud_window.y0);
+			const int16 decimal_value = (int16)fmodf(fabsf(10000.f * meters), 10000.f);
+			h1_hud_draw_numbers(&placement, &numbers, (int16)meters, decimal_value, 0, 0);
+		}
 	}
 	return;
 }

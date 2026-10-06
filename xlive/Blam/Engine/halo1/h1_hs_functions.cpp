@@ -1355,6 +1355,11 @@ static int32 hs_object_set_collideable(const int32* arguments)
 static int32 hs_hud_set_help_text(const int32* arguments) { h1_hud_set_help_text(ARGUMENT_SHORT(0)); return 0; }
 static int32 hs_hud_set_objective_text(const int32* arguments) { h1_hud_set_objective_text(ARGUMENT_SHORT(0)); return 0; }
 static int32 hs_enable_hud_help_flash(const int32* arguments) { h1_hud_enable_help_flash(ARGUMENT_BOOLEAN(0)); return 0; }
+// (team nav points: the one local player is on the scripts' player team)
+static int32 hs_activate_team_nav_point_flag(const int32* arguments) { h1_hud_activate_nav_point_flag(ARGUMENT_SHORT(0), ARGUMENT_SHORT(2), ARGUMENT_REAL(3)); return 0; }
+static int32 hs_activate_team_nav_point_object(const int32* arguments) { h1_hud_activate_nav_point_object(ARGUMENT_SHORT(0), ARGUMENT_LONG(2), ARGUMENT_REAL(3)); return 0; }
+static int32 hs_deactivate_team_nav_point_flag(const int32* arguments) { h1_hud_deactivate_nav_point_flag(ARGUMENT_SHORT(1)); return 0; }
+static int32 hs_deactivate_team_nav_point_object(const int32* arguments) { h1_hud_deactivate_nav_point_object(ARGUMENT_LONG(1)); return 0; }
 static int32 hs_cinematic_set_title(const int32* arguments) { h1_cinematic_set_title_delayed(ARGUMENT_SHORT(0), 0.f); return 0; }
 static int32 hs_cinematic_set_title_delayed(const int32* arguments) { h1_cinematic_set_title_delayed(ARGUMENT_SHORT(0), ARGUMENT_REAL(1)); return 0; }
 
@@ -1478,6 +1483,10 @@ static const s_hs_procedure_binding k_hs_procedures[] =
 	{ "sound_cache_flush", hs_nothing },
 	{ "cls", hs_nothing },
 	{ "cinematic_set_title", hs_cinematic_set_title },
+	{ "activate_team_nav_point_flag", hs_activate_team_nav_point_flag },
+	{ "activate_team_nav_point_object", hs_activate_team_nav_point_object },
+	{ "deactivate_team_nav_point_flag", hs_deactivate_team_nav_point_flag },
+	{ "deactivate_team_nav_point_object", hs_deactivate_team_nav_point_object },
 	{ "hud_set_help_text", hs_hud_set_help_text },
 	{ "hud_set_objective_text", hs_hud_set_objective_text },
 	{ "enable_hud_help_flash", hs_enable_hud_help_flash },

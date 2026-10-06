@@ -29,3 +29,10 @@ void h1_hud_set_help_text(int16 message_index);
 bool h1_hud_show_help_text(bool show);
 void h1_hud_enable_help_flash(bool flash);
 void h1_hud_set_objective_text(int16 message_index);
+
+// hud_nav_points.c: the scripts' nav points at cutscene flags and objects, drawn with the hud's waypoint arrows
+void h1_hud_nav_points_reset(void);
+void h1_hud_activate_nav_point_flag(int16 nav_index, int16 flag_index, real32 vertical_offset);
+void h1_hud_activate_nav_point_object(int16 nav_index, datum object_index, real32 vertical_offset);
+void h1_hud_deactivate_nav_point_flag(int16 flag_index);
+void h1_hud_deactivate_nav_point_object(datum object_index);
