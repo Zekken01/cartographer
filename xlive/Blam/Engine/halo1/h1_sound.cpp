@@ -696,7 +696,8 @@ static bool h1_looping_sound_update(s_h1_looping_sound* loop, real32 dt)
 			real32 pitch = loop->track_pitches[i];
 			if (voice->sound->maximum_bend_per_second > 1.f && pitch > 0.f)
 			{
-				const real32 bend = powf(voice->sound->maximum_bend_per_second, dt);
+				// limit_pitch bends at most by the sound's maximum bend each sound update (30 a second)
+				const real32 bend = powf(voice->sound->maximum_bend_per_second, dt * 30.f);
 				pitch = desired_pitch > pitch ? MIN(desired_pitch, pitch * bend) : MAX(desired_pitch, pitch / bend);
 			}
 			else
