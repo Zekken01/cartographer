@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Util/Hooks/Hook.h"
 #include "h1_vehicle_physics.h"
 
 #include "h1_animations.h"
@@ -99,6 +100,19 @@ enum
 	_h1_vehicle_braking_bit = 3,
 };
 
+enum
+{
+	k_havok_shape_type_sphere = 4,
+	k_havok_shape_type_triangle = 5,
+	k_havok_shape_type_multi_sphere = 8,
+	k_havok_shape_type_capsule = 9,
+	k_havok_shape_type_mopp = 0x13,
+	k_havok_shape_type_convex_translate = 0x15,
+	k_havok_shape_type_convex_radius = 0x17,
+
+	k_havok_motion_type_keyframed = 6,
+	k_havok_motion_type_fixed = 7,
+};
 constexpr real32 k_h1_global_gravity = 0.0035651792f;	// world units per tick per tick
 
 /* ---------- structures */
@@ -1782,6 +1796,133 @@ static bool h1_vehicle_new_hook(datum vehicle_index, object_placement_data* plac
 	return true;
 }
 
+static int32 h1_havok_shape_type(void* shape)
+{
+	typedef int32(__thiscall* t_shape_type)(void*);
+	return ((t_shape_type)(*(void***)shape)[5])(shape);
+}
+
+// halo 2 takes the list out of a dynamic rigid body's mopp when it makes the havok body (FUN_004e2ceb, FUN_004e4f19): havok then
+// pairs each of the list's children with everything the body touches. on halo 1 maps the mopp stays, so only the leaves near
+// what the body touches are paired
+static int32 __cdecl h1_rigid_body_shape_type(int32 type)
+{
+	return type == k_havok_shape_type_mopp && h1_maps_active() ? NONE : type;
+}
+
+static __declspec(naked) void h1_rigid_body_shape_mopp_test(void)
+{
+	__asm
+	{
+		call	dword ptr [edx + 0x14]
+		push	eax
+		call	h1_rigid_body_shape_type
+		add		esp, 4
+		cmp		eax, 0x13
+		ret
+	}
+}
+
+static __declspec(naked) void h1_rigid_body_shape_mopp_test_ebx(void)
+{
+	__asm
+	{
+		mov		ecx, ebx
+		jmp		h1_rigid_body_shape_mopp_test
+	}
+}
+
+// halo 2 rebuilds a dynamic body's shape with its convex radius (FUN_004e08de) and copies a collection's children to a stack
+// array of 34: a halo 1 mopp stays as it is
+typedef void* (__stdcall* t_rigid_body_shape_rebuild)(void*, int16*, void*, real32);
+static t_rigid_body_shape_rebuild g_h2_rigid_body_shape_rebuild = NULL;
+static void* __stdcall h1_rigid_body_shape_rebuild_hook(void* thisptr, int16* shape, void* body, real32 radius)
+{
+	if (h1_maps_active() && h1_havok_shape_type(shape) == k_havok_shape_type_mopp)
+	{
+		// the caller releases the shape it passed in
+		shape[3]++;
+		return shape;
+	}
+	return g_h2_rigid_body_shape_rebuild(thisptr, shape, body, radius);
+}
+
+// halo 1's vehicles touch the world with their mass points only: the collision model is what bipeds, other vehicles' mass points
+// and projectiles hit. halo 2 decides havok pairs by the bodies' filter info (FUN_004a01a5, the world's shape collection
+// filter): on halo 1 maps a dynamic body's triangle leaves don't pair with fixed or keyframed bodies, nor with another dynamic
+// body's triangle leaves (hundreds of triangles against the ground fill havok's memory and the garbage collection deletes the
+// vehicle)
+typedef bool*(__thiscall* t_shape_collection_filter)(void*, bool*, const void*, const uint8*, const uint8*, void*, uint32);
+static t_shape_collection_filter g_h2_shape_collection_filter = NULL;
+
+static void* h1_havok_leaf_unwrap(void* shape)
+{
+	if (shape && h1_havok_shape_type(shape) == k_havok_shape_type_convex_translate)
+	{
+		shape = ((void**)shape)[3];
+	}
+	if (shape && h1_havok_shape_type(shape) == k_havok_shape_type_convex_radius)
+	{
+		shape = ((void**)shape)[12];
+	}
+	return shape;
+}
+
+static bool h1_havok_shape_is_biped(void* leaf)
+{
+	const int32 type = leaf ? h1_havok_shape_type(leaf) : NONE;
+	return type == k_havok_shape_type_sphere || type == k_havok_shape_type_capsule || type == k_havok_shape_type_multi_sphere;
+}
+
+// 0 not an entity, 1 dynamic, 2 fixed or keyframed
+static int32 h1_havok_body_motion(const uint8* body)
+{
+	while (*(const uint8* const*)(body + 0xC))
+	{
+		body = *(const uint8* const*)(body + 0xC);
+	}
+	const uint8* entity = *(const uint8* const*)(body + 0x20);
+	if (*(const int32*)(body + 0x18) != 1 || !entity)
+	{
+		return 0;
+	}
+	typedef int32(__thiscall* t_motion_type)(void*);
+	void* motion = *(void* const*)(entity + 0x3C);
+	const int32 type = ((t_motion_type)(*(void***)motion)[6])(motion);
+	return type == k_havok_motion_type_keyframed || type == k_havok_motion_type_fixed ? 2 : 1;
+}
+
+static bool* __fastcall h1_shape_collection_filter_hook(void* filter, void* edx, bool* result, const void* input, const uint8* a, const uint8* b, void* container, uint32 key)
+{
+	g_h2_shape_collection_filter(filter, result, input, a, b, container, key);
+	if (!*result || !h1_maps_active())
+	{
+		return result;
+	}
+
+	uint8 buffer[0x110];
+	typedef void*(__thiscall* t_child_shape)(void*, uint32, void*);
+	void* b_leaf = h1_havok_leaf_unwrap(key == NONE ? *(void* const*)b : ((t_child_shape)(*(void***)container)[13])(container, key, buffer));
+	void* a_leaf = h1_havok_leaf_unwrap(*(void* const*)a);
+	const bool a_triangle = a_leaf && h1_havok_shape_type(a_leaf) == k_havok_shape_type_triangle;
+	const bool b_triangle = b_leaf && h1_havok_shape_type(b_leaf) == k_havok_shape_type_triangle;
+	if (!a_triangle && !b_triangle)
+	{
+		return result;
+	}
+	// the world: fixed or keyframed bodies but bipeds (keyframed pills and spheres)
+	const int32 a_motion = h1_havok_body_motion(a);
+	const int32 b_motion = h1_havok_body_motion(b);
+	const bool a_world = a_motion == 2 && !h1_havok_shape_is_biped(a_leaf);
+	const bool b_world = b_motion == 2 && !h1_havok_shape_is_biped(b_leaf);
+	if ((b_triangle && b_motion == 1 && (a_world || (a_triangle && a_motion == 1))) ||
+		(a_triangle && a_motion == 1 && b_world))
+	{
+		*result = false;
+	}
+	return result;
+}
+
 static bool h1_vehicle_update_hook(datum vehicle_index)
 {
 	const bool result = g_h2_vehicle_update(vehicle_index);
@@ -1791,6 +1932,18 @@ static bool h1_vehicle_update_hook(datum vehicle_index)
 
 void h1_vehicle_physics_apply_patches(void)
 {
+	WriteValue<uint8>(Memory::GetAddress(0xE2EC9), 0xE8);
+	PatchCall(Memory::GetAddress(0xE2EC9), h1_rigid_body_shape_mopp_test);
+	NopFill(Memory::GetAddress(0xE2EC9 + 5), 3);
+	WriteValue<uint8>(Memory::GetAddress(0xE51E9), 0xE8);
+	PatchCall(Memory::GetAddress(0xE51E9), h1_rigid_body_shape_mopp_test);
+	NopFill(Memory::GetAddress(0xE51E9 + 5), 3);
+	WriteValue<uint8>(Memory::GetAddress(0xE31EC), 0xE8);
+	PatchCall(Memory::GetAddress(0xE31EC), h1_rigid_body_shape_mopp_test_ebx);
+	NopFill(Memory::GetAddress(0xE31EC + 5), 5);
+	g_h2_shape_collection_filter = *Memory::GetAddress<t_shape_collection_filter*>(0x3BC568);
+	WritePointer(Memory::GetAddress(0x3BC568), h1_shape_collection_filter_hook);
+	g_h2_rigid_body_shape_rebuild = (t_rigid_body_shape_rebuild)DetourClassFunc(Memory::GetAddress<uint8*>(0xE08DE), (uint8*)h1_rigid_body_shape_rebuild_hook, 8);
 	object_type_definition* vehicle_type = object_type_definition_get(_object_type_vehicle);
 	for (int32 i = 0; i < k_max_object_type_inheritence; i++)
 	{

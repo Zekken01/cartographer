@@ -5,6 +5,7 @@
 #include "h1_cache_file.h"
 #include "h1_log.h"
 #include "h1_objects.h"
+#include "h1_object_tags.h"
 #include "h1_runtime.h"
 #include "h1_structure_bsp.h"
 #include "h1_weapons.h"
@@ -17,6 +18,7 @@
 #include "tag_files/tag_groups.h"
 
 #include <string>
+#include <algorithm>
 #include <vector>
 
 /* constants */
@@ -67,10 +69,9 @@ static real_quaternion h1_quaternion_to_h2(const real_quaternion* rotation);
 static datum h1_camera_track_build(datum h1_track_index);
 static datum h1_render_model_build(const h1_mode* h1_model, const char* name, const h1_phys* h1_physics, const h1_vehi* h1_vehicle);
 static datum h1_collision_model_build(const h1_coll* h1_collision, const h1_mode* h1_model, const char* name);
-static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1_model, const h1_coll* h1_collision, const char* name);
+static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1_model, const h1_coll* h1_collision, datum collision_model_index, const char* name);
 static datum h1_model_build(const s_h1_vehicle_tags* tags, const h1_mode* h1_model, const h1_coll* h1_collision, const char* name);
 static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle, const h1_phys* h1_physics, const h1_mode* h1_model, datum model_index);
-static string_id h1_global_material_name(int16 global_material_index);
 static int16 h1_model_node_find(const h1_mode* h1_model, const char* name);
 static bool h1_mass_point_is_wheel(const h1_phys* h1_physics, const h1_phys_mass_points* mass_point);
 static bool h1_mass_point_is_antigrav(const h1_phys* h1_physics, const h1_phys_mass_points* mass_point);
@@ -118,7 +119,7 @@ datum h1_vehicle_build(datum h1_vehicle_index)
 	s_h1_vehicle_tags tags;
 	tags.render_model = h1_render_model_build(h1_model, name, h1_physics, h1_vehicle);
 	tags.collision_model = has_collision ? h1_collision_model_build(h1_collision, h1_model, name) : NONE;
-	tags.physics_model = has_physics ? h1_physics_model_build(h1_physics, h1_model, h1_collision, name) : NONE;
+	tags.physics_model = has_physics ? h1_physics_model_build(h1_physics, h1_model, h1_collision, tags.collision_model, name) : NONE;
 	tags.animation_graph = h1_animation_graph_build(h1_vehicle->animation_graph.index, h1_model, name, h1_physics);
 	tags.model = h1_model_build(&tags, h1_model, h1_collision, name);
 	if (tags.render_model == NONE || tags.model == NONE)
@@ -232,18 +233,6 @@ static string_id h1_marker_string_id(const char* name)
 	return h1_string_id(marker.c_str());
 }
 
-// the name of a halo 2 global material (matg materials)
-static string_id h1_global_material_name(int16 global_material_index)
-{
-	s_game_globals* globals = scenario_get_game_globals();
-	if (!globals || !VALID_INDEX(global_material_index, globals->materials.count))
-	{
-		return _string_id_empty_string;
-	}
-	const s_global_material_definition* material = (const s_global_material_definition*)tag_block_get_element_with_size(
-		&globals->materials, global_material_index, sizeof(s_global_material_definition));
-	return material->name;
-}
 
 static int16 h1_model_node_find(const h1_mode* h1_model, const char* name)
 {
@@ -509,7 +498,7 @@ static datum h1_collision_model_build(const h1_coll* h1_collision, const h1_mode
 	return collision_index;
 }
 
-static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1_model, const h1_coll* h1_collision, const char* name)
+static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1_model, const h1_coll* h1_collision, datum collision_model_index, const char* name)
 {
 	h2x_phmo* physics = NULL;
 	const datum physics_index = h1_runtime_tag_new('phmo', name, &physics);
@@ -586,53 +575,66 @@ static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1
 		bounds.z0 = MIN(bounds.z0, position.z - radius); bounds.z1 = MAX(bounds.z1, position.z + radius);
 	}
 
-	// spheres go into lists of at most four, and those into a list when there are more than four
-	int16 shape_type = k_h2_shape_type_sphere;
-	int16 shape_index = 0;
-	if (sphere_count > 1)
+	// the hull: the collision model's triangles in model space (what bipeds, vehicles and projectiles hit, as halo 1's collision
+	// model is); the mass point spheres stay for the ground (halo 1's physics: h1_vehicle_physics keeps the triangles off the world)
+	std::vector<s_h1_physics_triangle> hull_triangles;
 	{
-		const int32 leaf_count = (sphere_count + k_maximum_list_children - 1) / k_maximum_list_children;
-		const int32 list_count = leaf_count > 1 ? leaf_count + 1 : 1;
-		h2x_phmo_lists* lists = h1_runtime_block_new(&physics->lists, list_count);
-		auto list_set = [](h2x_phmo_lists* list, int32 child_count)
+		std::vector<int16> nodes;
+		std::vector<std::vector<s_h1_physics_triangle>> node_triangles;
+		h1_collision_model_node_triangles(collision_model_index, nodes, node_triangles);
+		std::vector<real_matrix4x3> node_matrices;
+		h1_model_default_node_matrices(h1_model, node_matrices);
+		for (size_t n = 0; n < nodes.size(); n++)
 		{
-			list->runtime_code_pointer = k_havok_list_shape;
-			list->count = 128;
-			list->child_shapes_size = child_count;
-			list->child_shapes_capacity = 0x80000000 | k_maximum_list_children;
-			int16* children = &list->shape_type_0;
-			for (int32 c = 0; c < k_maximum_list_children; c++)
+			const real_matrix4x3* matrix = VALID_INDEX(nodes[n], (int16)node_matrices.size()) ? &node_matrices[nodes[n]] : global_identity4x3;
+			for (const s_h1_physics_triangle& triangle : node_triangles[n])
 			{
-				children[c * 4 + 0] = 0;
-				children[c * 4 + 1] = c < child_count ? 0 : NONE;
-			}
-		};
-		for (int32 l = 0; l < leaf_count; l++)
-		{
-			const int32 first = l * k_maximum_list_children;
-			const int32 count = MIN(k_maximum_list_children, sphere_count - first);
-			list_set(&lists[l], count);
-			int16* children = &lists[l].shape_type_0;
-			for (int32 c = 0; c < count; c++)
-			{
-				children[c * 4 + 0] = k_h2_shape_type_sphere;
-				children[c * 4 + 1] = (int16)(first + c);
+				s_h1_physics_triangle transformed;
+				for (int32 c = 0; c < 3; c++)
+				{
+					matrix4x3_transform_point(matrix, &triangle.points[c], &transformed.points[c]);
+				}
+				hull_triangles.push_back(transformed);
 			}
 		}
-		if (leaf_count > 1)
+		if (hull_triangles.size() + sphere_count > 0x7FFF)
 		{
-			h2x_phmo_lists* root = &lists[leaf_count];
-			list_set(root, leaf_count);
-			int16* children = &root->shape_type_0;
-			for (int32 c = 0; c < leaf_count; c++)
-			{
-				children[c * 4 + 0] = k_h2_shape_type_list;
-				children[c * 4 + 1] = (int16)c;
-			}
+			hull_triangles.clear();
 		}
-		shape_type = k_h2_shape_type_list;
-		shape_index = (int16)(list_count - 1);
 	}
+	h2x_phmo_triangles* triangles = h1_runtime_block_new(&physics->triangles, (int32)hull_triangles.size());
+	std::vector<std::pair<int16, int16>> leaves;
+	std::vector<real_rectangle3d> leaf_bounds;
+	for (int32 i = 0; i < sphere_count; i++)
+	{
+		const real_vector3d* center = &spheres[i].translation;
+		const real32 radius = spheres[i].radius;
+		leaves.push_back({ (int16)k_h2_shape_type_sphere, (int16)i });
+		leaf_bounds.push_back({ center->i - radius, center->i + radius, center->j - radius, center->j + radius, center->k - radius, center->k + radius });
+	}
+	for (size_t i = 0; i < hull_triangles.size(); i++)
+	{
+		h1_physics_triangle_set(&triangles[i], &hull_triangles[i], &bounds);
+		real_rectangle3d triangle_bounds = { FLT_MAX, -FLT_MAX, FLT_MAX, -FLT_MAX, FLT_MAX, -FLT_MAX };
+		for (const real_point3d& point : hull_triangles[i].points)
+		{
+			triangle_bounds.x0 = MIN(triangle_bounds.x0, point.x - triangles[i].radius); triangle_bounds.x1 = MAX(triangle_bounds.x1, point.x + triangles[i].radius);
+			triangle_bounds.y0 = MIN(triangle_bounds.y0, point.y - triangles[i].radius); triangle_bounds.y1 = MAX(triangle_bounds.y1, point.y + triangles[i].radius);
+			triangle_bounds.z0 = MIN(triangle_bounds.z0, point.z - triangles[i].radius); triangle_bounds.z1 = MAX(triangle_bounds.z1, point.z + triangles[i].radius);
+		}
+		leaves.push_back({ (int16)k_h2_physics_shape_type_triangle, (int16)i });
+		leaf_bounds.push_back(triangle_bounds);
+	}
+
+	// the leaves under a mopp: a plain list makes havok pair every leaf with everything the body touches (hundreds of
+	// triangles against the ground fill havok's memory and halo 2's garbage collection deletes the vehicle)
+	s_h2_physics_shape shape = { (int16)k_h2_shape_type_sphere, 0 };
+	if (leaves.size() > 1)
+	{
+		shape = h1_physics_mopp_build(physics, leaves, leaf_bounds);
+	}
+	const int16 shape_type = shape.type;
+	const int16 shape_index = shape.index;
 
 	h2x_phmo_rigid_bodies* body = h1_runtime_block_new(&physics->rigid_bodies, 1);
 	body->node_index = 0;

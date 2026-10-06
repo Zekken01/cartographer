@@ -197,30 +197,16 @@ datum h1_object_collision_model_build(const h1_coll* h1_collision, const h1_mode
 }
 
 
-// halo 2's physics model shapes and motions (phmo)
-enum
-{
-	k_h2_physics_shape_type_triangle = 3,
-	k_h2_physics_shape_type_list = 14,
-	k_h2_physics_motion_type_keyframed = 4,
-	k_h2_physics_list_children = 4,
-};
 
-datum h1_object_physics_model_build(const h1_coll* h1_collision, const h1_mode* h1_model, datum collision_model_index, const char* name)
+void h1_collision_model_node_triangles(datum collision_model_index, std::vector<int16>& out_nodes, std::vector<std::vector<s_h1_physics_triangle>>& out_triangles)
 {
+	out_nodes.clear();
+	out_triangles.clear();
 	const h2x_coll* collision = collision_model_index != NONE ? (const h2x_coll*)tag_get('coll', collision_model_index) : NULL;
-	if (!collision || !h1_model)
+	if (!collision)
 	{
-		return NONE;
+		return;
 	}
-
-	// the triangles of every region's first permutation, by the node they move with (in its space, as the bsps are)
-	struct s_triangle
-	{
-		real_point3d points[3];
-	};
-	std::vector<int16> body_nodes;
-	std::vector<std::vector<s_triangle>> body_triangles;
 	for (int32 r = 0; r < collision->regions.count; r++)
 	{
 		const h2x_coll_regions* region = collision->regions[r];
@@ -233,31 +219,185 @@ datum h1_object_physics_model_build(const h1_coll* h1_collision, const h1_mode* 
 		{
 			const h2x_coll_regions_permutations_bsps* bsp_definition = permutation->bsps[b];
 			const collision_bsp* bsp = (const collision_bsp*)&bsp_definition->bsp_3d_nodes;
-			size_t body = 0;
-			while (body < body_nodes.size() && body_nodes[body] != bsp_definition->node_index)
+			size_t node = 0;
+			while (node < out_nodes.size() && out_nodes[node] != bsp_definition->node_index)
 			{
-				body++;
+				node++;
 			}
-			if (body == body_nodes.size())
+			if (node == out_nodes.size())
 			{
-				body_nodes.push_back(bsp_definition->node_index);
-				body_triangles.emplace_back();
+				out_nodes.push_back(bsp_definition->node_index);
+				out_triangles.emplace_back();
 			}
-			for (int32 s = 0; s < bsp->surfaces.count; s++)
+			for (int32 surface = 0; surface < bsp->surfaces.count; surface++)
 			{
 				real_point3d points[32];
-				const int32 count = h1_mopp_surface_vertices_get(bsp, s, points, NUMBEROF(points));
+				const int32 count = h1_mopp_surface_vertices_get(bsp, surface, points, NUMBEROF(points));
 				for (int32 i = 1; i + 1 < count; i++)
 				{
-					body_triangles[body].push_back({ { points[0], points[i], points[i + 1] } });
+					out_triangles[node].push_back({ { points[0], points[i], points[i + 1] } });
 				}
 			}
 		}
 	}
+	return;
+}
+
+void h1_model_default_node_matrices(const h1_mode* h1_model, std::vector<real_matrix4x3>& out_matrices)
+{
+	out_matrices.assign(h1_model ? h1_model->nodes.count : 0, real_matrix4x3{});
+	for (int32 i = 0; i < (int32)out_matrices.size(); i++)
+	{
+		const h1_mode_nodes* node = g_h1_cache_file->block_get(h1_model->nodes, i);
+		// halo 2's quaternions are halo 1's conjugates
+		const real_quaternion rotation = { { -node->default_rotation.v.i, -node->default_rotation.v.j, -node->default_rotation.v.k }, node->default_rotation.w };
+		real_matrix4x3 local;
+		matrix4x3_from_point_and_quaternion(&local, &node->default_translation, &rotation);
+		if (VALID_INDEX(node->parent_node_index, i))
+		{
+			matrix4x3_multiply(&out_matrices[node->parent_node_index], &local, &out_matrices[i]);
+		}
+		else
+		{
+			out_matrices[i] = local;
+		}
+	}
+	return;
+}
+
+void h1_physics_triangle_set(h2x_phmo_triangles* triangle, const s_h1_physics_triangle* source, real_rectangle3d* bounds)
+{
+	triangle->name = _string_id_default;
+	triangle->material_index = 0;
+	triangle->relative_mass_scale = 1.f;
+	triangle->friction = 0.8f;
+	triangle->restitution = 0.2f;
+	triangle->mass_distribution_index = NONE;
+	triangle->phantom_type_index = NONE;
+	triangle->count = 128;
+	triangle->radius = 0.025f;
+	real_vector3d* corners[3] = { &triangle->point_a, &triangle->point_b, &triangle->point_c };
+	for (int32 c = 0; c < 3; c++)
+	{
+		const real_point3d* point = &source->points[c];
+		*corners[c] = { point->x, point->y, point->z };
+		if (bounds)
+		{
+			bounds->x0 = MIN(bounds->x0, point->x); bounds->x1 = MAX(bounds->x1, point->x);
+			bounds->y0 = MIN(bounds->y0, point->y); bounds->y1 = MAX(bounds->y1, point->y);
+			bounds->z0 = MIN(bounds->z0, point->z); bounds->z1 = MAX(bounds->z1, point->z);
+		}
+	}
+	return;
+}
+
+static void h1_physics_list_build(h2x_phmo_lists* list, h2x_phmo_list_shapes* list_shapes, int32* list_shape_index, const std::pair<int16, int16>* leaves, int32 count)
+{
+	list->count = 128;
+	list->child_shapes_size = count;
+	// four children inline, more from the list shapes block (FUN_0047b844 takes them in the lists' order)
+	list->child_shapes_capacity = 0x80000000 | (uint32)(count > k_h2_physics_list_children ? count : k_h2_physics_list_children);
+	int16* children = &list->shape_type_0;
+	for (int32 c = 0; c < k_h2_physics_list_children; c++)
+	{
+		children[c * 4 + 0] = c < count ? leaves[c].first : 0;
+		children[c * 4 + 1] = c < count ? leaves[c].second : NONE;
+	}
+	if (count > k_h2_physics_list_children)
+	{
+		for (int32 c = 0; c < count; c++)
+		{
+			list_shapes[*list_shape_index + c].shape_type = leaves[c].first;
+			list_shapes[*list_shape_index + c].shape_index = leaves[c].second;
+			list_shapes[*list_shape_index + c].collision_filter = 0;
+		}
+		*list_shape_index += count;
+	}
+	return;
+}
+
+void h1_physics_list_tree_count(int32 leaf_count, int32* list_count, int32* list_shape_count)
+{
+	while (leaf_count > 1)
+	{
+		const int32 count = (leaf_count + k_h2_physics_list_maximum_children - 1) / k_h2_physics_list_maximum_children;
+		for (int32 l = 0; l < count; l++)
+		{
+			const int32 children = (std::min)(leaf_count - l * k_h2_physics_list_maximum_children, (int32)k_h2_physics_list_maximum_children);
+			*list_shape_count += children > k_h2_physics_list_children ? children : 0;
+		}
+		*list_count += count;
+		leaf_count = count;
+	}
+	return;
+}
+
+void h1_physics_list_tree_build(h2x_phmo_lists* lists, int32* list_index, h2x_phmo_list_shapes* list_shapes, int32* list_shape_index, std::vector<std::pair<int16, int16>>& level)
+{
+	while (level.size() > 1)
+	{
+		std::vector<std::pair<int16, int16>> parents;
+		for (size_t first = 0; first < level.size(); first += k_h2_physics_list_maximum_children)
+		{
+			const int32 children = (int32)(std::min)(level.size() - first, (size_t)k_h2_physics_list_maximum_children);
+			h1_physics_list_build(&lists[*list_index], list_shapes, list_shape_index, &level[first], children);
+			parents.push_back({ (int16)k_h2_physics_shape_type_list, (int16)*list_index });
+			(*list_index)++;
+		}
+		level = parents;
+	}
+	return;
+}
+
+s_h2_physics_shape h1_physics_mopp_build(h2x_phmo* physics, const std::vector<std::pair<int16, int16>>& leaves, const std::vector<real_rectangle3d>& leaf_bounds)
+{
+	// one list over every leaf, a mopp over the list's children (keys are the child indices), as halo 2's pelican: havok's
+	// agents then pair only the leaves that overlap what touches the body
+	h2x_phmo_lists* list = h1_runtime_block_new(&physics->lists, 1);
+	h2x_phmo_list_shapes* list_shapes = h1_runtime_block_new(&physics->list_shapes, leaves.size() > k_h2_physics_list_children ? (int32)leaves.size() : 0);
+	int32 list_shape_index = 0;
+	h1_physics_list_build(list, list_shapes, &list_shape_index, leaves.data(), (int32)leaves.size());
+
+	std::vector<s_h1_mopp_item> items(leaves.size());
+	for (size_t i = 0; i < leaves.size(); i++)
+	{
+		items[i].key = (uint32)i;
+		items[i].bounds = leaf_bounds[i];
+	}
+	uint8* mopp = NULL;
+	uint32 mopp_size = 0;
+	real_point3d mopp_min, mopp_max;
+	if (!h1_mopp_build(items, &mopp, &mopp_size, &mopp_min, &mopp_max))
+	{
+		return { (int16)k_h2_physics_shape_type_list, 0 };
+	}
+	h2x_phmo_mopps* mopp_shape = h1_runtime_block_new(&physics->mopps, 1);
+	mopp_shape->count = 128;
+	mopp_shape->shape_type = k_h2_physics_shape_type_list;
+	mopp_shape->shape_index = 0;
+	h1_runtime_data_set(&physics->mopp_codes, mopp, (int32)mopp_size);
+	h1_mopp_free(mopp);
+	return { (int16)k_h2_physics_shape_type_mopp, 0 };
+}
+
+datum h1_object_physics_model_build(const h1_coll* h1_collision, const h1_mode* h1_model, datum collision_model_index, const char* name)
+{
+	if (collision_model_index == NONE || !h1_model)
+	{
+		return NONE;
+	}
+	// the triangles of every region's first permutation, by the node they move with (in its space, as the bsps are)
+	std::vector<int16> body_nodes;
+	std::vector<std::vector<s_h1_physics_triangle>> body_triangles;
+	h1_collision_model_node_triangles(collision_model_index, body_nodes, body_triangles);
+	const h2x_coll* collision = (const h2x_coll*)tag_get('coll', collision_model_index);
 	size_t triangle_count = 0;
+	int32 list_count = 0;
+	int32 list_shape_count = 0;
 	for (const auto& triangles : body_triangles)
 	{
 		triangle_count += triangles.size();
+		h1_physics_list_tree_count((int32)triangles.size(), &list_count, &list_shape_count);
 	}
 	if (triangle_count == 0 || triangle_count > 0x7FFF)
 	{
@@ -279,72 +419,25 @@ datum h1_object_physics_model_build(const h1_coll* h1_collision, const h1_mode* 
 	material->global_material_name = h1_global_material_name(h1_material_type_to_global_material(h1_material ? h1_material->material_type : 0));
 	material->phantom_type_index = NONE;
 
+	// a tree of lists over each body's triangles
 	h2x_phmo_triangles* triangles = h1_runtime_block_new(&physics->triangles, (int32)triangle_count);
-	// a list tree over each body's triangles: leaves of four triangles, lists of four lists over them up to the root
-	int32 list_count = 0;
-	for (const auto& body : body_triangles)
-	{
-		int32 level = (int32)body.size();
-		while (level > 1)
-		{
-			level = (level + k_h2_physics_list_children - 1) / k_h2_physics_list_children;
-			list_count += level;
-		}
-	}
 	h2x_phmo_lists* lists = h1_runtime_block_new(&physics->lists, list_count);
+	h2x_phmo_list_shapes* list_shapes = h1_runtime_block_new(&physics->list_shapes, list_shape_count);
+	int32 list_shape_index = 0;
 	h2x_phmo_rigid_bodies* bodies = h1_runtime_block_new(&physics->rigid_bodies, (int32)body_nodes.size());
-
 	int32 triangle_index = 0;
 	int32 list_index = 0;
 	for (size_t b = 0; b < body_nodes.size(); b++)
 	{
 		real_rectangle3d bounds = { FLT_MAX, -FLT_MAX, FLT_MAX, -FLT_MAX, FLT_MAX, -FLT_MAX };
 		std::vector<std::pair<int16, int16>> level;
-		for (const s_triangle& source : body_triangles[b])
+		for (const s_h1_physics_triangle& source : body_triangles[b])
 		{
-			h2x_phmo_triangles* triangle = &triangles[triangle_index];
-			triangle->name = _string_id_default;
-			triangle->material_index = 0;
-			triangle->relative_mass_scale = 1.f;
-			triangle->friction = 0.8f;
-			triangle->restitution = 0.2f;
-			triangle->mass_distribution_index = NONE;
-			triangle->phantom_type_index = NONE;
-			triangle->count = 128;
-			triangle->radius = 0.025f;
-			real_vector3d* corners[3] = { &triangle->point_a, &triangle->point_b, &triangle->point_c };
-			for (int32 c = 0; c < 3; c++)
-			{
-				const real_point3d* point = &source.points[c];
-				*corners[c] = { point->x, point->y, point->z };
-				bounds.x0 = MIN(bounds.x0, point->x); bounds.x1 = MAX(bounds.x1, point->x);
-				bounds.y0 = MIN(bounds.y0, point->y); bounds.y1 = MAX(bounds.y1, point->y);
-				bounds.z0 = MIN(bounds.z0, point->z); bounds.z1 = MAX(bounds.z1, point->z);
-			}
+			h1_physics_triangle_set(&triangles[triangle_index], &source, &bounds);
 			level.push_back({ (int16)k_h2_physics_shape_type_triangle, (int16)triangle_index });
 			triangle_index++;
 		}
-		while (level.size() > 1)
-		{
-			std::vector<std::pair<int16, int16>> parents;
-			for (size_t first = 0; first < level.size(); first += k_h2_physics_list_children)
-			{
-				const int32 count = (int32)MIN(level.size() - first, (size_t)k_h2_physics_list_children);
-				h2x_phmo_lists* list = &lists[list_index];
-				list->count = 128;
-				list->child_shapes_size = count;
-				list->child_shapes_capacity = 0x80000000 | k_h2_physics_list_children;
-				int16* children = &list->shape_type_0;
-				for (int32 c = 0; c < k_h2_physics_list_children; c++)
-				{
-					children[c * 4 + 0] = c < count ? level[first + c].first : 0;
-					children[c * 4 + 1] = c < count ? level[first + c].second : NONE;
-				}
-				parents.push_back({ (int16)k_h2_physics_shape_type_list, (int16)list_index });
-				list_index++;
-			}
-			level = parents;
-		}
+		h1_physics_list_tree_build(lists, &list_index, list_shapes, &list_shape_index, level);
 
 		h2x_phmo_rigid_bodies* body = &bodies[b];
 		body->node_index = body_nodes[b];
