@@ -5,6 +5,7 @@
 #include "h1_log.h"
 #include "h1_map_loader.h"
 #include "h1_objects.h"
+#include "h1_sound.h"
 
 #include "game/game_time.h"
 #include "math/matrix_math.h"
@@ -106,7 +107,7 @@ struct s_h1_mass_point
 	real_vector3d forward;
 	real_vector3d up;
 	real_vector3d radius;
-	real_vector3d velocity;
+	real_vector3d velocity, angular_velocity;
 	real_vector3d velocity_relative_to_ground;
 	real_plane3d ground_plane;
 	real32 ground_depth;
@@ -117,6 +118,61 @@ struct s_h1_mass_point
 	real_vector3d powered_force;
 	real_vector3d force;
 	real_vector3d torque;
+};
+
+// units.c unit function modes
+enum
+{
+	_h1_unit_function_none = 0,
+	_h1_unit_function_driver_seat_power,
+	_h1_unit_function_gunner_seat_power,
+	_h1_unit_function_aiming_change,
+	_h1_unit_function_mouth_aperture,
+	_h1_unit_function_integrated_light_power,
+	_h1_unit_function_can_blink,
+	_h1_unit_function_shield_sapping,
+};
+
+// vehicles.c vehicle function modes
+enum
+{
+	_h1_vehicle_function_none = 0,
+	_h1_vehicle_function_speed_absolute,
+	_h1_vehicle_function_speed_forward,
+	_h1_vehicle_function_speed_reverse,
+	_h1_vehicle_function_slide_absolute,
+	_h1_vehicle_function_slide_left,
+	_h1_vehicle_function_slide_right,
+	_h1_vehicle_function_speed_or_slide,
+	_h1_vehicle_function_turn_absolute,
+	_h1_vehicle_function_turn_left,
+	_h1_vehicle_function_turn_right,
+	_h1_vehicle_function_flag2,
+	_h1_vehicle_function_flag3,
+	_h1_vehicle_function_unused13,
+	_h1_vehicle_function_velocity_absolute,
+	_h1_vehicle_function_velocity_moving,
+	_h1_vehicle_function_velocity_sliding,
+	_h1_vehicle_function_velocity_forward,
+	_h1_vehicle_function_velocity_up,
+	_h1_vehicle_function_velocity_up_alternate,
+	_h1_vehicle_function_left_tread_position,
+	_h1_vehicle_function_right_tread_position,
+	_h1_vehicle_function_speed_minus_turn,
+	_h1_vehicle_function_speed_plus_turn,
+	_h1_vehicle_function_wheel_position_a,
+	_h1_vehicle_function_wheel_position_b,
+	_h1_vehicle_function_wheel_position_c,
+	_h1_vehicle_function_wheel_position_d,
+	_h1_vehicle_function_speed_absolute_a,
+	_h1_vehicle_function_speed_absolute_b,
+	_h1_vehicle_function_speed_absolute_c,
+	_h1_vehicle_function_speed_absolute_d,
+	_h1_vehicle_function_sideslip,
+	_h1_vehicle_function_hover,
+	_h1_vehicle_function_thrust,
+	_h1_vehicle_function_speed_blend,
+	_h1_vehicle_function_boost,
 };
 
 struct s_h1_powered_mass_point
@@ -342,6 +398,169 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 	return true;
 }
 
+// units.c unit_export_function_values and vehicles.c vehicle_export_function_values (halo 1 vehicles only)
+void h1_vehicle_functions_export(datum vehicle_index, real32* incoming)
+{
+	const object_datum* object = object_try_and_get(vehicle_index);
+	const datum h1_definition_index = object ? h1_objects_h1_definition_get(object->definition_index) : NONE;
+	const h1_vehi* definition = h1_definition_index != NONE ? (const h1_vehi*)g_h1_cache_file->tag_get('vehi', h1_definition_index) : NULL;
+	const vehicle_datum* vehicle = definition ? (const vehicle_datum*)object_try_and_get_and_verify_type(vehicle_index, _object_mask_vehicle) : NULL;
+	if (!vehicle)
+	{
+		return;
+	}
+	auto found = g_h1_vehicle_states.find(vehicle_index);
+	const s_h1_vehicle_state empty_state = {};
+	const s_h1_vehicle_state* state = found != g_h1_vehicle_states.end() ? &found->second : &empty_state;
+
+	const int16 unit_modes[4] = { definition->a_in_2, definition->b_in_2, definition->c_in_2, definition->d_in_2 };
+	for (int32 i = 0; i < 4; i++)
+	{
+		real32 value = 0.f;
+		switch (unit_modes[i])
+		{
+		case _h1_unit_function_none:
+			continue;
+		case _h1_unit_function_driver_seat_power:
+			value = vehicle->unit.driver_seat_power;
+			break;
+		case _h1_unit_function_gunner_seat_power:
+			value = vehicle->unit.gunner_seat_power;
+			break;
+		case _h1_unit_function_can_blink:
+			value = 1.f;
+			break;
+		default:
+			// aiming change, mouth aperture, integrated light power and shield sapping
+			break;
+		}
+		incoming[i] = value;
+	}
+
+	// halo 1's velocity, per tick
+	real_vector3d velocity, angular_velocity;
+	object_get_velocities(vehicle_index, &velocity, &angular_velocity);
+	scale_vector3d(&velocity, 1.f / k_h1_ticks_per_second, &velocity);
+	const real32 forward_speed = fabsf(definition->maximum_forward_speed);
+	const real32 reverse_speed = fabsf(definition->maximum_reverse_speed);
+	const real32 maximum_speed = MAX(forward_speed, reverse_speed);
+	const real32 left_slide = fabsf(definition->maximum_left_slide);
+	const real32 right_slide = fabsf(definition->maximum_right_slide);
+	const real32 maximum_slide = MAX(left_slide, right_slide);
+	// the tag's turns are in degrees, halo 1's turn in radians
+	const real32 left_turn = fabsf(DEGREES_TO_RADIANS(definition->maximum_left_turn));
+	const real32 right_turn = fabsf(DEGREES_TO_RADIANS(definition->maximum_right_turn_negative));
+	const real32 maximum_turn = MAX(left_turn, right_turn);
+	auto ratio = [](real32 value, real32 maximum) { return maximum > 0.f ? value / maximum : 0.f; };
+
+	const int16 vehicle_modes[4] = { definition->a_in_3, definition->b_in_3, definition->c_in_3, definition->d_in_3 };
+	for (int32 i = 0; i < 4; i++)
+	{
+		real32 value = 0.f;
+		switch (vehicle_modes[i])
+		{
+		case _h1_vehicle_function_none:
+			continue;
+		case _h1_vehicle_function_speed_absolute:
+		case _h1_vehicle_function_speed_absolute_a:
+		case _h1_vehicle_function_speed_absolute_b:
+		case _h1_vehicle_function_speed_absolute_c:
+		case _h1_vehicle_function_speed_absolute_d:
+			value = ratio(fabsf(state->speed), maximum_speed);
+			break;
+		case _h1_vehicle_function_speed_forward:
+			value = ratio(MAX(state->speed, 0.f), forward_speed);
+			break;
+		case _h1_vehicle_function_speed_reverse:
+			value = ratio(fabsf(MIN(state->speed, 0.f)), reverse_speed);
+			break;
+		case _h1_vehicle_function_slide_absolute:
+			value = ratio(fabsf(state->slide), maximum_slide);
+			break;
+		case _h1_vehicle_function_slide_left:
+			value = ratio(fabsf(state->slide), left_slide);
+			break;
+		case _h1_vehicle_function_slide_right:
+			value = ratio(fabsf(state->slide), right_slide);
+			break;
+		case _h1_vehicle_function_speed_or_slide:
+			value = MAX(ratio(fabsf(state->speed), maximum_speed), ratio(fabsf(state->slide), maximum_slide));
+			break;
+		case _h1_vehicle_function_turn_absolute:
+			value = ratio(fabsf(state->turn), maximum_turn);
+			break;
+		case _h1_vehicle_function_turn_left:
+			value = ratio(fabsf(state->turn), left_turn);
+			break;
+		case _h1_vehicle_function_turn_right:
+			value = ratio(fabsf(state->turn), right_turn);
+			break;
+		case _h1_vehicle_function_flag2:
+			value = TEST_BIT(state->flags, 2) ? 1.f : 0.f;
+			break;
+		case _h1_vehicle_function_flag3:
+			value = TEST_BIT(state->flags, 3) ? 1.f : 0.f;
+			break;
+		case _h1_vehicle_function_velocity_absolute:
+			value = ratio(magnitude3d(&velocity), maximum_speed);
+			break;
+		case _h1_vehicle_function_velocity_moving:
+			// on the ground
+			value = state->airborne_ticks == 0 ? ratio(magnitude3d(&velocity), maximum_speed) : 0.f;
+			break;
+		case _h1_vehicle_function_velocity_forward:
+			value = ratio(fabsf(dot_product3d(&velocity, &vehicle->object.forward)), maximum_speed);
+			break;
+		case _h1_vehicle_function_velocity_up:
+		case _h1_vehicle_function_velocity_up_alternate:
+			value = ratio(fabsf(dot_product3d(&velocity, &vehicle->object.up)), maximum_speed);
+			break;
+		case _h1_vehicle_function_left_tread_position:
+			value = ratio(state->left_tread, definition->wheel_circumference);
+			break;
+		case _h1_vehicle_function_right_tread_position:
+			value = ratio(state->right_tread, definition->wheel_circumference);
+			break;
+		case _h1_vehicle_function_speed_minus_turn:
+			value = ratio(fabsf(state->speed - state->turn), maximum_speed);
+			break;
+		case _h1_vehicle_function_speed_plus_turn:
+			value = ratio(fabsf(state->speed + state->turn), maximum_speed);
+			break;
+		case _h1_vehicle_function_wheel_position_a:
+		case _h1_vehicle_function_wheel_position_b:
+		case _h1_vehicle_function_wheel_position_c:
+		case _h1_vehicle_function_wheel_position_d:
+			value = ratio(state->wheel, definition->wheel_circumference);
+			break;
+		case _h1_vehicle_function_sideslip:
+		{
+			const real32 along = dot_product3d(&velocity, &vehicle->object.forward);
+			const real_vector3d across = { velocity.i - vehicle->object.forward.i * along, velocity.j - vehicle->object.forward.j * along, velocity.k - vehicle->object.forward.k * along };
+			value = magnitude3d(&across) * (1.f / 0.3f);
+			value *= value;
+		}
+			break;
+		case _h1_vehicle_function_hover:
+			value = state->hover;
+			break;
+		case _h1_vehicle_function_speed_blend:
+		{
+			const real32 dot_speed = ratio(fabsf(dot_product3d(&velocity, &vehicle->object.forward)), maximum_speed);
+			const real32 forward_value = ratio(fabsf(state->speed), forward_speed);
+			const real32 blend = PIN(((real32)state->airborne_ticks * 0.2f + 1.f) * 0.5f, 0.f, 1.f);
+			value = dot_speed * (1.f - blend) + forward_value * blend;
+		}
+			break;
+		default:
+			// sliding velocity (halo 1's sliding flag), thrust and boost (halo 1's planes)
+			break;
+		}
+		incoming[i] = PIN(value, 0.f, 1.f);
+	}
+	return;
+}
+
 /* ---------- private code */
 
 // the unit in the vehicle's driver seat (halo 2 keeps the driver's controls on the driver), NONE without one
@@ -398,6 +617,7 @@ static void h1_vehicle_suspension_update(datum vehicle_index, const h1_vehi* h1_
 	const object_datum* object = object_get(vehicle_index);
 	real_matrix4x3 matrix;
 	matrix4x3_from_point_and_vectors(&matrix, &object->object.position, &object->object.forward, &object->object.up);
+	real32 maximum_shift = 0.f;
 	for (int32 i = 0; i < animation->suspension_animations.count && i < NUMBEROF(state->suspension); i++)
 	{
 		const h1_antr_vehicles_suspension_animations* suspension = g_h1_cache_file->block_get(animation->suspension_animations, i);
@@ -423,7 +643,14 @@ static void h1_vehicle_suspension_update(datum vehicle_index, const h1_vehi* h1_
 		const uint32 flags = FLAG(_collision_test_structure_bit) | FLAG(_collision_test_instanced_geometry_bit) | FLAG(_collision_test_objects_bit);
 		const real32 t = collision_test_vector(flags, &start, &vector, vehicle_index, NONE, &collision) ? collision.t : 1.f;
 		const real32 shift = PIN((1.f - t) + (1.f - t), 0.f, 1.f);
+		maximum_shift = MAX(maximum_shift, shift - current);
 		state->suspension[i] = (uint8)(int32)(PIN((shift + current) * 0.5f, 0.f, 1.f) * 255.f);
+	}
+
+	// a hard landing on the suspension
+	if (h1_vehicle->suspension_sound.index != NONE && maximum_shift > 0.3f)
+	{
+		h1_sound_impulse(h1_vehicle->suspension_sound.index, &object->object.position, PIN((maximum_shift - 0.3f) * (1.f / (0.9f - 0.3f)), 0.f, 1.f));
 	}
 	return;
 }

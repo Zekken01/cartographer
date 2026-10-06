@@ -12,3 +12,6 @@ bool h1_vehicle_physics_update(datum vehicle_index);
 
 // the vehicle object type's update runs halo 1's after halo 2's for halo 1 vehicles
 void h1_vehicle_physics_apply_patches(void);
+
+// the unit and vehicle function inputs (a in to d in) of a halo 1 vehicle, after its object ones; nothing for other objects
+void h1_vehicle_functions_export(datum vehicle_index, real32* incoming);

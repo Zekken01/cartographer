@@ -77,6 +77,16 @@ struct s_h1_sound_permutation
 {
 	std::vector<int16> samples;
 	real32 gain;
+	int32 pitch_range;
+};
+
+// a pitch range's variations (sound_pitch_range): the ones played for pitches within its bend bounds
+struct s_h1_sound_pitch_range
+{
+	real_bounds bend_bounds;
+	real32 playback_rate;
+	int32 first_permutation;
+	int32 permutation_count;
 };
 
 struct s_h1_sound_data
@@ -88,7 +98,11 @@ struct s_h1_sound_data
 	real32 maximum_distance;
 	real32 zero_gain_modifier;	// the gain at a scale of 0 and of 1 (sound_scale_value)
 	real32 one_gain_modifier;
-	std::vector<s_h1_sound_permutation> permutations;
+	real32 zero_pitch_modifier;	// the pitch at a scale of 0 and of 1
+	real32 one_pitch_modifier;
+	real32 maximum_bend_per_second;
+	std::vector<s_h1_sound_permutation> permutations;	// grouped by pitch range
+	std::vector<s_h1_sound_pitch_range> pitch_ranges;
 };
 
 struct s_h1_voice
@@ -102,6 +116,8 @@ struct s_h1_voice
 	uint32 random;
 	real32 target_gain[2];	// set by the game thread
 	real32 gain[2];			// what the mixer last applied
+	volatile real32 pitch;	// set by the game thread, the mixer plays at it (and picks the pitch range of the next variation by it)
+	int32 pitch_range;
 };
 
 struct s_h1_looping_sound
@@ -119,6 +135,7 @@ struct s_h1_looping_sound
 	std::vector<std::shared_ptr<s_h1_voice>> track_voices;
 	std::vector<real32> track_gains;
 	std::vector<real32> track_minimum_distances;
+	std::vector<real32> track_pitches;		// bent toward the scale's pitch at the sound's maximum bend
 	std::vector<real32> detail_timers;
 };
 
@@ -179,6 +196,8 @@ static void h1_sound_decode_xbox_adpcm(const uint8* source, uint32 size, int32 c
 static uint32 h1_sound_random(uint32* seed);
 static real32 h1_sound_random_range(real32 lower, real32 upper);
 static std::shared_ptr<s_h1_voice> h1_sound_voice_new(datum sound_index, bool looping);
+static int32 h1_sound_pitch_range_find(const s_h1_sound_data* sound, real32 pitch, int32 old_range);
+static int32 h1_sound_permutation_next(const s_h1_sound_data* sound, int32 pitch_range, int32 old_permutation, uint32* random);
 static void h1_sound_voice_set_gain(s_h1_voice* voice, real32 left, real32 right);
 static std::unique_ptr<s_h1_looping_sound> h1_looping_sound_new(datum definition_index, const real_point3d* position);
 static void h1_looping_sound_start_voices(s_h1_looping_sound* loop);
@@ -590,10 +609,12 @@ static void h1_looping_sound_start_voices(s_h1_looping_sound* loop)
 {
 	const h1_lsnd* definition = (const h1_lsnd*)g_h1_cache_file->tag_get('lsnd', loop->definition_index);
 	loop->track_voices.clear();
+	loop->track_pitches.clear();
 	for (int32 i = 0; i < definition->tracks.count; i++)
 	{
 		const h1_lsnd_tracks* track = g_h1_cache_file->block_get(definition->tracks, i);
 		loop->track_voices.push_back(h1_sound_voice_new(track->loop.index, true));
+		loop->track_pitches.push_back(0.f);
 	}
 	return;
 }
@@ -667,6 +688,24 @@ static bool h1_looping_sound_update(s_h1_looping_sound* loop, real32 dt)
 		}
 		// sound_scale_value: the sound's gain between its zero and one modifiers by the scale
 		const real32 scale_gain = (voice->sound->one_gain_modifier - voice->sound->zero_gain_modifier) * loop->scale + voice->sound->zero_gain_modifier;
+
+		// and its pitch, which bends there no faster than the sound allows (limit_pitch)
+		const real32 desired_pitch = (voice->sound->one_pitch_modifier - voice->sound->zero_pitch_modifier) * loop->scale + voice->sound->zero_pitch_modifier;
+		if (i < loop->track_pitches.size())
+		{
+			real32 pitch = loop->track_pitches[i];
+			if (voice->sound->maximum_bend_per_second > 1.f && pitch > 0.f)
+			{
+				const real32 bend = powf(voice->sound->maximum_bend_per_second, dt);
+				pitch = desired_pitch > pitch ? MIN(desired_pitch, pitch * bend) : MAX(desired_pitch, pitch / bend);
+			}
+			else
+			{
+				pitch = desired_pitch;
+			}
+			loop->track_pitches[i] = pitch;
+			voice->pitch = pitch;
+		}
 		const real32 gain = loop->track_gains[i] * voice->sound->gain * loop->fade * scale_gain;
 		real32 left = gain, right = gain;
 		if (loop->positional)
@@ -728,7 +767,9 @@ static std::shared_ptr<s_h1_voice> h1_sound_voice_new(datum sound_index, bool lo
 	std::shared_ptr<s_h1_voice> voice = std::make_shared<s_h1_voice>();
 	voice->sound = sound;
 	voice->random = h1_sound_random(&g_h1_sound.random);
-	voice->permutation = (int32)(voice->random % sound->permutations.size());
+	voice->pitch = 1.f;
+	voice->pitch_range = h1_sound_pitch_range_find(sound.get(), 1.f, NONE);
+	voice->permutation = h1_sound_permutation_next(sound.get(), voice->pitch_range, NONE, &voice->random);
 	voice->position = 0.0;
 	voice->looping = looping;
 	voice->finished = false;
@@ -739,6 +780,55 @@ static std::shared_ptr<s_h1_voice> h1_sound_voice_new(datum sound_index, bool lo
 	// callers hold the voices lock
 	g_h1_sound.voices.push_back(voice);
 	return voice;
+}
+
+// sound_definition_find_pitch_range_by_pitch: the old range while the pitch is within its bend bounds, else the first range it's
+// within, else the closest one
+static int32 h1_sound_pitch_range_find(const s_h1_sound_data* sound, real32 pitch, int32 old_range)
+{
+	const int32 count = (int32)sound->pitch_ranges.size();
+	if (VALID_INDEX(old_range, count))
+	{
+		const s_h1_sound_pitch_range* range = &sound->pitch_ranges[old_range];
+		if (range->permutation_count > 0 && range->bend_bounds.lower <= pitch && pitch <= range->bend_bounds.upper)
+		{
+			return old_range;
+		}
+	}
+	int32 result = 0;
+	real32 closest_ratio = FLT_MAX;
+	for (int32 i = 0; i < count; i++)
+	{
+		const s_h1_sound_pitch_range* range = &sound->pitch_ranges[i];
+		if (range->permutation_count <= 0)
+		{
+			continue;
+		}
+		if (range->bend_bounds.lower <= pitch && pitch <= range->bend_bounds.upper)
+		{
+			return i;
+		}
+		const real32 ratio = range->bend_bounds.upper < pitch ? pitch / MAX(range->bend_bounds.upper, 0.001f) : range->bend_bounds.lower / MAX(pitch, 0.001f);
+		if (ratio < closest_ratio)
+		{
+			closest_ratio = ratio;
+			result = i;
+		}
+	}
+	return result;
+}
+
+// a random variation of the pitch range, never the old one twice in a row
+static int32 h1_sound_permutation_next(const s_h1_sound_data* sound, int32 pitch_range, int32 old_permutation, uint32* random)
+{
+	const s_h1_sound_pitch_range* range = &sound->pitch_ranges[pitch_range];
+	const int32 count = range->permutation_count;
+	const int32 old = old_permutation - range->first_permutation;
+	if (count > 1 && VALID_INDEX(old, count))
+	{
+		return range->first_permutation + (old + 1 + (int32)(h1_sound_random(random) % (count - 1))) % count;
+	}
+	return range->first_permutation + (int32)(h1_sound_random(random) % MAX(count, 1));
 }
 
 static void h1_sound_voice_set_gain(s_h1_voice* voice, real32 left, real32 right)
@@ -829,8 +919,7 @@ static std::shared_ptr<const s_h1_sound_data> h1_sound_data_get(datum sound_inde
 
 	std::shared_ptr<s_h1_sound_data> data;
 	const h1_snd* sound = (const h1_snd*)g_h1_cache_file->tag_get('snd!', sound_index);
-	const h1_snd_pitch_ranges* pitch_range = sound ? g_h1_cache_file->block_get(sound->pitch_ranges, 0) : NULL;
-	if (pitch_range)
+	if (sound && sound->pitch_ranges.count > 0)
 	{
 		data = std::make_shared<s_h1_sound_data>();
 		data->channel_count = sound->encoding == 1 ? 2 : 1;
@@ -838,12 +927,27 @@ static std::shared_ptr<const s_h1_sound_data> h1_sound_data_get(datum sound_inde
 		data->gain = sound->gain_modifier > 0.f ? sound->gain_modifier : 1.f;
 		data->zero_gain_modifier = sound->gain_modifier_2;
 		data->one_gain_modifier = sound->gain_modifier_3;
+		data->zero_pitch_modifier = sound->pitch_modifier > 0.f ? sound->pitch_modifier : 1.f;
+		data->one_pitch_modifier = sound->pitch_modifier_2 > 0.f ? sound->pitch_modifier_2 : 1.f;
+		data->maximum_bend_per_second = sound->maximum_bend_per_second;
 
 		const real_bounds* class_distances = VALID_INDEX(sound->f_class, NUMBEROF(k_h1_sound_class_distances)) ? &k_h1_sound_class_distances[sound->f_class] : NULL;
 		data->minimum_distance = sound->minimum_distance > 0.f ? sound->minimum_distance : (class_distances ? class_distances->lower : 1.f);
 		data->maximum_distance = sound->maximum_distance > 0.f ? sound->maximum_distance : (class_distances ? class_distances->upper : 10.f);
 		data->minimum_distance = MAX(data->minimum_distance, 0.1f);
 		data->maximum_distance = MAX(data->maximum_distance, data->minimum_distance + 0.1f);
+
+		for (int32 range_index = 0; range_index < sound->pitch_ranges.count; range_index++)
+		{
+		const h1_snd_pitch_ranges* pitch_range = g_h1_cache_file->block_get(sound->pitch_ranges, range_index);
+		s_h1_sound_pitch_range range;
+		range.bend_bounds = pitch_range->bend_bounds;
+		if (range.bend_bounds.lower <= 0.f && range.bend_bounds.upper <= 0.f)
+		{
+			range.bend_bounds = { 0.f, FLT_MAX };
+		}
+		range.playback_rate = pitch_range->playback_rate > 0.f ? pitch_range->playback_rate : 1.f;
+		range.first_permutation = (int32)data->permutations.size();
 
 		// the first actual permutation count permutations are the variations, the rest continue them
 		const int32 permutation_count = pitch_range->permutations.count;
@@ -868,8 +972,12 @@ static std::shared_ptr<const s_h1_sound_data> h1_sound_data_get(datum sound_inde
 			}
 			if (variation.samples.size() >= (size_t)data->channel_count * 2)
 			{
+				variation.pitch_range = range_index;
 				data->permutations.push_back(std::move(variation));
 			}
+		}
+		range.permutation_count = (int32)data->permutations.size() - range.first_permutation;
+		data->pitch_ranges.push_back(range);
 		}
 
 		if (data->permutations.empty())
@@ -1076,7 +1184,8 @@ static void h1_sound_mix(int16* output, int32 frame_count)
 
 			const s_h1_sound_data* sound = voice->sound.get();
 			const int32 channel_count = sound->channel_count;
-			const double step = (double)sound->sample_rate / k_h1_sound_output_rate;
+			const real32 pitch = voice->pitch > 0.f ? voice->pitch : 1.f;
+			const double step = (double)sound->sample_rate / k_h1_sound_output_rate * pitch * sound->pitch_ranges[voice->pitch_range].playback_rate;
 			const real32 start_gain[2] = { voice->gain[0] * master_start, voice->gain[1] * master_start };
 			const real32 end_gain[2] = { voice->target_gain[0] * master_end, voice->target_gain[1] * master_end };
 			voice->gain[0] = voice->target_gain[0];
@@ -1094,13 +1203,11 @@ static void h1_sound_mix(int16* output, int32 frame_count)
 						voice->finished = true;
 						break;
 					}
-					// next variation, never the same one twice in a row
+					// next variation, never the same one twice in a row, from the pitch range of the voice's pitch
 					voice->position -= (double)(permutation_frames - 1);
-					const int32 count = (int32)sound->permutations.size();
-					if (count > 1)
-					{
-						voice->permutation = (voice->permutation + 1 + (int32)(h1_sound_random(&voice->random) % (count - 1))) % count;
-					}
+					const int32 range = h1_sound_pitch_range_find(sound, pitch, voice->pitch_range);
+					voice->permutation = h1_sound_permutation_next(sound, range, range == voice->pitch_range ? voice->permutation : NONE, &voice->random);
+					voice->pitch_range = range;
 					permutation = &sound->permutations[voice->permutation];
 					index = MIN((int32)voice->position, (int32)(permutation->samples.size() / channel_count) - 2);
 				}
