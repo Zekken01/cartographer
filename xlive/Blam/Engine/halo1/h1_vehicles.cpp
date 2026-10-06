@@ -63,6 +63,7 @@ struct s_h1_vehicle_tags
 static const char* h1_name_last_component(const char* path);
 static string_id h1_string_id(const char* string);
 static string_id h1_marker_string_id(const char* name);
+static real_quaternion h1_quaternion_to_h2(const real_quaternion* rotation);
 static datum h1_camera_track_build(datum h1_track_index);
 static datum h1_render_model_build(const h1_mode* h1_model, const char* name, const h1_phys* h1_physics, const h1_vehi* h1_vehicle);
 static datum h1_collision_model_build(const h1_coll* h1_collision, const h1_mode* h1_model, const char* name);
@@ -196,6 +197,12 @@ static datum h1_camera_track_build(datum h1_track_index)
 	return track_index;
 }
 
+// halo 1 node and marker rotations build matrices from their conjugate (h1_object_tags)
+static real_quaternion h1_quaternion_to_h2(const real_quaternion* rotation)
+{
+	return { { -rotation->v.i, -rotation->v.j, -rotation->v.k }, rotation->w };
+}
+
 // halo 2 looks markers up by its own names, which spell halo 1's spaces as underscores (h1_object_tags, the effects' locations)
 static string_id h1_marker_string_id(const char* name)
 {
@@ -317,7 +324,7 @@ static datum h1_render_model_build(const h1_mode* h1_model, const char* name, co
 		nodes[i].next_sibling_node_index = h1_node->next_sibling_node_index;
 		nodes[i].import_node_index = NONE;
 		nodes[i].default_translation = h1_node->default_translation;
-		nodes[i].default_rotation = h1_node->default_rotation;
+		nodes[i].default_rotation = h1_quaternion_to_h2(&h1_node->default_rotation);
 		csmemcpy(&nodes[i].inverse_scale, &h1_node->inverse_scale, sizeof(real_matrix4x3));
 		nodes[i].distance_from_parent = h1_node->node_distance_from_parent;
 	}
@@ -768,7 +775,7 @@ static datum h1_model_build(const s_h1_vehicle_tags* tags, const h1_mode* h1_mod
 		nodes[i].first_child_node_index = h1_node->first_child_node_index;
 		nodes[i].next_sibling_node_index = h1_node->next_sibling_node_index;
 		nodes[i].default_translation = h1_node->default_translation;
-		nodes[i].default_rotation = h1_node->default_rotation;
+		nodes[i].default_rotation = h1_quaternion_to_h2(&h1_node->default_rotation);
 		csmemcpy(&nodes[i].default_inverse_scale, &h1_node->inverse_scale, sizeof(real_matrix4x3));
 	}
 	return model_index;
