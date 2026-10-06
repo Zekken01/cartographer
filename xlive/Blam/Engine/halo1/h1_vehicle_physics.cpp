@@ -85,6 +85,13 @@ enum
 	_h1_vehicle_flag_control_opposite_speed_sets_brake_bit = 4,
 };
 
+// halo 2's unit control flags (unit_control copies the control's)
+enum
+{
+	_h2_unit_control_crouch_bit = 0,
+	_h2_unit_control_jump_bit,
+};
+
 // vehicle state flags
 enum
 {
@@ -198,6 +205,7 @@ struct s_h1_vehicle_state
 	real32 left_tread;
 	real32 right_tread;
 	real32 hover;
+	real32 thrust;						// the planes' and fighters' thrust (their effects and functions)
 	uint32 flags;
 	uint8 airborne_ticks;
 	uint8 on_ground_ticks;
@@ -210,6 +218,8 @@ struct s_h1_vehicle_state
 	int8 base_animation;				// e_h1_vehicle_base_animation: idle, opening (held open) or closing (held shut)
 	int16 base_frame;
 	bool had_driver;
+	bool had_driver_in;
+	bool hovering;						// vehicle_hover: a plane holds where it is
 	real32 base_leftover_ticks;
 	bool suspension_sounded;			// the suspension sound played since the last update
 	bool commanded;						// the velocity halo 1 gave havok last update (havok collides: what it changed is the crash)
@@ -227,6 +237,9 @@ static void h1_vehicle_animation_state_set(datum vehicle_index, const s_h1_vehic
 static bool h1_vehicle_suspension_update(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, s_h1_vehicle_state* state);
 static void h1_vehicle_slipping_effects(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, const s_h1_mass_point* mass_points);
 static void h1_vehicle_ghost_effect(datum vehicle_index, const h1_vehi* h1_vehicle);
+static void h1_vehicle_pelican_effect(datum vehicle_index, const h1_vehi* h1_vehicle, const s_h1_vehicle_state* state);
+static void h1_rotation_between_frames(const real_vector3d* forward, const real_vector3d* up, const real_vector3d* desired_forward, const real_vector3d* desired_up,
+	real_vector3d* out_axis, real32* out_angle);
 static void h1_material_effect_new(datum definition_index, int16 effect_index, int16 material_type, const real_point3d* position, const real_vector3d* normal, real32 scale);
 static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, s_h1_vehicle_state* state);
 static void h1_vehicle_base_animation_update(datum vehicle_index, const h1_vehi* h1_vehicle, s_h1_vehicle_state* state);
@@ -340,10 +353,11 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 	const datum h1_definition_index = object ? h1_objects_h1_definition_get(object->definition_index) : NONE;
 	const h1_vehi* h1_vehicle = h1_definition_index != NONE ? (const h1_vehi*)g_h1_cache_file->tag_get('vehi', h1_definition_index) : NULL;
 	const h1_phys* physics = h1_vehicle ? (const h1_phys*)g_h1_cache_file->tag_get('phys', h1_vehicle->physics.index) : NULL;
-	if (!physics || physics->mass <= 0.f || physics->mass_points.count <= 0)
+	if (!h1_vehicle)
 	{
 		return false;
 	}
+	const bool has_physics = physics && physics->mass > 0.f && physics->mass_points.count > 0;
 
 	// objects.c: a halo 1 object without body vitality takes no damage (object_cannot_take_damage's flag)
 	const h1_coll* collision = (const h1_coll*)g_h1_cache_file->tag_get('coll', h1_vehicle->collision_model.index);
@@ -365,6 +379,12 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 	{
 		state->base_leftover_ticks -= 1.f;
 		h1_vehicle_base_animation_update(vehicle_index, h1_vehicle, state);
+	}
+
+	// without physics it only animates
+	if (!has_physics)
+	{
+		return false;
 	}
 
 	// riders ride, a vehicle on a parent doesn't move by itself
@@ -447,6 +467,28 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 	state->commanded = true;
 	h1_vehicle_animation_state_set(vehicle_index, state);
 	return true;
+}
+
+bool h1_vehicle_base_animation_set(datum vehicle_index, bool open)
+{
+	auto found = g_h1_vehicle_states.find(vehicle_index);
+	if (found == g_h1_vehicle_states.end())
+	{
+		return false;
+	}
+	found->second.base_animation = (int8)(open ? _h1_vehicle_base_opening : _h1_vehicle_base_closing);
+	found->second.base_frame = 0;
+	return true;
+}
+
+void h1_vehicle_hover_set(datum vehicle_index, bool hover)
+{
+	auto found = g_h1_vehicle_states.find(vehicle_index);
+	if (found != g_h1_vehicle_states.end())
+	{
+		found->second.hovering = hover;
+	}
+	return;
 }
 
 // units.c unit_export_function_values and vehicles.c vehicle_export_function_values (halo 1 vehicles only)
@@ -595,6 +637,9 @@ void h1_vehicle_functions_export(datum vehicle_index, real32* incoming)
 		case _h1_vehicle_function_hover:
 			value = state->hover;
 			break;
+		case _h1_vehicle_function_thrust:
+			value = state->thrust;
+			break;
 		case _h1_vehicle_function_speed_blend:
 		{
 			const real32 dot_speed = ratio(fabsf(dot_product3d(&velocity, &vehicle->object.forward)), maximum_speed);
@@ -658,12 +703,13 @@ static void h1_vehicle_base_animation_update(datum vehicle_index, const h1_vehi*
 		state->base_animation = _h1_vehicle_base_opening;
 		state->base_frame = 0;
 	}
-	else if (driver_in && state->base_animation != _h1_vehicle_base_closing)
+	else if (driver_in && !state->had_driver_in && state->base_animation != _h1_vehicle_base_closing)
 	{
 		state->base_animation = _h1_vehicle_base_closing;
 		state->base_frame = 0;
 	}
 	state->had_driver = driver != NULL;
+	state->had_driver_in = driver_in;
 
 	int16 frame_count = 0;
 	if (h1_animation_vehicle_base_get(h1_vehicle->animation_graph.index, (e_h1_vehicle_base_animation)state->base_animation, &frame_count) != NONE)
@@ -881,6 +927,106 @@ static void h1_vehicle_ghost_effect(datum vehicle_index, const h1_vehi* h1_vehic
 	return;
 }
 
+// create_pelican_effect: the effect where each hover and jet thruster's blast (its hover or thrust long) meets the ground
+static void h1_vehicle_pelican_effect(datum vehicle_index, const h1_vehi* h1_vehicle, const s_h1_vehicle_state* state)
+{
+	if (h1_vehicle->effect.index == NONE)
+	{
+		return;
+	}
+	object_marker markers[16];
+	const int16 hover_count = object_get_markers_by_string_id(vehicle_index, string_id_find_or_add("hover_thrusters"), markers, 15);
+	const int16 jet_count = object_get_markers_by_string_id(vehicle_index, string_id_find_or_add("jet_thrusters"), &markers[hover_count], (int16)(16 - hover_count));
+	for (int16 m = 0; m < hover_count + jet_count; m++)
+	{
+		const real_vector3d* forward = &markers[m].matrix.vectors.forward;
+		real_vector3d side, other;
+		const real_vector3d reference = fabsf(forward->k) < 0.9f ? real_vector3d{ 0.f, 0.f, 1.f } : real_vector3d{ 1.f, 0.f, 0.f };
+		cross_product3d(forward, &reference, &side);
+		normalize3d(&side);
+		cross_product3d(forward, &side, &other);
+		const real32 angle = (_pi / 12.f) * (real32)rand() / (real32)RAND_MAX;
+		const real32 around = 2.f * _pi * (real32)rand() / (real32)RAND_MAX;
+		real_vector3d direction = *forward;
+		scale_vector3d(&direction, cosf(angle), &direction);
+		h1_vector_scale_add(&direction, &side, sinf(angle) * cosf(around));
+		h1_vector_scale_add(&direction, &other, sinf(angle) * sinf(around));
+
+		const real32 length = (m < hover_count ? state->hover : state->thrust) * 6.f + 2.f;
+		real_vector3d vector;
+		scale_vector3d(&direction, length, &vector);
+		collision_result collision;
+		const uint32 flags = FLAG(_collision_test_structure_bit) | FLAG(_collision_test_instanced_geometry_bit) | FLAG(_collision_test_objects_bit);
+		if (!collision_test_vector(flags, &markers[m].matrix.position, &vector, vehicle_index, NONE, &collision))
+		{
+			continue;
+		}
+		const real32 scale = 1.f - collision.t;
+		const real_vector3d* normal = &collision.fog_plane.n;
+		real_vector3d reflected = direction;
+		h1_vector_scale_add(&reflected, normal, -2.f * dot_product3d(&direction, normal));
+		const char* const marker_names[3] = { "incident", "normal", "reflected" };
+		const real_point3d marker_points[3] = { collision.point, collision.point, collision.point };
+		const real_vector3d marker_forwards[3] = { { -direction.i, -direction.j, -direction.k }, *normal, reflected };
+		h1_effect_new_from_markers(h1_vehicle->effect.index, NONE, 3, marker_names, marker_points, marker_forwards, scale, scale);
+	}
+	return;
+}
+
+// the rotation taking the frame (forward, up) to (desired forward, desired up): its axis (right handed, world space) and angle (0 to pi)
+static void h1_rotation_between_frames(const real_vector3d* forward, const real_vector3d* up, const real_vector3d* desired_forward, const real_vector3d* desired_up,
+	real_vector3d* out_axis, real32* out_angle)
+{
+	real_vector3d left, desired_left;
+	cross_product3d(up, forward, &left);
+	cross_product3d(desired_up, desired_forward, &desired_left);
+	const real_vector3d* actual[3] = { forward, &left, up };
+	const real_vector3d* desired[3] = { desired_forward, &desired_left, desired_up };
+	// m = desired * actual transposed (the frames' axes as columns)
+	real32 m[3][3];
+	for (int32 r = 0; r < 3; r++)
+	{
+		for (int32 c = 0; c < 3; c++)
+		{
+			m[r][c] = desired[0]->n[r] * actual[0]->n[c] + desired[1]->n[r] * actual[1]->n[c] + desired[2]->n[r] * actual[2]->n[c];
+		}
+	}
+	real32 w, x, y, z;
+	const real32 trace = m[0][0] + m[1][1] + m[2][2];
+	if (trace > 0.f)
+	{
+		const real32 s = sqrtf(trace + 1.f) * 2.f;
+		w = 0.25f * s; x = (m[2][1] - m[1][2]) / s; y = (m[0][2] - m[2][0]) / s; z = (m[1][0] - m[0][1]) / s;
+	}
+	else if (m[0][0] > m[1][1] && m[0][0] > m[2][2])
+	{
+		const real32 s = sqrtf(1.f + m[0][0] - m[1][1] - m[2][2]) * 2.f;
+		w = (m[2][1] - m[1][2]) / s; x = 0.25f * s; y = (m[0][1] + m[1][0]) / s; z = (m[0][2] + m[2][0]) / s;
+	}
+	else if (m[1][1] > m[2][2])
+	{
+		const real32 s = sqrtf(1.f + m[1][1] - m[0][0] - m[2][2]) * 2.f;
+		w = (m[0][2] - m[2][0]) / s; x = (m[0][1] + m[1][0]) / s; y = 0.25f * s; z = (m[1][2] + m[2][1]) / s;
+	}
+	else
+	{
+		const real32 s = sqrtf(1.f + m[2][2] - m[0][0] - m[1][1]) * 2.f;
+		w = (m[1][0] - m[0][1]) / s; x = (m[0][2] + m[2][0]) / s; y = (m[1][2] + m[2][1]) / s; z = 0.25f * s;
+	}
+	if (w < 0.f)
+	{
+		w = -w; x = -x; y = -y; z = -z;
+	}
+	*out_axis = { x, y, z };
+	const real32 length = normalize3d(out_axis);
+	*out_angle = length > 0.f ? 2.f * atan2f(length, w) : 0.f;
+	if (length <= 0.f)
+	{
+		*out_axis = *global_zero_vector3d;
+	}
+	return;
+}
+
 // vehicle_update for one halo 1 tick
 static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, s_h1_vehicle_state* state)
 {
@@ -895,10 +1041,13 @@ static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, cons
 	const bool own_facing = !driver && magnitude_squared3d(&unit->unit.desired_facing_vector) > 0.5f;
 	const real_vector3d* desired_facing = driver ? &driver->unit.desired_facing_vector : own_facing ? &unit->unit.desired_facing_vector : forward;
 
-	// braking: controls opposite the speed
-	SET_BIT(state->flags, _h1_vehicle_braking_bit,
-		TEST_BIT(h1_vehicle->flags_3, _h1_vehicle_flag_control_opposite_speed_sets_brake_bit) &&
-		((throttle->i > 0.f && state->speed < 0.f) || (throttle->i < 0.f && state->speed > 0.f)));
+	// crouching (the crouch control), braking (the jump control, or controls opposite the speed)
+	const unit_datum* controller = driver ? driver : unit;
+	const uint32 control_flags = *(const uint32*)&controller->unit.control_flags;
+	SET_BIT(state->flags, _h1_vehicle_crouching_bit, TEST_BIT(control_flags, _h2_unit_control_crouch_bit));
+	SET_BIT(state->flags, _h1_vehicle_braking_bit, TEST_BIT(control_flags, _h2_unit_control_jump_bit) ||
+		(TEST_BIT(h1_vehicle->flags_3, _h1_vehicle_flag_control_opposite_speed_sets_brake_bit) &&
+		((throttle->i > 0.f && state->speed < 0.f) || (throttle->i < 0.f && state->speed > 0.f))));
 
 	real_vector3d left;
 	cross_product3d(up, forward, &left);
@@ -1070,6 +1219,191 @@ static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, cons
 		}
 		break;
 	}
+	case _h1_vehicle_type_human_plane:
+	{
+		// update_human_plane_physics: lift from its speed and hover, drive to its speed, torque to its desired facing banked into
+		// its sideslip
+		use_powered = false;
+		if (state->hovering)
+		{
+			// held where it is (no physics), its effects still blow
+			state->linear_velocity = *global_zero_vector3d;
+			state->angular_velocity = *global_zero_vector3d;
+			h1_vehicle_pelican_effect(vehicle_index, h1_vehicle, state);
+			return;
+		}
+		const real32 seat_power = unit->unit.driver_seat_power;
+		const real32 maximum_speed = h1_vehicle->maximum_forward_speed;
+		real32 speed_fraction = maximum_speed > 0.f ? PIN(state->speed, 0.f, maximum_speed) / maximum_speed : 0.f;
+		speed_fraction *= speed_fraction;
+		real32 factor = TEST_BIT(state->flags, _h1_vehicle_crouching_bit) ? 0.25f : TEST_BIT(state->flags, _h1_vehicle_braking_bit) ? 1.f : 0.75f;
+		factor *= 1.f - speed_fraction;
+		state->hover += PIN(factor * seat_power - state->hover, -0.05f, 0.05f);
+		state->thrust = speed_fraction * seat_power;
+
+		real_vector3d desired_forward = *desired_facing;
+		real_vector3d desired_up = { -(desired_forward.k * desired_forward.i), -(desired_forward.k * desired_forward.j), 1.f - desired_forward.k * desired_forward.k };
+		if (normalize3d(&desired_up) == 0.f)
+		{
+			desired_up = { 1.f, 0.f, 0.f };
+		}
+
+		const real32 speed = dot_product3d(&state->linear_velocity, forward);
+		const real32 drive = (state->speed - speed) * state->thrust * physics->mass * 0.05f;
+		const real32 lift = ((maximum_speed != 0.f ? fabsf(speed / maximum_speed) : 0.f) * 1.05f + state->hover * 1.3f) * k_h1_global_gravity * physics->mass;
+		real_vector3d force = *global_zero_vector3d;
+		h1_vector_scale_add(&force, up, lift);
+		h1_vector_scale_add(&force, forward, drive);
+
+		// banked into its sideslip: yaw_vectors(up, forward) rolls the desired up about the desired forward
+		const real32 yaw = maximum_speed != 0.f ? (state->linear_velocity.j * desired_forward.i - state->linear_velocity.i * desired_forward.j) * (_pi * 0.5f) / fabsf(maximum_speed) : 0.f;
+		{
+			real_vector3d cross;
+			cross_product3d(&desired_forward, &desired_up, &cross);
+			scale_vector3d(&desired_up, cosf(yaw), &desired_up);
+			h1_vector_scale_add(&desired_up, &cross, sinf(yaw));
+		}
+
+		real_vector3d axis;
+		real32 angle;
+		h1_rotation_between_frames(forward, up, &desired_forward, &desired_up, &axis, &angle);
+		const real32 torque_scale = physics->radius * physics->radius * physics->mass * 0.05f;
+		real_vector3d torque =
+		{
+			(axis.i * angle * (1.f / 30.f) - state->angular_velocity.i) * torque_scale,
+			(axis.j * angle * (1.f / 30.f) - state->angular_velocity.j) * torque_scale,
+			(axis.k * angle * (1.f / 30.f) - state->angular_velocity.k) * torque_scale,
+		};
+		h1_vector_scale_add(&magic_force, &force, seat_power);
+		h1_vector_scale_add(&magic_torque, &torque, seat_power);
+		break;
+	}
+	case _h1_vehicle_type_alien_fighter:
+	{
+		const real32 seat_power = unit->unit.driver_seat_power;
+		if (physics->powered_mass_points.count != 2)
+		{
+			use_powered = false;
+			break;
+		}
+		powered[0].antigrav_fraction = seat_power;
+		powered[1].antigrav_fraction = seat_power;
+		const real32 maximum_speed = h1_vehicle->maximum_forward_speed;
+		const real_vector3d* velocity = &state->linear_velocity;
+		if (physics->radius > 0.f)
+		{
+			// update_alien_fighter_physics_old: the plane's lift and drive, torque to its desired facing banked into its sideslip
+			real_vector3d desired_forward = *desired_facing;
+			real_vector3d desired_up = { -(desired_forward.k * desired_forward.i), -(desired_forward.k * desired_forward.j), 1.f - desired_forward.k * desired_forward.k };
+			if (normalize3d(&desired_up) == 0.f)
+			{
+				desired_up = { 1.f, 0.f, 0.f };
+			}
+			const real32 speed = dot_product3d(forward, velocity);
+			const real32 drive = (state->speed - speed) * physics->mass * 0.05f;
+			const real32 lift = (maximum_speed != 0.f ? fabsf(speed / maximum_speed) : 0.f) * physics->mass * k_h1_global_gravity * 1.05f;
+			real_vector3d force = *global_zero_vector3d;
+			h1_vector_scale_add(&force, up, lift);
+			h1_vector_scale_add(&force, forward, drive);
+
+			const real32 yaw = maximum_speed != 0.f ? (desired_forward.i * velocity->j - desired_forward.j * velocity->i) * (_pi * 0.5f) / fabsf(maximum_speed) : 0.f;
+			{
+				real_vector3d cross;
+				cross_product3d(&desired_forward, &desired_up, &cross);
+				scale_vector3d(&desired_up, cosf(yaw), &desired_up);
+				h1_vector_scale_add(&desired_up, &cross, sinf(yaw));
+			}
+			real_vector3d axis;
+			real32 angle;
+			h1_rotation_between_frames(forward, up, &desired_forward, &desired_up, &axis, &angle);
+			const real32 torque_scale = physics->radius * physics->radius * physics->mass * 0.05f;
+			real_vector3d torque =
+			{
+				(axis.i * angle * (4.f / 30.f) - state->angular_velocity.i) * torque_scale,
+				(axis.j * angle * (4.f / 30.f) - state->angular_velocity.j) * torque_scale,
+				(axis.k * angle * (4.f / 30.f) - state->angular_velocity.k) * torque_scale,
+			};
+			h1_vector_scale_add(&magic_force, &force, seat_power);
+			h1_vector_scale_add(&magic_torque, &torque, seat_power);
+		}
+		else
+		{
+			// update_alien_fighter_physics_new: accelerate to its speed along its forward (compute_acceleration), turn to its desired
+			// facing (pitched by its fixed gun pitch unless an ai drives it) banked into its sideslip
+			{
+				real_vector3d desired_velocity;
+				scale_vector3d(forward, state->speed, &desired_velocity);
+				const real32 speed_fraction = state->speed > 0.f ? (maximum_speed != 0.f ? state->speed / maximum_speed : 0.f) :
+					(h1_vehicle->maximum_reverse_speed != 0.f ? -(state->speed / h1_vehicle->maximum_reverse_speed) : 0.f);
+				real32 maximum = speed_fraction * h1_vehicle->speed_acceleration;
+				const real32 minimum = speed_fraction * h1_vehicle->speed_deceleration;
+				real_vector3d acceleration;
+				vector_from_points3d((const real_point3d*)velocity, (const real_point3d*)&desired_velocity, &acceleration);
+				acceleration.k += k_h1_global_gravity;
+				const real32 dot = dot_product3d(&desired_velocity, &acceleration);
+				const real32 acceleration_squared = magnitude_squared3d(&acceleration);
+				const real32 desired_squared = magnitude_squared3d(&desired_velocity);
+				maximum = dot > k_real_epsilon && acceleration_squared > 0.f && desired_squared > 0.f ?
+					(maximum - minimum) * (dot * dot / acceleration_squared / desired_squared) + minimum : minimum;
+				const real32 magnitude = sqrtf(acceleration_squared);
+				if (magnitude > maximum && magnitude > 0.f)
+				{
+					scale_vector3d(&acceleration, MAX(maximum, 0.f) / magnitude, &acceleration);
+				}
+				h1_vector_scale_add(&magic_force, &acceleration, physics->mass * seat_power);
+			}
+
+			real_vector3d desired_forward = *desired_facing;
+			real_vector3d desired_up = { -desired_forward.k * desired_forward.i, -desired_forward.k * desired_forward.j, 1.f - desired_forward.k * desired_forward.k };
+			if (normalize3d(&desired_up) == 0.f)
+			{
+				desired_up = *global_forward3d;
+			}
+			if (!driver || driver->unit.actor_index == NONE)
+			{
+				// pitch_vectors
+				const real32 sine = sinf(h1_vehicle->fixed_gun_pitch), cosine = cosf(h1_vehicle->fixed_gun_pitch);
+				const real_vector3d f = desired_forward, u = desired_up;
+				desired_forward = { f.i * cosine + u.i * sine, f.j * cosine + u.j * sine, f.k * cosine + u.k * sine };
+				desired_up = { u.i * cosine - f.i * sine, u.j * cosine - f.j * sine, u.k * cosine - f.k * sine };
+			}
+			const real32 yaw = maximum_speed != 0.f ? (desired_forward.i * velocity->j - desired_forward.j * velocity->i) / maximum_speed * h1_vehicle->maximum_left_turn : 0.f;
+			{
+				real_vector3d cross;
+				cross_product3d(&desired_forward, &desired_up, &cross);
+				scale_vector3d(&desired_up, cosf(yaw), &desired_up);
+				h1_vector_scale_add(&desired_up, &cross, sinf(yaw));
+			}
+			real_vector3d axis;
+			real32 angle;
+			h1_rotation_between_frames(forward, up, &desired_forward, &desired_up, &axis, &angle);
+			const real32 turn_rate = h1_vehicle->turn_rate;
+			const real32 moment = (physics->xx_moment + physics->yy_moment + physics->zz_moment) * (1.f / 3.f);
+			real_vector3d torque =
+			{
+				(axis.i * angle * turn_rate * (1.f / _pi) - state->angular_velocity.i) * moment,
+				(axis.j * angle * turn_rate * (1.f / _pi) - state->angular_velocity.j) * moment,
+				(axis.k * angle * turn_rate * (1.f / _pi) - state->angular_velocity.k) * moment,
+			};
+			h1_vector_scale_add(&magic_torque, &torque, seat_power);
+
+			// its thrust follows its spin
+			const real32 spin = turn_rate != 0.f ? magnitude3d(&state->angular_velocity) / turn_rate : 0.f;
+			real32 thrust_delta;
+			if (spin > state->thrust)
+			{
+				thrust_delta = PIN((1.f - state->thrust) * (1.f - state->thrust) * 0.2f, 0.01f, 0.05f);
+				thrust_delta = MIN(spin - state->thrust, thrust_delta);
+			}
+			else
+			{
+				thrust_delta = -MAX(state->thrust * state->thrust * 0.05f, 0.005f);
+				thrust_delta = MAX(spin - state->thrust, thrust_delta);
+			}
+			state->thrust += thrust_delta;
+		}
+		break;
+	}
 	default:
 		use_powered = false;
 		break;
@@ -1081,6 +1415,10 @@ static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, cons
 	if (h1_vehicle->type == _h1_vehicle_type_alien_scout || h1_vehicle->type == _h1_vehicle_type_alien_fighter)
 	{
 		h1_vehicle_ghost_effect(vehicle_index, h1_vehicle);
+	}
+	else if (h1_vehicle->type == _h1_vehicle_type_human_plane)
+	{
+		h1_vehicle_pelican_effect(vehicle_index, h1_vehicle, state);
 	}
 
 	// compute_airborne_ticks

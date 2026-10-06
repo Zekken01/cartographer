@@ -15,3 +15,9 @@ void h1_vehicle_physics_apply_patches(void);
 
 // the unit and vehicle function inputs (a in to d in) of a halo 1 vehicle, after its object ones; nothing for other objects
 void h1_vehicle_functions_export(datum vehicle_index, real32* incoming);
+
+// units.c unit_open and unit_close of a halo 1 vehicle: its opening or closing base animation; false for other objects
+bool h1_vehicle_base_animation_set(datum vehicle_index, bool open);
+
+// vehicles.c vehicle_hover: a halo 1 plane holds where it is (its physics stop) until it stops hovering
+void h1_vehicle_hover_set(datum vehicle_index, bool hover);
