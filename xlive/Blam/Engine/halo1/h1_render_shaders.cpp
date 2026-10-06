@@ -185,8 +185,9 @@ sampler2D secondary_detail_map : register(s2);
 sampler2D micro_detail_map : register(s3);
 sampler2D lightmap : register(s4);
 sampler2D self_illumination_map : register(s5);
+sampler2D bump_map : register(s6);		// its alpha is the alpha test's
 
-float4 detail_scales : register(c0);	// primary, secondary, micro
+float4 detail_scales : register(c0);	// primary, secondary, micro, w: bump map scale
 float4 modes : register(c1);			// type, detail function, micro detail function, alpha tested
 float4 ambient : register(c2);			// lightmap missing ambient color, w: has lightmap
 float4 debug_mode : register(c3);		// x: 1 flat color, 2 base map only, 3 lightmap only, 4 detail only
@@ -229,8 +230,9 @@ PS_OUTPUT main(PS_INPUT input)
 	float3 color = apply_detail(base.rgb, detail, modes.y);
 	color = apply_detail(color, micro.rgb, modes.z);
 
+	// rasterizer_xbox_environment.c alpha tests the lightmap pass, its texture 0 the bump map (alpha reference 0x7F)
 	if (modes.w > 0.5f)
-		clip(base.a - 0.5f);
+		clip(tex2D(bump_map, input.texcoord * detail_scales.w).a - 0.5f);
 
 	float3 light = ambient.w > 0.5f ? tex2D(lightmap, input.lightmap_texcoord).rgb : ambient.rgb;
 	light += dynamic_light(input.world, normalize(input.world_normal));
@@ -1273,13 +1275,16 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 			h1_set_sampler_addressing(stage, false, false, false);
 		}
 		h1_set_sampler_addressing(4, true, true, false);
+		// flags: alpha tested, bump map is specular mask (then not the alpha test's)
+		device->SetTexture(6, TEST_BIT(shader->flags_3, 0) && !TEST_BIT(shader->flags_3, 1) ? h1_texture_or_default(shader->bump_map, 3) : g_h1_default_textures[3]);
+		h1_set_sampler_addressing(6, false, false, false);
 
 		const real32 detail_scales[4] =
 		{
 			shader->primary_detail_map_scale != 0.f ? shader->primary_detail_map_scale : 1.f,
 			shader->secondary_detail_map_scale != 0.f ? shader->secondary_detail_map_scale : 1.f,
 			shader->micro_detail_map_scale != 0.f ? shader->micro_detail_map_scale : 1.f,
-			0.f
+			shader->bump_map_scale != 0.f ? shader->bump_map_scale : 1.f
 		};
 		const real32 modes[4] =
 		{
