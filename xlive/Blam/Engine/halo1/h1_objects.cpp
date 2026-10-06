@@ -602,6 +602,16 @@ const s_h1_object_functions* h1_object_functions_get(datum object_index)
 	return found != g_h1_object_functions.end() ? &found->second : NULL;
 }
 
+void h1_object_change_colors_set(datum object_index, const real_rgb_color colors[4])
+{
+	auto found = g_h1_object_functions.find(object_index);
+	if (found != g_h1_object_functions.end())
+	{
+		memcpy(found->second.base_colors, colors, sizeof(found->second.base_colors));
+	}
+	return;
+}
+
 bool h1_object_function_value_get(datum object_index, int16 function_index, real32* out_value)
 {
 	*out_value = 1.f;

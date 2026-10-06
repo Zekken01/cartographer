@@ -136,6 +136,9 @@ const s_h1_object_functions* h1_object_functions_get(datum object_index);
 // objects.c object_get_function_value: an outgoing function value (function index NONE: 1), false when the function is off
 bool h1_object_function_value_get(datum object_index, int16 function_index, real32* out_value);
 
+// an object's base change colors (the AI's actor variants set theirs)
+void h1_object_change_colors_set(datum object_index, const real_rgb_color colors[4]);
+
 // objects.c object_choose_random_change_colors: the four change colors of a halo 1 object created at a position
 void h1_object_change_colors_choose(datum h1_definition_index, const real_point3d* position, real_rgb_color out_colors[4]);
 

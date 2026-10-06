@@ -53,6 +53,8 @@ struct s_object_mirror
 	bool seen;
 	// halo 1 controlled the unit the last AI tick
 	bool controlled;
+	// the change colors hold the object's (and the AI's changes)
+	bool colors_valid;
 };
 
 /* ---------- globals */
@@ -150,6 +152,24 @@ void h1_ai_units_control_update(void)
 	for (auto& entry : g_object_mirrors)
 	{
 		s_object_mirror* mirror = &entry.second;
+		// objects.c object_new's change colors (the object's chosen ones) under the ones actor variants gave it, to the object
+		const ::s_h1_object_functions* functions = mirror->seen ? h1_object_functions_get(entry.first) : NULL;
+		real_rgb_color* colors = mirror->data.object.object.base_change_colors;
+		if (functions && !mirror->colors_valid)
+		{
+			for (int32 i = 0; i < NUMBER_OF_OBJECT_CHANGE_COLORS; i++)
+			{
+				if (colors[i].red == 0.f && colors[i].green == 0.f && colors[i].blue == 0.f)
+				{
+					colors[i] = *(const real_rgb_color*)&functions->base_colors[i];
+				}
+			}
+			mirror->colors_valid = true;
+		}
+		if (functions && memcmp(functions->base_colors, colors, sizeof(functions->base_colors)) != 0)
+		{
+			h1_object_change_colors_set(entry.first, (const ::real_rgb_color*)colors);
+		}
 		if (mirror->seen && TEST_FLAG(_object_mask_unit, mirror->data.object.object.type))
 		{
 			h1_ai_unit_control_update(entry.first, &mirror->data.unit, &mirror->controlled);
