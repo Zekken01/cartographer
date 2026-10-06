@@ -14,6 +14,7 @@
 #include "physics/collisions.h"
 #include "physics/physics_constants.h"
 #include "units/units.h"
+#include "units/vehicles.h"
 #include "h2_tag_definitions_generated.h"
 
 #include <unordered_map>
@@ -144,6 +145,7 @@ struct s_h1_vehicle_state
 	real_vector3d angular_velocity;		// radians per tick
 	real32 leftover_ticks;
 	bool at_rest;						// _object_at_rest_bit: halo 1 skips its physics until the vehicle wakes
+	uint8 suspension[8];				// each suspension animation's compression, 0 extended, 0xFF compressed
 };
 
 /* ---------- globals */
@@ -153,6 +155,8 @@ static std::unordered_map<datum, s_h1_vehicle_state> g_h1_vehicle_states;
 /* ---------- prototypes */
 
 static datum h1_vehicle_driver_get(datum vehicle_index);
+static void h1_vehicle_animation_state_set(datum vehicle_index, const s_h1_vehicle_state* state);
+static void h1_vehicle_suspension_update(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, s_h1_vehicle_state* state);
 static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, s_h1_vehicle_state* state);
 static void h1_physics_update(datum vehicle_index, const h1_phys* physics, s_h1_vehicle_state* state, s_h1_powered_mass_point* powered_mass_points,
 	const real_vector3d* magic_force, const real_vector3d* magic_torque, s_h1_mass_point* mass_points);
@@ -281,6 +285,7 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 	{
 		state->linear_velocity = *global_zero_vector3d;
 		state->angular_velocity = *global_zero_vector3d;
+		h1_vehicle_animation_state_set(vehicle_index, state);
 		return true;
 	}
 
@@ -309,6 +314,7 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 			real_vector3d hold = { 0.f, 0.f, physics_constants_get()->gravity * game_tick_length() };
 			Memory::GetAddress<void(__cdecl*)(datum, const real_vector3d*, const real_vector3d*)>(0x135123)(vehicle_index, &hold, &zero);
 			state->leftover_ticks = 0.f;
+			h1_vehicle_animation_state_set(vehicle_index, state);
 			return true;
 		}
 		state->at_rest = false;
@@ -332,6 +338,7 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 		state->linear_velocity.k * k_h1_ticks_per_second + spin.k + physics_constants_get()->gravity * game_tick_length(),
 	};
 	Memory::GetAddress<void(__cdecl*)(datum, const real_vector3d*, const real_vector3d*)>(0x135123)(vehicle_index, &linear, &angular);
+	h1_vehicle_animation_state_set(vehicle_index, state);
 	return true;
 }
 
@@ -351,6 +358,65 @@ static datum h1_vehicle_driver_get(datum vehicle_index)
 		}
 	}
 	return NONE;
+}
+
+// halo 2's vehicle animations (vehicle_preprocess_node_orientations alike) read the vehicle's turn, speed, wheel and suspension:
+// halo 1's, as halo 2's own drive doesn't run
+static void h1_vehicle_animation_state_set(datum vehicle_index, const s_h1_vehicle_state* state)
+{
+	vehicle_datum* vehicle = vehicle_get(vehicle_index);
+	vehicle->vehicle.speed = state->speed;
+	vehicle->vehicle.slide = state->slide;
+	vehicle->vehicle.turn = state->turn;
+	vehicle->vehicle.wheel = state->wheel;
+	vehicle->vehicle.rear_wheel = state->wheel;
+	vehicle->vehicle.left_tread = state->left_tread;
+	vehicle->vehicle.right_tread = state->right_tread;
+	csmemcpy(vehicle->vehicle.suspension, state->suspension, sizeof(state->suspension));
+	return;
+}
+
+// update_suspension: each suspension animation's mass point probes the ground along its normal over the animation's ground depths,
+// halfway from the last compression to the new one
+static void h1_vehicle_suspension_update(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, s_h1_vehicle_state* state)
+{
+	const h1_antr* graph = h1_vehicle->animation_graph.index != NONE ? (const h1_antr*)g_h1_cache_file->tag_get('antr', h1_vehicle->animation_graph.index) : NULL;
+	if (!graph || graph->vehicles.count <= 0)
+	{
+		return;
+	}
+	const h1_antr_vehicles* animation = g_h1_cache_file->block_get(graph->vehicles, 0);
+	const object_datum* object = object_get(vehicle_index);
+	real_matrix4x3 matrix;
+	matrix4x3_from_point_and_vectors(&matrix, &object->object.position, &object->object.forward, &object->object.up);
+	for (int32 i = 0; i < animation->suspension_animations.count && i < NUMBEROF(state->suspension); i++)
+	{
+		const h1_antr_vehicles_suspension_animations* suspension = g_h1_cache_file->block_get(animation->suspension_animations, i);
+		if (!VALID_INDEX(suspension->mass_point_index, physics->mass_points.count) || suspension->animation_index == NONE)
+		{
+			continue;
+		}
+		const h1_phys_mass_points* mass_point = g_h1_cache_file->block_get(physics->mass_points, suspension->mass_point_index);
+		const real32 current = state->suspension[i] == 0xFF ? 1.f : state->suspension[i] * (1.f / 255.f);
+
+		real_point3d point;
+		real_vector3d normal;
+		matrix4x3_transform_point(&matrix, &mass_point->position, &point);
+		matrix4x3_transform_vector(&matrix, &mass_point->up, &normal);
+		const real32 extent = suspension->full_extension_ground_depth - suspension->full_compression_ground_depth;
+		// from the ground depth of full compression (a mass point's ground depth is its radius less its distance to the ground)
+		const real32 offset = (suspension->full_compression_ground_depth - mass_point->radius) - extent;
+		const real_point3d start = { point.x + normal.i * offset, point.y + normal.j * offset, point.z + normal.k * offset };
+		real_vector3d vector;
+		scale_vector3d(&normal, extent + extent, &vector);
+
+		collision_result collision;
+		const uint32 flags = FLAG(_collision_test_structure_bit) | FLAG(_collision_test_instanced_geometry_bit) | FLAG(_collision_test_objects_bit);
+		const real32 t = collision_test_vector(flags, &start, &vector, vehicle_index, NONE, &collision) ? collision.t : 1.f;
+		const real32 shift = PIN((1.f - t) + (1.f - t), 0.f, 1.f);
+		state->suspension[i] = (uint8)(int32)(PIN((shift + current) * 0.5f, 0.f, 1.f) * 255.f);
+	}
+	return;
 }
 
 // vehicle_update for one halo 1 tick
@@ -539,6 +605,7 @@ static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, cons
 	}
 
 	h1_physics_update(vehicle_index, physics, state, use_powered ? powered : NULL, &magic_force, &magic_torque, mass_points);
+	h1_vehicle_suspension_update(vehicle_index, h1_vehicle, physics, state);
 
 	// compute_airborne_ticks
 	if (state->airborne_ticks < 0xFF) state->airborne_ticks++;
