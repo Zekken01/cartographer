@@ -124,11 +124,6 @@ boolean biped_fix_position(long biped_index, long line_of_sight_object_index, re
 	return FALSE;
 }
 
-byte * breakable_surface_flags_get(void)
-{
-	return NULL;
-}
-
 cheat_globals cheat;
 
 struct data_array *conversation_data;
@@ -139,11 +134,6 @@ long debug_obstacle_path_goal_surface_index;
 real debug_obstacle_path_radius;
 real_point3d debug_obstacle_path_start_point;
 long debug_obstacle_path_start_surface_index;
-
-boolean hs_wake_by_name(char const* name)
-{
-	return FALSE;
-}
 
 void object_compute_node_matrices_recursive(long object_index)
 {
@@ -157,42 +147,7 @@ void object_reset(long object_index)
 }
 
 struct data_array *prop_data;
-boolean recorded_animation_controlling_unit(long unit_index)
-{
-	return FALSE;
-}
-
-boolean recorded_animation_play(long unit_index, short animation_index)
-{
-	return FALSE;
-}
-
-short scenario_get_animation_by_name(struct scenario const* scenario, char const* name)
-{
-	return 0;
-}
-
-void unit_detach_from_parent(long unit_index)
-{
-	return;
-}
-
-boolean unit_enter_seat(long unit_index, long target_unit_index, short seat_index)
-{
-	return FALSE;
-}
-
-short unit_get_animation_frames_remaining(long unit_index, short *animation_state)
-{
-	return 0;
-}
-
 boolean unit_leap_begin(long unit_index, real_vector2d const *alignment_vector)
-{
-	return FALSE;
-}
-
-boolean unit_melee_attack_begin(long unit_index, boolean continuous, real_vector2d const *alignment_vector)
 {
 	return FALSE;
 }
@@ -202,34 +157,9 @@ boolean unit_start_animation_impulse(long unit_index, short animation_impulse, r
 	return FALSE;
 }
 
-boolean unit_start_user_animation(long unit_index, long animation_graph_index, char const *animation_name, boolean interpolate)
-{
-	return FALSE;
-}
-
 boolean unit_test_animation_impulse(long unit_index, short animation_impulse)
 {
 	return FALSE;
-}
-
-boolean unit_try_and_exit_seat(long unit_index)
-{
-	return FALSE;
-}
-
-boolean vehicle_stuck(long vehicle_index, real_vector3d *direction)
-{
-	return FALSE;
-}
-
-void weapon_set_current_amount(long weapon_index, real current_amount)
-{
-	return;
-}
-
-void weapon_set_total_rounds(long weapon_index, short *rounds_array)
-{
-	return;
 }
 
 } // namespace h1_ai

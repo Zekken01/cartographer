@@ -431,6 +431,49 @@ real32 h1_weapon_logic_charged_fraction(datum weapon_index, int16 trigger_index)
 	return 0.f;
 }
 
+// halo 2's magazines hold the rounds loaded and the rest (halo 1's total less the loaded)
+void h1_weapon_logic_set_current_amount(datum weapon_index, real32 amount)
+{
+	s_h1_weapon_logic_context context;
+	if (!h1_weapon_context_get(weapon_index, &context))
+	{
+		return;
+	}
+	bool uses_age = context.definition->magazines.count == 0;
+	for (int16 i = 0; !uses_age && i < context.definition->triggers.count; i++)
+	{
+		uses_age = h1_trigger_definition_get(&context, i)->age_generated_per_round > 0.f;
+	}
+	amount = PIN(amount, 0.f, 1.f);
+	if (uses_age)
+	{
+		context.state->age = 1.f - amount;
+	}
+	else
+	{
+		// the total moves with the loaded rounds, so the rest stays
+		context.weapon->weapon.magazines[0].rounds_loaded = (int16)(h1_magazine_definition_get(&context, 0)->rounds_loaded_maximum * amount);
+	}
+	return;
+}
+
+void h1_weapon_logic_set_total_rounds(datum weapon_index, const int16* rounds)
+{
+	s_h1_weapon_logic_context context;
+	if (!h1_weapon_context_get(weapon_index, &context))
+	{
+		return;
+	}
+	for (int16 i = 0; i < context.definition->magazines.count && i < k_h1_maximum_magazines; i++)
+	{
+		weapon_magazine* magazine = &context.weapon->weapon.magazines[i];
+		const int16 total = MIN(h1_magazine_definition_get(&context, i)->rounds_total_maximum, rounds[i]);
+		magazine->rounds_loaded = MIN(magazine->rounds_loaded, total);
+		magazine->rounds_inventory = total - magazine->rounds_loaded;
+	}
+	return;
+}
+
 bool h1_weapon_logic_interface_state(datum weapon_index, s_h1_weapon_interface_state* interface_state)
 {
 	s_h1_weapon_logic_context context;

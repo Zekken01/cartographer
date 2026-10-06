@@ -3,7 +3,12 @@
 #include "units/unit_control.h"
 #include "units/units.h"
 #include "../h1_sound.h"
+#include "../h1_cache_file.h"
 #include "../h1_hs.h"
+#include "../h1_recordings.h"
+#include "../h1_weapon_logic.h"
+
+#include <unordered_set>
 
 #include "h1_ai_internal.h"
 #include "h1_ai_objects.h"
@@ -29,7 +34,35 @@ enum : uint64
 	k_h2_unit_control_primary_trigger_held = FLAG(18),
 	k_h2_unit_control_grenade_held = FLAG(23),
 	k_h2_unit_control_reload = FLAG(30),
+	// the player's melee button
+	k_h2_unit_control_melee = FLAG(2),
 };
+
+/* ---------- halo 2's unit actions */
+
+// unit_action_start (FUN_0056528d) and its enter seat request
+struct s_h2_unit_action_enter_seat
+{
+	int32 type;
+	datum vehicle_index;
+	int16 seat_index;
+	int8 pad[2];
+};
+enum
+{
+	k_h2_unit_action_enter_seat = 0x1C,
+};
+typedef bool(__cdecl* t_h2_unit_action_start)(datum unit_index, void* request);
+typedef bool(__cdecl* t_h2_unit_can_enter_seat)(datum unit_index, datum vehicle_index, int16 seat_index);
+typedef void(__cdecl* t_h2_unit_exit_vehicle)(datum unit_index);
+typedef void(__cdecl* t_h2_unit_exit_seat_end)(datum unit_index, int32 ticks);
+
+/* ---------- globals */
+
+// units halo 1 started a melee on, for their next control
+static std::unordered_set<long> g_melee_units;
+// breakable_surfaces.c: every surface whole (breaking isn't halo 1's here)
+static uint32 g_breakable_surface_flags[0x800];
 
 /* ---------- private prototypes */
 
@@ -190,6 +223,7 @@ void h1_ai_unit_control_update(long unit_index, unit_datum* unit, bool* controll
 	if (TEST_FLAG(flags, _unit_control_weapon_primary_trigger_bit)) h2_flags |= k_h2_unit_control_primary_trigger_pressed | k_h2_unit_control_primary_trigger_held;
 	if (TEST_FLAG(flags, _unit_control_throw_grenade_bit)) h2_flags |= k_h2_unit_control_grenade_pressed | k_h2_unit_control_grenade_held;
 	if (TEST_FLAG(flags, _unit_control_weapon_reload_bit)) h2_flags |= k_h2_unit_control_reload;
+	if (g_melee_units.erase(unit_index)) h2_flags |= k_h2_unit_control_melee;
 	data.control_flags = (int64)h2_flags;
 	data.aiming_speed = (uint16)unit->unit.aiming_speed;
 	data.throttle = *(const ::real_vector3d*)&unit->unit.throttle;
@@ -212,6 +246,130 @@ void h1_ai_unit_control_update(long unit_index, unit_datum* unit, bool* controll
 	normalized(&unit->unit.desired_looking_vector, &data.looking_vector);
 	::unit_control(unit_index, &data);
 	return;
+}
+
+// units.c unit_melee_attack_begin: halo 2's melee, from the unit's next control
+boolean unit_melee_attack_begin(long unit_index, boolean continuous, real_vector2d const* alignment_vector)
+{
+	const unit_datum* unit = (const unit_datum*)unit_get(unit_index);
+	if (TEST_FLAG(unit->object.damage_flags, _object_dead_bit) || unit->object.parent_object_index != NONE)
+	{
+		return FALSE;
+	}
+	g_melee_units.insert(unit_index);
+	return TRUE;
+}
+
+// units.c unit_enter_seat, unit_try_and_exit_seat, unit_detach_from_parent: halo 2's seat actions
+boolean unit_enter_seat(long unit_index, long target_unit_index, short seat_index)
+{
+	if (!Memory::GetAddress<t_h2_unit_can_enter_seat>(0x139A7A)(unit_index, target_unit_index, seat_index))
+	{
+		return FALSE;
+	}
+	s_h2_unit_action_enter_seat action = { k_h2_unit_action_enter_seat, target_unit_index, seat_index, { 0, 0 } };
+	Memory::GetAddress<t_h2_unit_action_start>(0x16528D)(unit_index, &action);
+	return TRUE;
+}
+
+boolean unit_try_and_exit_seat(long unit_index)
+{
+	const ::object_datum* object = (const ::object_datum*)::object_try_and_get_and_verify_type(unit_index, ::_object_mask_unit);
+	if (!object || object->object.parent_object_index == NONE)
+	{
+		return FALSE;
+	}
+	Memory::GetAddress<t_h2_unit_exit_vehicle>(0x18525F)(unit_index);
+	return TRUE;
+}
+
+void unit_detach_from_parent(long unit_index)
+{
+	const ::object_datum* object = (const ::object_datum*)::object_try_and_get_and_verify_type(unit_index, ::_object_mask_unit);
+	if (object && object->object.parent_object_index != NONE)
+	{
+		Memory::GetAddress<t_h2_unit_exit_seat_end>(0x165E7D)(unit_index, 0);
+	}
+	return;
+}
+
+// weapons.c weapon_set_current_amount, weapon_set_total_rounds: halo 1's weapon logic (h1_weapon_logic)
+void weapon_set_current_amount(long weapon_index, real current_amount)
+{
+	h1_weapon_logic_set_current_amount(weapon_index, current_amount);
+	return;
+}
+
+void weapon_set_total_rounds(long weapon_index, short* rounds_array)
+{
+	h1_weapon_logic_set_total_rounds(weapon_index, rounds_array);
+	return;
+}
+
+// units.c unit_start_user_animation: the scripts' custom animation (halo 2 plays it, its time is the unit's animation's)
+boolean unit_start_user_animation(long unit_index, long animation_graph_index, char const* animation_name, boolean interpolate)
+{
+	unit_datum* unit = (unit_datum*)unit_get(unit_index);
+	if (!h1_hs_custom_animation(unit_index, animation_graph_index, animation_name, interpolate != FALSE))
+	{
+		return FALSE;
+	}
+	unit->unit.animation.state = _unit_state_user_animation;
+	return TRUE;
+}
+
+// units.c unit_get_animation_frames_remaining: a user animation's ticks left
+short unit_get_animation_frames_remaining(long unit_index, short* animation_state)
+{
+	unit_datum* unit = (unit_datum*)unit_get(unit_index);
+	const short frames_remaining = h1_hs_animation_time(unit_index);
+	if (unit->unit.animation.state == _unit_state_user_animation && frames_remaining <= 0)
+	{
+		unit->unit.animation.state = _unit_state_idle;
+	}
+	*animation_state = unit->unit.animation.state;
+	return MAX(frames_remaining, 0);
+}
+
+// recorded_animations.c: the scripts' recordings (h1_recordings)
+boolean recorded_animation_play(long unit_index, short animation_index)
+{
+	return h1_recording_play(unit_index, animation_index, false);
+}
+
+boolean recorded_animation_controlling_unit(long unit_index)
+{
+	return h1_recording_controlling_unit(unit_index);
+}
+
+// recorded_animation_definitions.c scenario_get_animation_by_name
+short scenario_get_animation_by_name(struct scenario const* scenario, char const* name)
+{
+	const h1_scnr* h1_scenario = g_h1_cache_file ? g_h1_cache_file->scenario_get() : NULL;
+	for (short animation_index = 0; h1_scenario && animation_index < h1_scenario->recorded_animations.count; animation_index++)
+	{
+		if (!_stricmp(g_h1_cache_file->block_get(h1_scenario->recorded_animations, animation_index)->name, name))
+		{
+			return animation_index;
+		}
+	}
+	return NONE;
+}
+
+boolean hs_wake_by_name(char const* name)
+{
+	return h1_hs_wake_by_name(name);
+}
+
+byte* breakable_surface_flags_get(void)
+{
+	static bool s_initialized = false;
+	if (!s_initialized)
+	{
+		csmemset(g_breakable_surface_flags, 0xFF, sizeof(g_breakable_surface_flags));
+		s_initialized = true;
+	}
+	return (byte*)g_breakable_surface_flags;
 }
 
 // game_sound.c object_impulse_sound_new: the unit's speech, played at its head

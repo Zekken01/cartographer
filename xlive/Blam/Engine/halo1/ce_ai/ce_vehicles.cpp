@@ -255,4 +255,59 @@ long vehicle_find_pathfinding_surface_index(
 	return surface_index;
 }
 
+boolean vehicle_stuck(
+	long vehicle_index,
+	real_vector3d *direction)
+{
+	struct vehicle_datum *vehicle = vehicle_datum_get(vehicle_index);
+	boolean stuck = FALSE;
+
+	if (vehicle->vehicle.stuck_mass_point_flags)
+	{
+		struct physics_instance instance;
+
+		if (physics_instance_new(&instance, vehicle_index))
+		{
+			real_point3d center = *global_origin3d;
+			short mass_point_count = 0;
+			short mass_point_index;
+
+			for (mass_point_index = 0;
+				mass_point_index<instance.physics->mass_points.count;
+				mass_point_index++)
+			{
+				if (TEST_FLAG(vehicle->vehicle.stuck_mass_point_flags, mass_point_index))
+				{
+					struct physics_mass_point_definition *mass_point = TAG_BLOCK_GET_ELEMENT(
+						&instance.physics->mass_points, mass_point_index,
+						struct physics_mass_point_definition);
+
+					add_vectors3d((real_vector3d *)&center, (real_vector3d *)&mass_point->position, (real_vector3d *)&center);
+					mass_point_count++;
+				}
+			}
+
+			if (mass_point_count>0)
+			{
+				real scale = 1.0f/mass_point_count;
+				real_point3d center_in_world;
+				real_point3d origin;
+
+				center.x *= scale;
+				center.y *= scale;
+				center.z *= scale;
+
+				matrix4x3_transform_point(&instance.world_matrix, &center, &center_in_world);
+				object_get_origin(vehicle_index, &origin);
+				subtract_vectors3d((real_vector3d *)&center_in_world, (real_vector3d *)&origin, direction);
+
+				if (normalize3d(direction)!=0.0f)
+					stuck = TRUE;
+			}
+		}
+	}
+
+	return stuck;
+}
+
 } // namespace h1_ai

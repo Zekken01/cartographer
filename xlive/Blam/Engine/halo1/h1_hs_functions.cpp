@@ -1691,6 +1691,16 @@ void h1_hs_sound_dialog_note(datum sound_index)
 	return;
 }
 
+bool h1_hs_custom_animation(datum object_index, datum h1_graph_index, const char* name, bool interpolate)
+{
+	return h1_hs::hs_custom_animation(object_index, h1_graph_index, name, interpolate, NONE);
+}
+
+int16 h1_hs_animation_time(datum object_index)
+{
+	return h1_hs::hs_animation_time(object_index);
+}
+
 bool h1_hs_scripted_dialog_is_playing(void)
 {
 	return (int32)game_time_get() < h1_hs::g_scripted_dialog_end_time;

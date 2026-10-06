@@ -65,4 +65,8 @@ bool h1_weapon_logic_overheated(datum weapon_index, bool* out_overheated_exit);
 
 int32 h1_weapon_logic_first_person_messages_take(datum weapon_index, struct s_h1_first_person_weapon_message* messages, int32 maximum_count);
 // weapons.c weapon_build_weapon_interface_state, false for weapons without halo 1 state
+// weapons.c weapon_set_current_amount: the first magazine's loaded rounds (or the age) to a fraction
+void h1_weapon_logic_set_current_amount(datum weapon_index, real32 amount);
+// weapons.c weapon_set_total_rounds: each magazine's total rounds (loaded and not)
+void h1_weapon_logic_set_total_rounds(datum weapon_index, const int16* rounds);
 bool h1_weapon_logic_interface_state(datum weapon_index, s_h1_weapon_interface_state* state);

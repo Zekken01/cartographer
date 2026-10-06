@@ -29,3 +29,7 @@ int32 h1_hs_sound_impulse_time(datum sound_index);
 // sound_manager.c: a sound started, scripted dialog (its classes) plays until it ends (and a third of a second)
 void h1_hs_sound_dialog_note(datum sound_index);
 bool h1_hs_scripted_dialog_is_playing(void);
+
+// the scripts' custom_animation (a halo 1 graph's animation by name on a unit or scenery) and its ticks left
+bool h1_hs_custom_animation(datum object_index, datum h1_graph_index, const char* name, bool interpolate);
+int16 h1_hs_animation_time(datum object_index);
