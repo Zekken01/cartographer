@@ -329,6 +329,13 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 		return false;
 	}
 
+	// objects.c: a halo 1 object without body vitality takes no damage (object_cannot_take_damage's flag)
+	const h1_coll* collision = (const h1_coll*)g_h1_cache_file->tag_get('coll', h1_vehicle->collision_model.index);
+	if (collision && collision->maximum_body_vitality <= 0.f)
+	{
+		*(uint16*)((uint8*)object + 0x10A) |= 0x80;
+	}
+
 	auto found = g_h1_vehicle_states.find(vehicle_index);
 	if (found == g_h1_vehicle_states.end())
 	{
