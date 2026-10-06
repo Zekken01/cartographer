@@ -519,8 +519,11 @@ static datum h1_placement_object_new(const s_h1_placement_type* type, int32 plac
 	}
 	g_h1_scenario_objects.object_types[object_index] = type->h1_object_type;
 	h1_device_place(object_index, type->h1_object_type, placement);
-	// biped_place: a biped placed dead (scenario_biped flags bit 0) is a body (unit_kill_silent)
-	if (type->h1_object_type == _h1_object_type_biped && TEST_BIT(*(const uint32*)((const uint8*)placement + 0x4C), 0))
+	// biped_place: a biped placed dead (scenario_biped flags bit 0) is a body (unit_kill_silent); the named ones are the scripts'
+	// (attached to seats and posed by custom animations, as a30's lifepod riders): halo 2's kill would detach them and make them
+	// ragdolls, so they stay posable
+	if (type->h1_object_type == _h1_object_type_biped && TEST_BIT(*(const uint32*)((const uint8*)placement + 0x4C), 0) &&
+		placement->name_index == NONE)
 	{
 		Memory::GetAddress<void(__cdecl*)(datum)>(0x13B547)(object_index);
 	}
