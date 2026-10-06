@@ -295,8 +295,9 @@ enum actor_evade_direction
 
 enum
 {
-	_ai_index_platoon = 1,
-	_ai_index_squad,
+	// port: the shipped maps' compiled ai references are squads 1, platoons 2 (ai_script.c's ai_reference_type)
+	_ai_index_squad = 1,
+	_ai_index_platoon,
 };
 
 #define ACTOR_GRENADE_THROW_MINIMUM_COSINE 0.86602539f

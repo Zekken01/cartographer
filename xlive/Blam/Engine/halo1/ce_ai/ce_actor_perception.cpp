@@ -300,9 +300,10 @@ enum
  */
 enum
 {
+	// port: the shipped maps' compiled ai references are squads 1, platoons 2 (lz_banshee/pilot_1 is 0x4001000D in a30)
 	_ai_reference_type_encounter = 0,
-	_ai_reference_type_platoon,
 	_ai_reference_type_squad,
+	_ai_reference_type_platoon,
 	NUMBER_OF_AI_REFERENCE_TYPES,
 };
 
