@@ -121,7 +121,7 @@ datum h1_biped_definition_build(datum h1_biped_index)
 	biped->grenade_type = h1_biped->grenade_type;
 	biped->grenade_count = h1_biped->grenade_count;
 	biped->new_hud_interfaces.count = 0;
-	biped->dialogue_variants.count = 0;
+	// halo 2's unit speech crashes on a unit without dialogue variants: the host's until halo 1's dialogue (udlg) is built
 
 	// biped
 	biped->moving_turning_speed = h1_biped->moving_turning_speed;
