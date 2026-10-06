@@ -2155,7 +2155,7 @@ static void h1_particles_build_sprites(void)
 	for (s_h1_particle& particle : g_h1_effects.particles)
 	{
 		const h1_part* definition = (const h1_part*)g_h1_cache_file->tag_get('part', particle.definition_index);
-		if (!definition || particle.sequence_index == NONE || particle.frame_index < 0)
+		if (!definition || particle.sequence_index == NONE || particle.frame_index < 0 || (particle.attached_first_person && h1_first_person_hidden()))
 		{
 			continue;
 		}
@@ -4012,13 +4012,17 @@ static void h1_lens_flares_render(void)
 	h1_render_set_camera_constants(NULL, false);
 	device->SetVertexDeclaration(h1_render_vertex_declaration());
 	device->SetVertexShader(h1_render_vertex_shader());
+	// the first person weapon's flares are hidden with it
 	for (s_h1_light& light : g_h1_effects.lights)
 	{
-		h1_lens_flare_render(&light);
+		if (!light.first_person || !h1_first_person_hidden())
+		{
+			h1_lens_flare_render(&light);
+		}
 	}
 	for (s_h1_attachment& attachment : g_h1_effects.attachments)
 	{
-		if (attachment.group_tag == 'ligh')
+		if (attachment.group_tag == 'ligh' && (!attachment.light.first_person || !h1_first_person_hidden()))
 		{
 			h1_lens_flare_render(&attachment.light);
 		}

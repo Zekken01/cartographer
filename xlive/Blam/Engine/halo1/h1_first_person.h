@@ -25,6 +25,8 @@ int32 h1_first_person_models_submit(int32 user_index, s_first_person_model_data*
 bool h1_first_person_marker_get(datum object_index, const char* marker_name, real_matrix4x3* out_matrix);
 
 // draws the halo 1 first person models in front of the scene (after the transparent geometry)
+// the first person weapon isn't drawn (zoomed): what is drawn at its markers neither
+bool h1_first_person_hidden(void);
 void h1_first_person_render(real32 game_time);
 
 // the halo 1 hands of the globals become the halo 2 first person hands (no first person body)

@@ -47,6 +47,7 @@ struct s_h1_first_person_model
 static std::unordered_map<datum, datum> g_h1_first_person_models;	// halo 2 render model: halo 1 model
 // halo 2 builds the first person models only while it shows them (not in a vehicle's third person seat): drawn once per build
 static bool g_h1_first_person_frame_submitted = false;
+static bool g_h1_first_person_hidden = false;
 static std::vector<s_h1_first_person_model> g_h1_first_person_frame;
 
 /* public code */
@@ -141,18 +142,24 @@ bool h1_first_person_marker_get(datum object_index, const char* marker_name, rea
 	return false;
 }
 
+bool h1_first_person_hidden(void)
+{
+	return g_h1_first_person_hidden;
+}
+
 void h1_first_person_render(real32 game_time)
 {
-	// nothing in first person when it wasn't built since the last draw or while zoomed (first_person_weapon_render_update): its
-	// markers neither, the weapon's lights and effects
-	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(h1_first_person_weapon_unit_get(), _object_mask_unit);
+	// nothing in first person when it wasn't built since the last draw: its markers neither (the weapon's lights and effects)
 	const bool submitted = g_h1_first_person_frame_submitted;
 	g_h1_first_person_frame_submitted = false;
-	if (!submitted || (unit && unit->unit.current_zoom_level != NONE))
+	if (!submitted)
 	{
 		g_h1_first_person_frame.clear();
 	}
-	if (g_h1_first_person_frame.empty())
+	// first_person_weapon_render_update: hidden while zoomed, its markers stay (the effects of its shots)
+	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(h1_first_person_weapon_unit_get(), _object_mask_unit);
+	g_h1_first_person_hidden = unit && unit->unit.current_zoom_level != NONE;
+	if (g_h1_first_person_frame.empty() || g_h1_first_person_hidden)
 	{
 		return;
 	}
