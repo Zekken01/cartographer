@@ -9,6 +9,11 @@
 #include "h1_recordings.h"
 #include "h1_scenario_objects.h"
 #include "h1_sound.h"
+#include "h1_effects.h"
+#include "h1_objects.h"
+#include "h1_projectile_logic.h"
+#include "h1_projectiles.h"
+#include "h1_vehicle_physics.h"
 
 #include "effects/player_effects.h"
 #include "game/game.h"
@@ -17,8 +22,11 @@
 #include "game/players.h"
 #include "main/main.h"
 #include "math/real_math.h"
+#include "objects/damage.h"
+#include "scenario/scenario.h"
 #include "objects/object_types.h"
 #include "objects/objects.h"
+#include "units/units.h"
 #include "tag_files/tag_groups.h"
 
 #include <vector>
@@ -816,6 +824,533 @@ static int32 hs_sound_looping_start_procedure(const int32* arguments) { hs_sound
 static int32 hs_sound_looping_stop_procedure(const int32* arguments) { hs_sound_looping_stop(ARGUMENT_LONG(0)); return 0; }
 static int32 hs_sound_looping_set_scale_procedure(const int32* arguments) { hs_sound_looping_set_scale(ARGUMENT_LONG(0), ARGUMENT_REAL(1)); return 0; }
 
+
+/* ---------- objects, units and vehicles (objects.c, units.c, vehicles.c, hs_library_external.c) */
+
+// halo 2's own: object_attach_to_marker and object_detach as its scripts call them, unit_enter_vehicle (the seat named by its seat
+// animation), unit_try_and_exit_seat, seat filled, unit can enter seat, unit action start
+typedef void (__cdecl* t_objects_attach)(datum parent_index, string_id parent_marker, datum child_index, string_id child_marker);
+typedef void (__cdecl* t_objects_detach)(datum parent_index, datum child_index);
+typedef void (__cdecl* t_unit_enter_vehicle)(datum unit_index, datum vehicle_index, string_id seat);
+typedef bool (__cdecl* t_unit_seat_filled)(datum vehicle_index, int16 seat_index);
+typedef bool (__cdecl* t_unit_can_enter_seat)(datum unit_index, datum vehicle_index, int16 seat_index);
+typedef void (__cdecl* t_unit_exit_seat_end)(datum unit_index, int32 ticks);
+typedef void (__cdecl* t_unit_set_bool)(datum unit_index, bool value);
+typedef void (__cdecl* t_unit_set_vitality)(datum unit_index, real32 body, real32 shield);
+
+struct s_h2_unit_action_enter_seat
+{
+	int32 type;
+	datum vehicle_index;
+	int16 seat_index;
+	int8 pad[2];
+};
+
+// halo 1 marker names: halo 2's (spaces as underscores), the empty one for none
+static string_id hs_marker_name(const char* name)
+{
+	char marker[64];
+	strncpy_s(marker, name ? name : "", _TRUNCATE);
+	for (char* c = marker; *c; c++)
+	{
+		if (*c == ' ')
+		{
+			*c = '_';
+		}
+	}
+	return *marker ? string_id_find_or_add(marker) : _string_id_empty_string;
+}
+
+// the halo 1 vehicle of a halo 1 vehicle object, its seats' labels
+static const h1_vehi* hs_h1_vehicle_get(datum vehicle_index)
+{
+	const object_datum* object = hs_object_exists(vehicle_index) ? (const object_datum*)object_try_and_get_and_verify_type(vehicle_index, FLAG(_object_type_vehicle)) : NULL;
+	const datum h1_definition_index = object ? h1_objects_h1_definition_get(object->definition_index) : NONE;
+	return h1_definition_index != NONE ? (const h1_vehi*)g_h1_cache_file->tag_get('vehi', h1_definition_index) : NULL;
+}
+
+static const char* hs_h1_seat_label(const h1_vehi* h1_vehicle, int16 seat_index)
+{
+	const h1_vehi_seats* seat = h1_vehicle ? g_h1_cache_file->block_get(h1_vehicle->seats, seat_index) : NULL;
+	return seat ? seat->label : "";
+}
+
+// a seat label containing the lowercase substring (vehicle_scripting_find_available_seats)
+static bool hs_seat_label_contains(const char* label, const char* substring)
+{
+	if (!substring || !*substring)
+	{
+		return true;
+	}
+	char lower[64];
+	strncpy_s(lower, label, _TRUNCATE);
+	_strlwr_s(lower);
+	return strstr(lower, substring) != NULL;
+}
+
+static bool hs_unit_is_dead(datum unit_index)
+{
+	return TEST_BIT(*(const uint8*)((const uint8*)object_get(unit_index) + 0x10A), 2);
+}
+
+static void hs_unit_enter_seat(datum unit_index, datum vehicle_index, int16 seat_index)
+{
+	s_h2_unit_action_enter_seat action = { 0x1C, vehicle_index, seat_index, { 0, 0 } };
+	H2_FUNCTION(0x16528D, void(__cdecl*)(datum, s_h2_unit_action_enter_seat*))(unit_index, &action);
+	return;
+}
+
+static int32 hs_objects_attach(const int32* arguments)
+{
+	const datum parent_index = ARGUMENT_LONG(0), child_index = ARGUMENT_LONG(2);
+	if (hs_object_exists(parent_index) && hs_object_exists(child_index) && object_get(child_index)->object.parent_object_index == NONE)
+	{
+		H2_FUNCTION(0x14B7DC, t_objects_attach)(parent_index, hs_marker_name(ARGUMENT_STRING(1)), child_index, hs_marker_name(ARGUMENT_STRING(3)));
+	}
+	return 0;
+}
+
+static int32 hs_objects_detach(const int32* arguments)
+{
+	const datum parent_index = ARGUMENT_LONG(0), child_index = ARGUMENT_LONG(1);
+	if (hs_object_exists(parent_index) && hs_object_exists(child_index) && object_get(child_index)->object.parent_object_index == parent_index)
+	{
+		H2_FUNCTION(0x14B21D, t_objects_detach)(parent_index, child_index);
+	}
+	return 0;
+}
+
+// unit_scripting_enter_vehicle: the seat labeled so (halo 2's seat animation is the label, h1_vehicles)
+static int32 hs_unit_enter_vehicle(const int32* arguments)
+{
+	const datum unit_index = ARGUMENT_LONG(0), vehicle_index = ARGUMENT_LONG(1);
+	const char* seat_name = ARGUMENT_STRING(2);
+	if (hs_object_is_unit(unit_index) && hs_object_is_unit(vehicle_index) && seat_name && *seat_name)
+	{
+		H2_FUNCTION(0x18505F, t_unit_enter_vehicle)(unit_index, vehicle_index, hs_animation_name(seat_name));
+	}
+	return 0;
+}
+
+static int32 hs_unit_exit_vehicle(const int32* arguments)
+{
+	const datum unit_index = ARGUMENT_LONG(0);
+	if (hs_object_is_unit(unit_index) && object_get(unit_index)->object.parent_object_index != NONE)
+	{
+		H2_FUNCTION(0x18525F, t_void_datum)(unit_index);
+	}
+	return 0;
+}
+
+// vehicle_scripting_load_magic: the units into the vehicle's free seats whose labels contain the substring, as many as fit
+static int32 hs_vehicle_load_magic(const int32* arguments)
+{
+	const datum vehicle_index = ARGUMENT_LONG(0);
+	const h1_vehi* h1_vehicle = hs_h1_vehicle_get(vehicle_index);
+	if (!h1_vehicle || hs_unit_is_dead(vehicle_index))
+	{
+		return 0;
+	}
+	std::vector<int16> seats;
+	for (int16 seat_index = 0; seat_index < h1_vehicle->seats.count && seats.size() < 16; seat_index++)
+	{
+		if (hs_seat_label_contains(hs_h1_seat_label(h1_vehicle, seat_index), ARGUMENT_STRING(1)) &&
+			!H2_FUNCTION(0x13A1AC, t_unit_seat_filled)(vehicle_index, seat_index))
+		{
+			seats.push_back(seat_index);
+		}
+	}
+	int16 loaded_count = 0;
+	const int32 list_index = ARGUMENT_LONG(2);
+	for (int16 i = 0; i < object_list_count(list_index); i++)
+	{
+		const datum unit_index = object_list_get(list_index, i);
+		if (!hs_object_is_unit(unit_index))
+		{
+			continue;
+		}
+		for (int16& seat_index : seats)
+		{
+			if (seat_index == NONE || !H2_FUNCTION(0x139A7A, t_unit_can_enter_seat)(unit_index, vehicle_index, seat_index))
+			{
+				continue;
+			}
+			const unit_datum* unit = (const unit_datum*)object_get(unit_index);
+			if (unit->object.parent_object_index != NONE && unit->unit.parent_seat_index != NONE)
+			{
+				H2_FUNCTION(0x165E7D, t_unit_exit_seat_end)(unit_index, 30);
+			}
+			if (unit->object.parent_object_index == NONE)
+			{
+				hs_unit_enter_seat(unit_index, vehicle_index, seat_index);
+				seat_index = NONE;
+				loaded_count++;
+				break;
+			}
+		}
+	}
+	return loaded_count;
+}
+
+// the units riding the vehicle (in its seats)
+template<typename t_procedure>
+static void hs_vehicle_riders_iterate(datum vehicle_index, t_procedure procedure)
+{
+	if (!hs_object_exists(vehicle_index))
+	{
+		return;
+	}
+	std::vector<datum> riders;
+	for (datum child_index = object_get(vehicle_index)->object.first_child_object_index; child_index != NONE; child_index = object_get(child_index)->object.next_object_index)
+	{
+		const unit_datum* rider = (const unit_datum*)object_try_and_get_and_verify_type(child_index, _object_mask_unit);
+		if (rider && rider->unit.parent_seat_index != NONE)
+		{
+			riders.push_back(child_index);
+		}
+	}
+	for (datum rider_index : riders)
+	{
+		procedure(rider_index, ((const unit_datum*)object_get(rider_index))->unit.parent_seat_index);
+	}
+	return;
+}
+
+// vehicle_scripting_unload: the riders of the seats whose labels contain the substring get out
+static int32 hs_vehicle_unload(const int32* arguments)
+{
+	const datum vehicle_index = ARGUMENT_LONG(0);
+	const h1_vehi* h1_vehicle = hs_h1_vehicle_get(vehicle_index);
+	int16 unloaded_count = 0;
+	const char* seat_name = ARGUMENT_STRING(1);
+	hs_vehicle_riders_iterate(vehicle_index, [&](datum rider_index, int16 seat_index)
+	{
+		if (hs_seat_label_contains(hs_h1_seat_label(h1_vehicle, seat_index), seat_name))
+		{
+			H2_FUNCTION(0x18525F, t_void_datum)(rider_index);
+			unloaded_count++;
+		}
+	});
+	return unloaded_count;
+}
+
+static int32 hs_vehicle_riders(const int32* arguments)
+{
+	const int32 list_index = object_list_new();
+	hs_vehicle_riders_iterate(ARGUMENT_LONG(0), [&](datum rider_index, int16) { object_list_add(list_index, rider_index); });
+	return list_index;
+}
+
+// unit_scripting_vehicle_test_seat_list: one of the units sits in the seat labeled so
+static int32 hs_vehicle_test_seat_list(const int32* arguments)
+{
+	const datum vehicle_index = ARGUMENT_LONG(0);
+	const h1_vehi* h1_vehicle = hs_h1_vehicle_get(vehicle_index);
+	const int32 list_index = ARGUMENT_LONG(2);
+	bool result = false;
+	hs_vehicle_riders_iterate(vehicle_index, [&](datum rider_index, int16 seat_index)
+	{
+		if (_stricmp(hs_h1_seat_label(h1_vehicle, seat_index), ARGUMENT_STRING(1)) != 0)
+		{
+			return;
+		}
+		for (int16 i = 0; i < object_list_count(list_index); i++)
+		{
+			result |= object_list_get(list_index, i) == rider_index;
+		}
+	});
+	return result;
+}
+
+// unit_open and unit_close: a halo 1 vehicle's opening and closing (halo 2's unit states for the others)
+static int32 hs_unit_open(const int32* arguments)
+{
+	if (hs_object_is_unit(ARGUMENT_LONG(0)) && !h1_vehicle_base_animation_set(ARGUMENT_LONG(0), true))
+	{
+		H2_FUNCTION(0x1845C5, t_void_datum)(ARGUMENT_LONG(0));
+	}
+	return 0;
+}
+
+static int32 hs_unit_close(const int32* arguments)
+{
+	if (hs_object_is_unit(ARGUMENT_LONG(0)) && !h1_vehicle_base_animation_set(ARGUMENT_LONG(0), false))
+	{
+		H2_FUNCTION(0x18460B, t_void_datum)(ARGUMENT_LONG(0));
+	}
+	return 0;
+}
+
+static int32 hs_unit_set_enterable_by_player(const int32* arguments)
+{
+	if (hs_object_is_unit(ARGUMENT_LONG(0)))
+	{
+		H2_FUNCTION(0x185464, t_unit_set_bool)(ARGUMENT_LONG(0), ARGUMENT_BOOLEAN(1));
+	}
+	return 0;
+}
+
+static int32 hs_unit_suspended(const int32* arguments)
+{
+	if (hs_object_is_unit(ARGUMENT_LONG(0)))
+	{
+		H2_FUNCTION(0x184E1C, t_unit_set_bool)(ARGUMENT_LONG(0), ARGUMENT_BOOLEAN(1));
+	}
+	return 0;
+}
+
+// unit_scripting_doesnt_drop_items: halo 2's unit flag 16 (its own script's)
+static int32 hs_unit_doesnt_drop_items(const int32* arguments)
+{
+	const int32 list_index = ARGUMENT_LONG(0);
+	for (int16 i = 0; i < object_list_count(list_index); i++)
+	{
+		unit_datum* unit = hs_object_is_unit(object_list_get(list_index, i)) ? (unit_datum*)object_get(object_list_get(list_index, i)) : NULL;
+		if (unit)
+		{
+			unit->unit.unit_flags |= FLAG(16);
+		}
+	}
+	return 0;
+}
+
+static int32 hs_unit_set_current_vitality(const int32* arguments)
+{
+	if (hs_object_is_unit(ARGUMENT_LONG(0)))
+	{
+		H2_FUNCTION(0x184C1D, t_unit_set_vitality)(ARGUMENT_LONG(0), ARGUMENT_REAL(1), ARGUMENT_REAL(2));
+	}
+	return 0;
+}
+
+static int32 hs_units_set_current_vitality(const int32* arguments)
+{
+	const int32 list_index = ARGUMENT_LONG(0);
+	for (int16 i = 0; i < object_list_count(list_index); i++)
+	{
+		if (hs_object_is_unit(object_list_get(list_index, i)))
+		{
+			H2_FUNCTION(0x184C1D, t_unit_set_vitality)(object_list_get(list_index, i), ARGUMENT_REAL(1), ARGUMENT_REAL(2));
+		}
+	}
+	return 0;
+}
+
+static int32 hs_unit_set_maximum_vitality(const int32* arguments)
+{
+	if (hs_object_is_unit(ARGUMENT_LONG(0)))
+	{
+		H2_FUNCTION(0x184B52, t_unit_set_vitality)(ARGUMENT_LONG(0), ARGUMENT_REAL(1), ARGUMENT_REAL(2));
+	}
+	return 0;
+}
+
+static int32 hs_unit_get_total_grenade_count(const int32* arguments)
+{
+	return hs_object_is_unit(ARGUMENT_LONG(0)) ? H2_FUNCTION(0x184481, int16(__cdecl*)(datum))(ARGUMENT_LONG(0)) : 0;
+}
+
+// the unit's readied weapon is the halo 1 weapon
+static int32 hs_unit_has_weapon_readied(const int32* arguments)
+{
+	if (!hs_object_is_unit(ARGUMENT_LONG(0)))
+	{
+		return false;
+	}
+	const unit_datum* unit = (const unit_datum*)object_get(ARGUMENT_LONG(0));
+	const datum weapon_index = VALID_INDEX(unit->unit.weapon_index, 4) ? unit->unit.weapon_object_indices[unit->unit.weapon_index] : NONE;
+	return hs_object_exists(weapon_index) && h1_objects_h1_definition_get(object_get(weapon_index)->definition_index) == ARGUMENT_LONG(1);
+}
+
+static int32 hs_vehicle_hover(const int32* arguments)
+{
+	h1_vehicle_hover_set(ARGUMENT_LONG(0), ARGUMENT_BOOLEAN(1));
+	return 0;
+}
+
+// object_scripting_cannot_take_damage: halo 2's object flag (the one halo 1 objects without body vitality get)
+static void hs_object_list_take_damage(int32 list_index, bool can)
+{
+	for (int16 i = 0; i < object_list_count(list_index); i++)
+	{
+		const datum object_index = object_list_get(list_index, i);
+		if (hs_object_exists(object_index))
+		{
+			uint16* flags = (uint16*)((uint8*)object_get(object_index) + 0x10A);
+			*flags = can ? (uint16)(*flags & ~0x80) : (uint16)(*flags | 0x80);
+		}
+	}
+	return;
+}
+
+static int32 hs_object_cannot_take_damage(const int32* arguments) { hs_object_list_take_damage(ARGUMENT_LONG(0), false); return 0; }
+static int32 hs_object_can_take_damage(const int32* arguments) { hs_object_list_take_damage(ARGUMENT_LONG(0), true); return 0; }
+
+static int32 hs_object_set_scale(const int32* arguments)
+{
+	if (hs_object_exists(ARGUMENT_LONG(0)))
+	{
+		H2_FUNCTION(0x14B255, void(__cdecl*)(datum, real32, int16))(ARGUMENT_LONG(0), ARGUMENT_REAL(1), ARGUMENT_SHORT(2));
+	}
+	return 0;
+}
+
+// the region's permutation (the names are halo 2's string ids of halo 1's, h1_object_tags)
+static int32 hs_object_set_permutation(const int32* arguments)
+{
+	if (hs_object_exists(ARGUMENT_LONG(0)))
+	{
+		const char* region = ARGUMENT_STRING(1);
+		const char* permutation = ARGUMENT_STRING(2);
+		H2_FUNCTION(0xFDE3E, void(__cdecl*)(datum, string_id, string_id))(ARGUMENT_LONG(0),
+			region && *region ? string_id_find_or_add(region) : _string_id_empty_string,
+			permutation && *permutation ? string_id_find_or_add(permutation) : _string_id_default);
+	}
+	return 0;
+}
+
+// unit_can_see_point: within the angle of the unit's looking direction from its head
+static bool hs_unit_can_see_point(datum unit_index, const real_point3d* point, real32 degrees)
+{
+	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(unit_index, _object_mask_unit);
+	if (!unit)
+	{
+		return false;
+	}
+	real_point3d head;
+	object_marker marker;
+	if (object_get_markers_by_string_id(unit_index, string_id_find_or_add("head"), &marker, 1) > 0)
+	{
+		head = marker.matrix.position;
+	}
+	else
+	{
+		unit_get_camera_position(unit_index, &head);
+	}
+	real_vector3d direction;
+	vector_from_points3d(&head, point, &direction);
+	normalize3d(&direction);
+	return dot_product3d(&direction, &unit->unit.looking_vector) > cosf(DEGREES_TO_RADIANS(degrees));
+}
+
+static int32 hs_objects_can_see_object(const int32* arguments)
+{
+	const datum target_index = ARGUMENT_LONG(1);
+	if (!hs_object_exists(target_index))
+	{
+		return false;
+	}
+	real_point3d target = object_get(target_index)->object.center;
+	object_marker marker;
+	if (hs_object_is_unit(target_index) && object_get_markers_by_string_id(target_index, string_id_find_or_add("head"), &marker, 1) > 0)
+	{
+		target = marker.matrix.position;
+	}
+	const int32 list_index = ARGUMENT_LONG(0);
+	for (int16 i = 0; i < object_list_count(list_index); i++)
+	{
+		if (hs_unit_can_see_point(object_list_get(list_index, i), &target, ARGUMENT_REAL(2)))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+static int32 hs_objects_can_see_flag(const int32* arguments)
+{
+	const h1_scnr_cutscene_flags* flag = g_h1_cache_file->block_get(g_h1_cache_file->scenario_get()->cutscene_flags, ARGUMENT_SHORT(1));
+	if (!flag)
+	{
+		return false;
+	}
+	const int32 list_index = ARGUMENT_LONG(0);
+	for (int16 i = 0; i < object_list_count(list_index); i++)
+	{
+		if (hs_unit_can_see_point(object_list_get(list_index, i), &flag->position, ARGUMENT_REAL(2)))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+static void hs_cutscene_flag_forward(const h1_scnr_cutscene_flags* flag, real_vector3d* forward)
+{
+	const real32 cos_pitch = cosf(flag->facing.pitch);
+	*forward = { cosf(flag->facing.yaw) * cos_pitch, sinf(flag->facing.yaw) * cos_pitch, sinf(flag->facing.pitch) };
+	return;
+}
+
+// hs_effect_new: the effect at the cutscene flag
+static int32 hs_effect_new(const int32* arguments)
+{
+	const h1_scnr_cutscene_flags* flag = g_h1_cache_file->block_get(g_h1_cache_file->scenario_get()->cutscene_flags, ARGUMENT_SHORT(1));
+	if (flag && ARGUMENT_LONG(0) != NONE)
+	{
+		real_vector3d forward;
+		hs_cutscene_flag_forward(flag, &forward);
+		const char* const names[1] = { "" };
+		h1_effect_new_from_markers(ARGUMENT_LONG(0), NONE, 1, names, &flag->position, &forward, 1.f, 1.f);
+	}
+	return 0;
+}
+
+// hs_effect_new_from_object_marker: the effect at the object's marker
+static int32 hs_effect_new_on_object_marker(const int32* arguments)
+{
+	const datum object_index = ARGUMENT_LONG(1);
+	object_marker marker;
+	if (ARGUMENT_LONG(0) != NONE && hs_object_exists(object_index) &&
+		object_get_markers_by_string_id(object_index, hs_marker_name(ARGUMENT_STRING(2)), &marker, 1) > 0)
+	{
+		const char* const names[1] = { "" };
+		h1_effect_new_from_markers(ARGUMENT_LONG(0), NONE, 1, names, &marker.matrix.position, &marker.matrix.vectors.forward, 1.f, 1.f);
+	}
+	return 0;
+}
+
+// hs_damage_new: the damage's area of effect at the cutscene flag
+static int32 hs_damage_new(const int32* arguments)
+{
+	const h1_scnr_cutscene_flags* flag = g_h1_cache_file->block_get(g_h1_cache_file->scenario_get()->cutscene_flags, ARGUMENT_SHORT(1));
+	if (flag && ARGUMENT_LONG(0) != NONE)
+	{
+		real_vector3d forward;
+		hs_cutscene_flag_forward(flag, &forward);
+		h1_projectile_logic_area_damage(ARGUMENT_LONG(0), NONE, &flag->position, &forward, 1.f);
+	}
+	return 0;
+}
+
+// hs_damage_object: the damage on the object at its origin
+static int32 hs_damage_object(const int32* arguments)
+{
+	const datum object_index = ARGUMENT_LONG(1);
+	const datum definition_index = ARGUMENT_LONG(0) != NONE ? h1_damage_effect_build(ARGUMENT_LONG(0)) : NONE;
+	if (definition_index == NONE || !hs_object_exists(object_index))
+	{
+		return 0;
+	}
+	s_damage_data damage;
+	H2_FUNCTION(0x175BAC, void(__cdecl*)(s_damage_data*, datum))(&damage, definition_index);
+	object_get_origin(object_index, &damage.origin, false);
+	damage.epicenter = damage.origin;
+	scenario_location_from_point(&damage.location, &damage.origin);
+	object_cause_damage(&damage, object_index, NONE, NONE, NONE, NULL);
+	return 0;
+}
+
+static int32 hs_object_set_collideable(const int32* arguments)
+{
+	// object_set_collideable: halo 2's object cinematic collision
+	if (hs_object_exists(ARGUMENT_LONG(0)))
+	{
+		H2_FUNCTION(0x133BE1, void(__cdecl*)(datum, bool))(ARGUMENT_LONG(0), ARGUMENT_BOOLEAN(1));
+	}
+	return 0;
+}
+
 // functions that do nothing in halo 1's release builds, or nothing visible here, and are done
 static int32 hs_nothing(const int32* arguments) { return 0; }
 
@@ -935,6 +1470,45 @@ static const s_hs_procedure_binding k_hs_procedures[] =
 	{ "texture_cache_flush", hs_nothing },
 	{ "sound_cache_flush", hs_nothing },
 	{ "cls", hs_nothing },
+	{ "objects_attach", hs_objects_attach },
+	{ "objects_detach", hs_objects_detach },
+	{ "unit_enter_vehicle", hs_unit_enter_vehicle },
+	{ "unit_exit_vehicle", hs_unit_exit_vehicle },
+	{ "vehicle_load_magic", hs_vehicle_load_magic },
+	{ "vehicle_unload", hs_vehicle_unload },
+	{ "vehicle_riders", hs_vehicle_riders },
+	{ "vehicle_test_seat_list", hs_vehicle_test_seat_list },
+	{ "unit_open", hs_unit_open },
+	{ "unit_close", hs_unit_close },
+	{ "unit_set_enterable_by_player", hs_unit_set_enterable_by_player },
+	{ "unit_suspended", hs_unit_suspended },
+	{ "unit_doesnt_drop_items", hs_unit_doesnt_drop_items },
+	{ "unit_set_current_vitality", hs_unit_set_current_vitality },
+	{ "units_set_current_vitality", hs_units_set_current_vitality },
+	{ "unit_set_maximum_vitality", hs_unit_set_maximum_vitality },
+	{ "unit_get_total_grenade_count", hs_unit_get_total_grenade_count },
+	{ "unit_has_weapon_readied", hs_unit_has_weapon_readied },
+	{ "vehicle_hover", hs_vehicle_hover },
+	{ "object_cannot_take_damage", hs_object_cannot_take_damage },
+	{ "object_can_take_damage", hs_object_can_take_damage },
+	{ "object_set_scale", hs_object_set_scale },
+	{ "object_set_permutation", hs_object_set_permutation },
+	{ "objects_can_see_object", hs_objects_can_see_object },
+	{ "objects_can_see_flag", hs_objects_can_see_flag },
+	{ "effect_new", hs_effect_new },
+	{ "effect_new_on_object_marker", hs_effect_new_on_object_marker },
+	{ "damage_new", hs_damage_new },
+	{ "damage_object", hs_damage_object },
+	{ "object_set_collideable", hs_object_set_collideable },
+	// the ai's seat preference, its emotions and ranged attacks, the renderer's object predictions (no ai, nothing to predict)
+	{ "unit_set_seat", hs_nothing },
+	{ "unit_set_emotion", hs_nothing },
+	{ "object_set_ranged_attack_inhibited", hs_nothing },
+	{ "object_beautify", hs_nothing },
+	{ "object_pvs_activate", hs_nothing },
+	{ "object_pvs_set_object", hs_nothing },
+	{ "object_pvs_set_camera", hs_nothing },
+	{ "object_pvs_clear", hs_nothing },
 };
 
 /* ---------- public code */
