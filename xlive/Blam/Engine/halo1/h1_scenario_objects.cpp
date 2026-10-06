@@ -88,6 +88,7 @@ struct s_h1_placement_type
 struct s_h1_scenario_objects_globals
 {
 	std::unordered_map<datum, datum> definitions;			// halo 1 object definition: its halo 2 one
+	std::unordered_map<datum, datum> static_definitions;	// the ones without havok collision (h1_placement_static)
 	std::unordered_map<datum, int16> object_types;			// objects placed from the scenario: their halo 1 type
 };
 
@@ -114,7 +115,8 @@ static const s_h1_placement_type* h1_placement_type_get(int16 h1_object_type);
 static const s_h1_placement* h1_placement_get(const s_h1_placement_type* type, int32 placement_index);
 static datum h1_placement_definition_get(const s_h1_placement_type* type, const s_h1_placement* placement);
 static bool h1_placement_wanted(const s_h1_placement_type* type, const s_h1_placement* placement);
-static datum h1_object_shell_definition_build(datum h1_definition_index);
+static datum h1_object_shell_definition_build(datum h1_definition_index, bool collision = true);
+static bool h1_placement_static(const s_h1_placement_type* type, const s_h1_placement* placement);
 static datum h1_placement_object_new(const s_h1_placement_type* type, int32 placement_index);
 
 /* ---------- public code */
@@ -122,6 +124,7 @@ static datum h1_placement_object_new(const s_h1_placement_type* type, int32 plac
 void h1_scenario_objects_build(void)
 {
 	g_h1_scenario_objects.definitions.clear();
+	g_h1_scenario_objects.static_definitions.clear();
 	g_h1_scenario_objects.object_types.clear();
 	h1_cinematic_titles_reset();
 	h1_hud_text_reset();
@@ -145,6 +148,14 @@ void h1_scenario_objects_build(void)
 				continue;
 			}
 			const datum h1_definition_index = h1_placement_definition_get(&type, placement);
+			if (h1_definition_index != NONE && h1_placement_static(&type, placement))
+			{
+				if (!g_h1_scenario_objects.static_definitions.count(h1_definition_index))
+				{
+					g_h1_scenario_objects.static_definitions[h1_definition_index] = h1_object_shell_definition_build(h1_definition_index, false);
+				}
+				continue;
+			}
 			if (h1_definition_index == NONE || g_h1_scenario_objects.definitions.count(h1_definition_index))
 			{
 				continue;
@@ -363,13 +374,28 @@ bool h1_scenery_placement_is_object(int32 placement_index)
 	return placement && placement->name_index != NONE;
 }
 
+bool h1_scenery_placement_collides_as_object(int32 placement_index)
+{
+	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
+	const h1_scnr_scenery* placement = scenario && scenario->type == 0 ? g_h1_cache_file->block_get(scenario->scenery, placement_index) : NULL;
+	return placement && placement->name_index != NONE && TEST_BIT(placement->placement_flags, _h1_placement_not_automatic_bit);
+}
+
+// a named scenery that's always there: the scripts' object (attaching, animating) without havok collision, which the structure
+// keeps (bodies placed in its seats would be inside its havok body)
+static bool h1_placement_static(const s_h1_placement_type* type, const s_h1_placement* placement)
+{
+	return type->h1_object_type == _h1_object_type_scenery && placement->name_index != NONE &&
+		!TEST_BIT(placement->placement_flags, _h1_placement_not_automatic_bit);
+}
+
 // a halo 2 scenery object definition carrying the halo 1 object's model nodes, markers and collision, bound to the halo 1
 // definition for the halo 1 renderer
-static datum h1_object_shell_definition_build(datum h1_definition_index)
+static datum h1_object_shell_definition_build(datum h1_definition_index, bool collision)
 {
 	const char* h1_name = g_h1_cache_file->tag_name_get(h1_definition_index);
 	char name[256];
-	sprintf_s(name, "halo1\\%s", h1_name);
+	sprintf_s(name, collision ? "halo1\\%s" : "halo1\\%s static", h1_name);
 	const datum existing = h1_runtime_tag_find('scen', name);
 	if (existing != NONE)
 	{
@@ -379,7 +405,7 @@ static datum h1_object_shell_definition_build(datum h1_definition_index)
 	// every halo 1 object definition starts with the object fields
 	const h1_scen* h1_object = (const h1_scen*)g_h1_cache_file->tag_get('obje', h1_definition_index);
 	const h1_mode* h1_model = h1_object ? (const h1_mode*)g_h1_cache_file->tag_get('mode', h1_object->model.index) : NULL;
-	const h1_coll* h1_collision = h1_object ? (const h1_coll*)g_h1_cache_file->tag_get('coll', h1_object->collision_model.index) : NULL;
+	const h1_coll* h1_collision = h1_object && collision ? (const h1_coll*)g_h1_cache_file->tag_get('coll', h1_object->collision_model.index) : NULL;
 	if (!h1_model)
 	{
 		h1_log("objects: %s has no model", h1_name);
@@ -470,8 +496,9 @@ static datum h1_placement_object_new(const s_h1_placement_type* type, int32 plac
 		}
 	}
 	const datum h1_definition_index = h1_placement_definition_get(type, placement);
-	auto found = h1_definition_index != NONE ? g_h1_scenario_objects.definitions.find(h1_definition_index) : g_h1_scenario_objects.definitions.end();
-	if (found == g_h1_scenario_objects.definitions.end() || found->second == NONE)
+	const auto& definitions = h1_placement_static(type, placement) ? g_h1_scenario_objects.static_definitions : g_h1_scenario_objects.definitions;
+	auto found = h1_definition_index != NONE ? definitions.find(h1_definition_index) : definitions.end();
+	if (found == definitions.end() || found->second == NONE)
 	{
 		return NONE;
 	}
