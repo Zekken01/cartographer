@@ -115,8 +115,8 @@ struct _unit_datum
 	real_vector3d desired_looking_vector;
 	real_vector3d looking_vector;
 	real_vector3d looking_velocity;
+	real_vector3d control_field_50;	// unit_control_data field_50
 	real_vector3d throttle;
-	real_vector3d animation_throttle;
 	int8 aiming_speed;
 	int8 gap_1C9[3];
 	real32 primary_trigger;

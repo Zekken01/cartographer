@@ -14,6 +14,7 @@
 #include "physics/collisions.h"
 #include "physics/physics_constants.h"
 #include "units/units.h"
+#include "h2_tag_definitions_generated.h"
 
 #include <unordered_map>
 
@@ -151,6 +152,7 @@ static std::unordered_map<datum, s_h1_vehicle_state> g_h1_vehicle_states;
 
 /* ---------- prototypes */
 
+static datum h1_vehicle_driver_get(datum vehicle_index);
 static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, s_h1_vehicle_state* state);
 static void h1_physics_update(datum vehicle_index, const h1_phys* physics, s_h1_vehicle_state* state, s_h1_powered_mass_point* powered_mass_points,
 	const real_vector3d* magic_force, const real_vector3d* magic_torque, s_h1_mass_point* mass_points);
@@ -299,7 +301,7 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 	if (state->at_rest)
 	{
 		const unit_datum* unit = (const unit_datum*)object_get_and_verify_type(vehicle_index, _object_mask_unit);
-		const bool controlled = unit->unit.throttle.i != 0.f || unit->unit.throttle.j != 0.f || unit->unit.driver_seat_power > 0.f;
+		const bool controlled = unit->unit.driver_seat_power > 0.f || h1_vehicle_driver_get(vehicle_index) != NONE;
 		const bool moved = magnitude_squared3d(&state->linear_velocity) > 0.0011111111f || magnitude_squared3d(&state->angular_velocity) > 0.0027415568f;
 		if (!controlled && !moved)
 		{
@@ -335,13 +337,34 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 
 /* ---------- private code */
 
+// the unit in the vehicle's driver seat (halo 2 keeps the driver's controls on the driver), NONE without one
+static datum h1_vehicle_driver_get(datum vehicle_index)
+{
+	const object_datum* vehicle = object_get(vehicle_index);
+	const h2x_vehi* definition = (const h2x_vehi*)tag_get('vehi', vehicle->definition_index);
+	for (datum child_index = vehicle->object.first_child_object_index; child_index != NONE; child_index = object_get(child_index)->object.next_object_index)
+	{
+		const unit_datum* child = (const unit_datum*)object_try_and_get_and_verify_type(child_index, _object_mask_unit);
+		if (child && VALID_INDEX(child->unit.parent_seat_index, definition->seats.count) && TEST_BIT(definition->seats[child->unit.parent_seat_index]->flags, 2))
+		{
+			return child_index;
+		}
+	}
+	return NONE;
+}
+
 // vehicle_update for one halo 1 tick
 static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, s_h1_vehicle_state* state)
 {
 	const unit_datum* unit = (const unit_datum*)object_get_and_verify_type(vehicle_index, _object_mask_unit);
 	const real_vector3d* forward = &unit->object.forward;
 	const real_vector3d* up = &unit->object.up;
-	const real_vector3d* throttle = &unit->unit.throttle;
+	// the vehicle's controls are its driver's
+	const datum driver_index = h1_vehicle_driver_get(vehicle_index);
+	const unit_datum* driver = driver_index != NONE ? (const unit_datum*)object_get(driver_index) : NULL;
+	static const real_vector3d k_no_throttle = { 0.f, 0.f, 0.f };
+	const real_vector3d* throttle = driver ? &driver->unit.throttle : &k_no_throttle;
+	const real_vector3d* desired_facing = driver ? &driver->unit.desired_facing_vector : forward;
 
 	// braking: controls opposite the speed
 	SET_BIT(state->flags, _h1_vehicle_braking_bit,
@@ -350,7 +373,7 @@ static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, cons
 
 	real_vector3d left;
 	cross_product3d(up, forward, &left);
-	const real32 steering = atan2f(dot_product3d(&left, &unit->unit.desired_facing_vector), dot_product3d(&unit->unit.desired_facing_vector, forward));
+	const real32 steering = atan2f(dot_product3d(&left, desired_facing), dot_product3d(desired_facing, forward));
 
 	const s_h1_speed_parameters* speed_parameters = (const s_h1_speed_parameters*)&h1_vehicle->maximum_forward_speed;
 	const s_h1_speed_parameters* slide_parameters = (const s_h1_speed_parameters*)&h1_vehicle->maximum_left_slide;
@@ -615,14 +638,14 @@ static void h1_physics_update(datum vehicle_index, const h1_phys* physics, s_h1_
 	{
 		for (int32 i = 0; i < physics->powered_mass_points.count && i < k_h1_maximum_mass_points; i++)
 		{
-			// the rotation of the powered mass point's frame (matrix4x3_rotation_from_quaternion, transposed)
+			// the rotation of the powered mass point's frame (a positive turn turns the front wheels left)
 			const real_quaternion* q = &powered_mass_points[i].rotation;
 			real_matrix4x3 rotation;
 			matrix4x3_rotation_from_quaternion(&rotation, q);
 			real_matrix3x3* m = &powered_mass_points[i].rotation_matrix;
-			m->forward = { rotation.forward.i, rotation.left.i, rotation.up.i };
-			m->left = { rotation.forward.j, rotation.left.j, rotation.up.j };
-			m->up = { rotation.forward.k, rotation.left.k, rotation.up.k };
+			m->forward = rotation.forward;
+			m->left = rotation.left;
+			m->up = rotation.up;
 		}
 	}
 
