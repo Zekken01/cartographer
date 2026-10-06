@@ -333,7 +333,9 @@ void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, cons
 	const real_rgb_color* change_colors, const real32* function_values, real32 camouflage, real32 hyper_stealth)
 {
 	camouflage = PIN(camouflage, 0.f, 1.f);
-	const bool cloaked = camouflage >= 1.f;
+	// rasterizer_active_camouflage_draw: a camouflaged model only lays down its depth with the opaques, the scene behind it is
+	// cached, then (partly camouflaged) it's drawn and the camouflage over it
+	const bool camouflaged = camouflage > 0.f;
 	auto found = g_h1_models.find(model_tag_index);
 	if (found == g_h1_models.end() || !g_h1_skinned_vertex_buffer || node_count <= 0)
 	{
@@ -388,8 +390,9 @@ void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, cons
 			{
 				continue;
 			}
-			// fully camouflaged, the transparent parts are only the camouflage
-			const bool own_pass = h1_render_shader_pass(shader_reference->shader.group_tag) == pass && !(cloaked && pass == _h1_render_pass_transparent);
+			const bool opaque_part = h1_render_shader_pass(shader_reference->shader.group_tag) == _h1_render_pass_opaque;
+			const bool own_pass = !camouflaged ? h1_render_shader_pass(shader_reference->shader.group_tag) == pass :
+				pass == _h1_render_pass_opaque ? opaque_part : camouflage < 1.f;
 			if (!own_pass && !camouflage_pass)
 			{
 				continue;
@@ -419,8 +422,7 @@ void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, cons
 		std::stable_sort(draws.begin(), draws.end(), [](const s_h1_part_draw& a, const s_h1_part_draw& b) { return a.distance > b.distance; });
 	}
 
-	// fully camouflaged, the opaque parts only lay down their depth
-	if (cloaked && pass == _h1_render_pass_opaque)
+	if (camouflaged && pass == _h1_render_pass_opaque)
 	{
 		device->SetRenderState(D3DRS_COLORWRITEENABLE, 0);
 	}
@@ -504,7 +506,7 @@ void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, cons
 			g_h1_skinned_vertex_cursor += part->vertex_count;
 		}
 	}
-	if (cloaked && pass == _h1_render_pass_opaque)
+	if (camouflaged && pass == _h1_render_pass_opaque)
 	{
 		device->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
 	}
