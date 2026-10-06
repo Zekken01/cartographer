@@ -1407,6 +1407,24 @@ static int32 hs_cinematic_set_title_delayed(const int32* arguments) { h1_cinemat
 
 static int32 hs_ai_place(const int32* arguments) { h1_ai_script_place(ARGUMENT_LONG(0)); return 0; }
 
+// halo 1's allegiances are halo 2's too (its crosshair, aim assist and damage read halo 2's): its ai_allegiance workers
+// (FUN_0070f39a, FUN_0070f470), teams numbered alike
+typedef void(__cdecl* t_allegiance)(int16 team_0, int16 team_1);
+static hs_function_procedure g_h1_ai_allegiance = NULL;
+static hs_function_procedure g_h1_ai_allegiance_remove = NULL;
+
+static int32 hs_ai_allegiance(const int32* arguments)
+{
+	H2_FUNCTION(0x30F39A, t_allegiance)(ARGUMENT_SHORT(0), ARGUMENT_SHORT(1));
+	return g_h1_ai_allegiance ? g_h1_ai_allegiance(arguments) : 0;
+}
+
+static int32 hs_ai_allegiance_remove(const int32* arguments)
+{
+	H2_FUNCTION(0x30F470, t_allegiance)(ARGUMENT_SHORT(0), ARGUMENT_SHORT(1));
+	return g_h1_ai_allegiance_remove ? g_h1_ai_allegiance_remove(arguments) : 0;
+}
+
 // functions that do nothing in halo 1's release builds, or nothing visible here, and are done
 static int32 hs_nothing(const int32* arguments) { return 0; }
 
@@ -1611,6 +1629,23 @@ void hs_functions_initialize(void)
 		if (function_index != NONE)
 		{
 			hs_function_get(function_index)->procedure = g_h1_ai_hs_functions[i].procedure;
+		}
+		if (!strcmp(g_h1_ai_hs_functions[i].name, "ai_allegiance"))
+		{
+			g_h1_ai_allegiance = g_h1_ai_hs_functions[i].procedure;
+		}
+		if (!strcmp(g_h1_ai_hs_functions[i].name, "ai_allegiance_remove"))
+		{
+			g_h1_ai_allegiance_remove = g_h1_ai_hs_functions[i].procedure;
+		}
+	}
+	const s_hs_procedure_binding allegiance_bindings[] = { { "ai_allegiance", hs_ai_allegiance }, { "ai_allegiance_remove", hs_ai_allegiance_remove } };
+	for (const s_hs_procedure_binding& binding : allegiance_bindings)
+	{
+		const int16 function_index = hs_find_function_by_name(binding.name);
+		if (function_index != NONE)
+		{
+			hs_function_get(function_index)->procedure = binding.procedure;
 		}
 	}
 	return;
