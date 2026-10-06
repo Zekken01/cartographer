@@ -5684,4 +5684,429 @@ struct h1_mach
 };
 ASSERT_STRUCT_SIZE(h1_mach, 0x324);
 
+struct h1_actr
+{
+	uint32 flags; // 0x0
+	uint32 more_flags; // 0x4
+	int8 pad_8[12];
+	int16 type; // 0x14
+	int16 unknown; // 0x16
+	real32 maximum_vision_distance; // 0x18
+	real32 central_vision_angle; // 0x1c
+	real32 maximum_vision_angle; // 0x20
+	int8 pad_24[4];
+	real32 peripheral_vision_angle; // 0x28
+	real32 peripheral_distance; // 0x2c
+	int8 pad_30[4];
+	real_vector3d standing_gun_offset; // 0x34
+	real_vector3d crouching_gun_offset; // 0x40
+	real32 hearing_distance; // 0x4c
+	real32 notice_projectile_chance; // 0x50
+	real32 notice_vehicle_chance; // 0x54
+	int8 pad_58[8];
+	real32 combat_perception_time; // 0x60
+	real32 guard_perception_time; // 0x64
+	real32 non_combat_perception_time; // 0x68
+	real32 inverse_combat_perception_time; // 0x6c
+	real32 inverse_guard_perception_time; // 0x70
+	real32 inverse_non_combat_perception_time; // 0x74
+	int8 pad_78[8];
+	real32 dive_into_cover_chance; // 0x80
+	real32 emerge_from_cover_chance; // 0x84
+	real32 dive_from_grenade_chance; // 0x88
+	real32 pathfinding_radius; // 0x8c
+	real32 glass_ignorance_chance; // 0x90
+	real32 stationary_movement_distance; // 0x94
+	real32 free_flying_sidestep; // 0x98
+	real32 begin_moving_angle; // 0x9c
+	real32 cosine_begin_moving_angle; // 0xa0
+	real_euler_angles2d maximum_aiming_deviation; // 0xa4
+	real_euler_angles2d maximum_looking_deviation; // 0xac
+	real32 noncombat_look_delta_left; // 0xb4
+	real32 noncombat_look_delta_right; // 0xb8
+	real32 combat_look_delta_left; // 0xbc
+	real32 combat_look_delta_right; // 0xc0
+	real_euler_angles2d idle_aiming_range; // 0xc4
+	real_euler_angles2d idle_looking_range; // 0xcc
+	real_bounds event_look_time_modifier; // 0xd4
+	real_bounds noncombat_idle_facing; // 0xdc
+	real_bounds noncombat_idle_aiming; // 0xe4
+	real_bounds noncombat_idle_looking; // 0xec
+	real_bounds guard_idle_facing; // 0xf4
+	real_bounds guard_idle_aiming; // 0xfc
+	real_bounds guard_idle_looking; // 0x104
+	real_bounds combat_idle_facing; // 0x10c
+	real_bounds combat_idle_aiming; // 0x114
+	real_bounds combat_idle_looking; // 0x11c
+	int8 pad_124[8];
+	real_euler_angles2d cosine_maximum_aiming_deviation; // 0x12c
+	real_euler_angles2d cosine_maximum_looking_deviation; // 0x134
+	h1_tag_reference do_not_use_weapon; // 0x13c
+	int8 pad_14c[268];
+	h1_tag_reference do_not_use_projectile; // 0x258
+	int16 unreachable_danger_trigger; // 0x268
+	int16 vehicle_danger_trigger; // 0x26a
+	int16 player_danger_trigger; // 0x26c
+	int16 unknown_2; // 0x26e
+	real_bounds danger_trigger_time; // 0x270
+	int16 friends_killed_trigger; // 0x278
+	int16 friends_retreating_trigger; // 0x27a
+	int8 pad_27c[12];
+	real_bounds retreat_time; // 0x288
+	int8 pad_290[8];
+	real_bounds cowering_time; // 0x298
+	real32 friend_killed_panic_chance; // 0x2a0
+	int16 leader_type; // 0x2a4
+	int16 unknown_3; // 0x2a6
+	real32 leader_killed_panic_chance; // 0x2a8
+	real32 panic_damage_threshold; // 0x2ac
+	real32 surprise_distance; // 0x2b0
+	int8 pad_2b4[28];
+	real_bounds hide_behind_cover_time; // 0x2d0
+	real32 hide_target_not_visible_time; // 0x2d8
+	real32 hide_shield_fraction; // 0x2dc
+	real32 attack_shield_fraction; // 0x2e0
+	real32 pursue_shield_fraction; // 0x2e4
+	int8 pad_2e8[16];
+	int16 defensive_crouch_type; // 0x2f8
+	int16 unknown_4; // 0x2fa
+	real32 attacking_crouch_threshold; // 0x2fc
+	real32 defending_crouch_threshold; // 0x300
+	real32 minimum_stand_time; // 0x304
+	real32 minimum_crouch_time; // 0x308
+	real32 defending_hide_time_modifier; // 0x30c
+	real32 attacking_evasion_threshold; // 0x310
+	real32 defending_evasion_threshold; // 0x314
+	real32 evasion_seek_cover_chance; // 0x318
+	real32 evasion_delay_time; // 0x31c
+	real32 maximum_seek_cover_distance; // 0x320
+	real32 cover_damage_threshold; // 0x324
+	real32 stalking_discovery_time; // 0x328
+	real32 stalking_maximum_distance; // 0x32c
+	real32 stationary_facing_angle; // 0x330
+	real32 change_facing_stand_time; // 0x334
+	int8 pad_338[4];
+	real_bounds uncover_delay_time; // 0x33c
+	real_bounds target_search_time; // 0x344
+	real_bounds pursuit_position_time; // 0x34c
+	int16 number_of_positions_coord; // 0x354
+	int16 number_of_positions_normal; // 0x356
+	int8 pad_358[32];
+	real32 melee_attack_delay; // 0x378
+	real32 melee_fudge_factor; // 0x37c
+	real32 melee_charge_time; // 0x380
+	real_bounds melee_leap_range; // 0x384
+	real32 melee_leap_velocity; // 0x38c
+	real32 melee_leap_chance; // 0x390
+	real32 melee_leap_ballistic; // 0x394
+	real32 berserk_damage_amount; // 0x398
+	real32 berserk_damage_threshold; // 0x39c
+	real32 berserk_proximity; // 0x3a0
+	real32 suicide_sensing_distance; // 0x3a4
+	real32 berserk_grenade_chance; // 0x3a8
+	int8 pad_3ac[12];
+	real_bounds guard_position_time; // 0x3b8
+	real_bounds combat_position_time; // 0x3c0
+	real32 old_position_avoid_distance; // 0x3c8
+	real32 friend_avoid_distance; // 0x3cc
+	int8 pad_3d0[40];
+	real_bounds noncombat_idle_speech_time; // 0x3f8
+	real_bounds combat_idle_speech_time; // 0x400
+	int8 pad_408[176];
+	h1_tag_reference do_not_use_major_upgrade; // 0x4b8
+	int8 pad_4c8[48];
+};
+ASSERT_STRUCT_SIZE(h1_actr, 0x4f8);
+
+struct h1_actv_change_colors
+{
+	real_rgb_color color_lower_bound; // 0x0
+	real_rgb_color color_upper_bound; // 0xc
+	int8 pad_18[8];
+};
+ASSERT_STRUCT_SIZE(h1_actv_change_colors, 0x20);
+
+struct h1_actv
+{
+	uint32 flags; // 0x0
+	h1_tag_reference actor_definition; // 0x4
+	h1_tag_reference unit; // 0x14
+	h1_tag_reference major_variant; // 0x24
+	int8 pad_34[24];
+	int16 movement_type; // 0x4c
+	int16 unknown; // 0x4e
+	real32 initial_crouch_chance; // 0x50
+	real_bounds crouch_time; // 0x54
+	real_bounds run_time; // 0x5c
+	h1_tag_reference weapon; // 0x64
+	real32 maximum_firing_distance; // 0x74
+	real32 rate_of_fire; // 0x78
+	real32 projectile_error; // 0x7c
+	real_bounds first_burst_delay_time; // 0x80
+	real32 new_target_firing_pattern_time; // 0x88
+	real32 surprise_delay_time; // 0x8c
+	real32 surprise_fire_wildly_time; // 0x90
+	real32 death_fire_wildly_chance; // 0x94
+	real32 death_fire_wildly_time; // 0x98
+	real_bounds desired_combat_range; // 0x9c
+	real_vector3d custom_stand_gun_offset; // 0xa4
+	real_vector3d custom_crouch_gun_offset; // 0xb0
+	real32 target_tracking; // 0xbc
+	real32 target_leading; // 0xc0
+	real32 weapon_damage_modifier; // 0xc4
+	real32 damage_per_second; // 0xc8
+	real32 burst_origin_radius; // 0xcc
+	real32 burst_origin_angle; // 0xd0
+	real_bounds burst_return_length; // 0xd4
+	real32 burst_return_angle; // 0xdc
+	real_bounds burst_duration; // 0xe0
+	real_bounds burst_separation; // 0xe8
+	real32 burst_angular_velocity; // 0xf0
+	int8 pad_f4[4];
+	real32 special_damage_modifier; // 0xf8
+	real32 special_projectile_error; // 0xfc
+	real32 new_target_burst_duration; // 0x100
+	real32 new_target_burst_separation; // 0x104
+	real32 new_target_rate_of_fire; // 0x108
+	real32 new_target_projectile_error; // 0x10c
+	int8 pad_110[8];
+	real32 moving_burst_duration; // 0x118
+	real32 moving_burst_separation; // 0x11c
+	real32 moving_rate_of_fire; // 0x120
+	real32 moving_projectile_error; // 0x124
+	int8 pad_128[8];
+	real32 berserk_burst_duration; // 0x130
+	real32 berserk_burst_separation; // 0x134
+	real32 berserk_rate_of_fire; // 0x138
+	real32 berserk_projectile_error; // 0x13c
+	int8 pad_140[8];
+	real32 super_ballistic_range; // 0x148
+	real32 bombardment_range; // 0x14c
+	real32 modified_vision_range; // 0x150
+	int16 special_fire_mode; // 0x154
+	int16 special_fire_situation; // 0x156
+	real32 special_fire_chance; // 0x158
+	real32 special_fire_delay; // 0x15c
+	real32 melee_range; // 0x160
+	real32 melee_abort_range; // 0x164
+	real_bounds berserk_firing_ranges; // 0x168
+	real32 berserk_melee_range; // 0x170
+	real32 berserk_melee_abort_range; // 0x174
+	int8 pad_178[8];
+	int16 grenade_type; // 0x180
+	int16 trajectory_type; // 0x182
+	int16 grenade_stimulus; // 0x184
+	int16 minimum_enemy_count; // 0x186
+	real32 enemy_radius; // 0x188
+	int8 pad_18c[4];
+	real32 grenade_velocity; // 0x190
+	real_bounds grenade_ranges; // 0x194
+	real32 collateral_damage_radius; // 0x19c
+	real32 grenade_chance; // 0x1a0
+	real32 grenade_check_time; // 0x1a4
+	real32 encounter_grenade_timeout; // 0x1a8
+	int8 pad_1ac[20];
+	h1_tag_reference equipment; // 0x1c0
+	short_bounds grenade_count; // 0x1d0
+	real32 dont_drop_grenades_chance; // 0x1d4
+	real_bounds drop_weapon_loaded; // 0x1d8
+	short_bounds drop_weapon_ammo; // 0x1e0
+	int8 pad_1e4[28];
+	real32 body_vitality; // 0x200
+	real32 shield_vitality; // 0x204
+	real32 shield_sapping_radius; // 0x208
+	int16 forced_shader_permutation; // 0x20c
+	int16 unknown_2; // 0x20e
+	int8 pad_210[28];
+	h1_tag_block<h1_actv_change_colors> change_colors; // 0x22c
+};
+ASSERT_STRUCT_SIZE(h1_actv, 0x238);
+
+struct h1_udlg
+{
+	int16 unknown; // 0x0
+	int16 unknown_2; // 0x2
+	int8 pad_4[12];
+	h1_tag_reference idle_noncombat; // 0x10
+	h1_tag_reference idle_combat; // 0x20
+	h1_tag_reference idle_flee; // 0x30
+	int8 pad_40[48];
+	h1_tag_reference pain_body_minor; // 0x70
+	h1_tag_reference pain_body_major; // 0x80
+	h1_tag_reference pain_shield; // 0x90
+	h1_tag_reference pain_falling; // 0xa0
+	h1_tag_reference scream_fear; // 0xb0
+	h1_tag_reference scream_pain; // 0xc0
+	h1_tag_reference maimed_limb; // 0xd0
+	h1_tag_reference maimed_head; // 0xe0
+	h1_tag_reference death_quiet; // 0xf0
+	h1_tag_reference death_violent; // 0x100
+	h1_tag_reference death_falling; // 0x110
+	h1_tag_reference death_agonizing; // 0x120
+	h1_tag_reference death_instant; // 0x130
+	h1_tag_reference death_flying; // 0x140
+	int8 pad_150[16];
+	h1_tag_reference damaged_friend; // 0x160
+	h1_tag_reference damaged_friend_player; // 0x170
+	h1_tag_reference damaged_enemy; // 0x180
+	h1_tag_reference damaged_enemy_cm; // 0x190
+	int8 pad_1a0[64];
+	h1_tag_reference hurt_friend; // 0x1e0
+	h1_tag_reference hurt_friend_re; // 0x1f0
+	h1_tag_reference hurt_friend_player; // 0x200
+	h1_tag_reference hurt_enemy; // 0x210
+	h1_tag_reference hurt_enemy_re; // 0x220
+	h1_tag_reference hurt_enemy_cm; // 0x230
+	h1_tag_reference hurt_enemy_bullet; // 0x240
+	h1_tag_reference hurt_enemy_needler; // 0x250
+	h1_tag_reference hurt_enemy_plasma; // 0x260
+	h1_tag_reference hurt_enemy_sniper; // 0x270
+	h1_tag_reference hurt_enemy_grenade; // 0x280
+	h1_tag_reference hurt_enemy_explosion; // 0x290
+	h1_tag_reference hurt_enemy_melee; // 0x2a0
+	h1_tag_reference hurt_enemy_flame; // 0x2b0
+	h1_tag_reference hurt_enemy_shotgun; // 0x2c0
+	h1_tag_reference hurt_enemy_vehicle; // 0x2d0
+	h1_tag_reference hurt_enemy_mountedweapon; // 0x2e0
+	int8 pad_2f0[48];
+	h1_tag_reference killed_friend; // 0x320
+	h1_tag_reference killed_friend_cm; // 0x330
+	h1_tag_reference killed_friend_player; // 0x340
+	h1_tag_reference killed_friend_player_cm; // 0x350
+	h1_tag_reference killed_enemy; // 0x360
+	h1_tag_reference killed_enemy_cm; // 0x370
+	h1_tag_reference killed_enemy_player; // 0x380
+	h1_tag_reference killed_enemy_player_cm; // 0x390
+	h1_tag_reference killed_enemy_covenant; // 0x3a0
+	h1_tag_reference killed_enemy_covenant_cm; // 0x3b0
+	h1_tag_reference killed_enemy_floodcombat; // 0x3c0
+	h1_tag_reference killed_enemy_floodcombat_cm; // 0x3d0
+	h1_tag_reference killed_enemy_floodcarrier; // 0x3e0
+	h1_tag_reference killed_enemy_floodcarrier_cm; // 0x3f0
+	h1_tag_reference killed_enemy_sentinel; // 0x400
+	h1_tag_reference killed_enemy_sentinel_cm; // 0x410
+	h1_tag_reference killed_enemy_bullet; // 0x420
+	h1_tag_reference killed_enemy_needler; // 0x430
+	h1_tag_reference killed_enemy_plasma; // 0x440
+	h1_tag_reference killed_enemy_sniper; // 0x450
+	h1_tag_reference killed_enemy_grenade; // 0x460
+	h1_tag_reference killed_enemy_explosion; // 0x470
+	h1_tag_reference killed_enemy_melee; // 0x480
+	h1_tag_reference killed_enemy_flame; // 0x490
+	h1_tag_reference killed_enemy_shotgun; // 0x4a0
+	h1_tag_reference killed_enemy_vehicle; // 0x4b0
+	h1_tag_reference killed_enemy_mountedweapon; // 0x4c0
+	h1_tag_reference killing_spree; // 0x4d0
+	int8 pad_4e0[48];
+	h1_tag_reference player_kill_cm; // 0x510
+	h1_tag_reference player_kill_bullet_cm; // 0x520
+	h1_tag_reference player_kill_needler_cm; // 0x530
+	h1_tag_reference player_kill_plasma_cm; // 0x540
+	h1_tag_reference player_kill_sniper_cm; // 0x550
+	h1_tag_reference anyone_kill_grenade_cm; // 0x560
+	h1_tag_reference player_kill_explosion_cm; // 0x570
+	h1_tag_reference player_kill_melee_cm; // 0x580
+	h1_tag_reference player_kill_flame_cm; // 0x590
+	h1_tag_reference player_kill_shotgun_cm; // 0x5a0
+	h1_tag_reference player_kill_vehicle_cm; // 0x5b0
+	h1_tag_reference player_kill_mountedweapon_cm; // 0x5c0
+	h1_tag_reference player_killling_spree_cm; // 0x5d0
+	int8 pad_5e0[48];
+	h1_tag_reference friend_died; // 0x610
+	h1_tag_reference friend_player_died; // 0x620
+	h1_tag_reference friend_killed_by_friend; // 0x630
+	h1_tag_reference friend_killed_by_friendly_player; // 0x640
+	h1_tag_reference friend_killed_by_enemy; // 0x650
+	h1_tag_reference friend_killed_by_enemy_player; // 0x660
+	h1_tag_reference friend_killed_by_covenant; // 0x670
+	h1_tag_reference friend_killed_by_flood; // 0x680
+	h1_tag_reference friend_killed_by_sentinel; // 0x690
+	h1_tag_reference friend_betrayed; // 0x6a0
+	int8 pad_6b0[32];
+	h1_tag_reference new_combat_alone; // 0x6d0
+	h1_tag_reference new_enemy_recent_combat; // 0x6e0
+	h1_tag_reference old_enemy_sighted; // 0x6f0
+	h1_tag_reference unexpected_enemy; // 0x700
+	h1_tag_reference dead_friend_found; // 0x710
+	h1_tag_reference alliance_broken; // 0x720
+	h1_tag_reference alliance_reformed; // 0x730
+	h1_tag_reference grenade_throwing; // 0x740
+	h1_tag_reference grenade_sighted; // 0x750
+	h1_tag_reference grenade_startle; // 0x760
+	h1_tag_reference grenade_danger_enemy; // 0x770
+	h1_tag_reference grenade_danger_self; // 0x780
+	h1_tag_reference grenade_danger_friend; // 0x790
+	int8 pad_7a0[32];
+	h1_tag_reference new_combat_group_re; // 0x7c0
+	h1_tag_reference new_combat_nearby_re; // 0x7d0
+	h1_tag_reference alert_friend; // 0x7e0
+	h1_tag_reference alert_friend_re; // 0x7f0
+	h1_tag_reference alert_lost_contact; // 0x800
+	h1_tag_reference alert_lost_contact_re; // 0x810
+	h1_tag_reference blocked; // 0x820
+	h1_tag_reference blocked_re; // 0x830
+	h1_tag_reference search_start; // 0x840
+	h1_tag_reference search_query; // 0x850
+	h1_tag_reference search_query_re; // 0x860
+	h1_tag_reference search_report; // 0x870
+	h1_tag_reference search_abandon; // 0x880
+	h1_tag_reference search_group_abandon; // 0x890
+	h1_tag_reference group_uncover; // 0x8a0
+	h1_tag_reference group_uncover_re; // 0x8b0
+	h1_tag_reference advance; // 0x8c0
+	h1_tag_reference advance_re; // 0x8d0
+	h1_tag_reference retreat; // 0x8e0
+	h1_tag_reference retreat_re; // 0x8f0
+	h1_tag_reference cover; // 0x900
+	int8 pad_910[64];
+	h1_tag_reference sighted_friend_player; // 0x950
+	h1_tag_reference shooting; // 0x960
+	h1_tag_reference shooting_vehicle; // 0x970
+	h1_tag_reference shooting_berserk; // 0x980
+	h1_tag_reference shooting_group; // 0x990
+	h1_tag_reference shooting_traitor; // 0x9a0
+	h1_tag_reference taunt; // 0x9b0
+	h1_tag_reference taunt_re; // 0x9c0
+	h1_tag_reference flee; // 0x9d0
+	h1_tag_reference flee_re; // 0x9e0
+	h1_tag_reference flee_leader_died; // 0x9f0
+	h1_tag_reference attempted_flee; // 0xa00
+	h1_tag_reference attempted_flee_re; // 0xa10
+	h1_tag_reference lost_contact; // 0xa20
+	h1_tag_reference hiding_finished; // 0xa30
+	h1_tag_reference vehicle_entry; // 0xa40
+	h1_tag_reference vehicle_exit; // 0xa50
+	h1_tag_reference vehicle_woohoo; // 0xa60
+	h1_tag_reference vehicle_scared; // 0xa70
+	h1_tag_reference vehicle_collision; // 0xa80
+	h1_tag_reference partially_sighted; // 0xa90
+	h1_tag_reference nothing_there; // 0xaa0
+	h1_tag_reference pleading; // 0xab0
+	int8 pad_ac0[96];
+	h1_tag_reference surprise; // 0xb20
+	h1_tag_reference berserk; // 0xb30
+	h1_tag_reference melee_attack; // 0xb40
+	h1_tag_reference dive; // 0xb50
+	h1_tag_reference uncover_exclamation; // 0xb60
+	h1_tag_reference leap_attack; // 0xb70
+	h1_tag_reference resurrection; // 0xb80
+	int8 pad_b90[64];
+	h1_tag_reference celebration; // 0xbd0
+	h1_tag_reference check_body_enemy; // 0xbe0
+	h1_tag_reference check_body_friend; // 0xbf0
+	h1_tag_reference shooting_dead_enemy; // 0xc00
+	h1_tag_reference shooting_dead_enemy_player; // 0xc10
+	int8 pad_c20[64];
+	h1_tag_reference alone; // 0xc60
+	h1_tag_reference unscathed; // 0xc70
+	h1_tag_reference seriously_wounded; // 0xc80
+	h1_tag_reference seriously_wounded_re; // 0xc90
+	h1_tag_reference massacre; // 0xca0
+	h1_tag_reference massacre_re; // 0xcb0
+	h1_tag_reference rout; // 0xcc0
+	h1_tag_reference rout_re; // 0xcd0
+	int8 pad_ce0[816];
+};
+ASSERT_STRUCT_SIZE(h1_udlg, 0x1010);
+
 #pragma pack(pop)
