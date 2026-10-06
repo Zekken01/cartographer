@@ -836,18 +836,23 @@ static void biped_ground_sync(datum biped_index, s_object_mirror* mirror, const 
 	const real_point3d* position = &mirror->data.object.object.position;
 	struct collision_bsp* collision_bsp = global_collision_bsp_get();
 	long surface_index = NONE;
+	long ground_surface_index = NONE;
 	real_point3d ground_point = *position;
 	if (collision_bsp)
 	{
-		// from bipeds.c biped_find_ground_surface's origin (0.4 up) to a quarter unit below the feet
+		// bipeds.c biped_find_ground_surface (0.4 up, 2 down): the ground, supporting within a quarter unit below the feet
 		const real_point3d origin = { position->x, position->y, position->z + 0.4f };
-		const real_vector3d vector = { 0.f, 0.f, -0.65f };
+		const real_vector3d vector = { 0.f, 0.f, -2.f };
 		struct collision_bsp_test_vector_result result;
 		global_current_collision_users[global_current_collision_user_depth++] = _collision_user_bipeds;
 		if (collision_bsp_test_vector(FLAG(_collision_test_front_facing_surfaces_bit), collision_bsp, 0, NULL, &origin, &vector, REAL_MAX, &result))
 		{
-			surface_index = result.surface_index;
+			ground_surface_index = result.surface_index;
 			ground_point = { origin.x, origin.y, origin.z + vector.k * result.t };
+			if (-vector.k * result.t <= 0.65f)
+			{
+				surface_index = result.surface_index;
+			}
 		}
 		--global_current_collision_user_depth;
 	}
@@ -859,6 +864,7 @@ static void biped_ground_sync(datum biped_index, s_object_mirror* mirror, const 
 	{
 		biped->pathfinding_surface_index = NONE;
 		biped->pathfinding_point = ground_point;
+		biped->last_pathfinding_surface_index = ground_surface_index;
 	}
 	return;
 }

@@ -920,7 +920,13 @@ static void h1_animation_encode(const h1_antr_animations* animation, h2x_jmad_an
 	const uint32 animated_size = scale_offset + (uint32)scaled.size() * scale_stride;
 	const uint32 flags_vector_size = ((model_node_count + 31) >> 3) & ~3u;
 
-	std::vector<uint8> data(animated_size + flags_vector_size * 3, 0);
+	// the root movement (dx dy, dyaw, dz per frame) halo 1's bipeds without player physics move and turn by: halo 2's movement data
+	static const uint32 k_movement_frame_sizes[] = { 0, 8, 12, 16 };
+	const int16 frame_info_type = VALID_INDEX(animation->frame_info_type, NUMBEROF(k_movement_frame_sizes)) ? animation->frame_info_type : 0;
+	const uint32 movement_size = k_movement_frame_sizes[frame_info_type] * (uint32)animation->frame_count;
+	const void* movement = movement_size > 0 && animation->frame_info.size >= (int32)movement_size ? g_h1_cache_file->data_get(animation->frame_info) : NULL;
+
+	std::vector<uint8> data(animated_size + flags_vector_size * 3 + (movement ? movement_size : 0), 0);
 	uint8* header = data.data();
 	header[0] = k_h2_codec_uncompressed_animated;
 	header[1] = (uint8)rotated.size();
@@ -966,10 +972,17 @@ static void h1_animation_encode(const h1_antr_animations* animation, h2x_jmad_an
 	for (int32 node : translated) flags[flags_vector_size + (node >> 3)] |= (uint8)(1 << (node & 7));
 	for (int32 node : scaled) flags[flags_vector_size * 2 + (node >> 3)] |= (uint8)(1 << (node & 7));
 
+	if (movement)
+	{
+		csmemcpy(data.data() + animated_size + flags_vector_size * 3, movement, movement_size);
+	}
+
 	h1_runtime_data_set(&destination->resource, data.data(), (int32)data.size());
-	// packed data sizes: node flags size and animated codec size, no static codec or movement data
+	// packed data sizes: node flags size, movement data size and animated codec size, no static codec
 	destination->unknown_3 = (int8)(flags_vector_size * 3);
+	destination->unknown_4 = (int16)(movement ? movement_size : 0);
 	destination->unknown_8 = (int32)animated_size;
+	destination->frame_info_type = movement ? (int8)frame_info_type : 0;
 	return;
 }
 
