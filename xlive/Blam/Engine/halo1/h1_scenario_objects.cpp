@@ -212,7 +212,32 @@ datum h1_scenario_animation_graph_get(datum h1_animation_graph_index, bool build
 	}
 	char name[256];
 	sprintf_s(name, "halo1\\%s", g_h1_cache_file->tag_name_get(h1_animation_graph_index));
-	return build ? h1_animation_graph_build(h1_animation_graph_index, NULL, name) : h1_runtime_tag_find('jmad', name);
+	if (!build)
+	{
+		return h1_runtime_tag_find('jmad', name);
+	}
+
+	// cache files drop the graph's own node list: the skeleton is the model its animations were made for (their node list
+	// checksum and node count)
+	const h1_antr* h1_graph = (const h1_antr*)g_h1_cache_file->tag_get('antr', h1_animation_graph_index);
+	const h1_antr_animations* first = h1_graph ? g_h1_cache_file->block_get(h1_graph->animations, 0) : NULL;
+	const h1_mode* model = NULL;
+	for (int32 i = 0; first && i < g_h1_cache_file->tag_count(); i++)
+	{
+		const h1_cache_file_tag_instance* instance = g_h1_cache_file->tag_instance_get_by_absolute_index(i);
+		const h1_mode* candidate = instance && instance->group_tag == 'mode' ? (const h1_mode*)g_h1_cache_file->tag_get('mode', instance->tag_index) : NULL;
+		if (candidate && candidate->node_list_checksum == first->node_list_checksum && candidate->nodes.count == first->node_count)
+		{
+			model = candidate;
+			break;
+		}
+	}
+	if (!model)
+	{
+		h1_log("objects: no model for the animation graph %s", name);
+		return NONE;
+	}
+	return h1_animation_graph_build(h1_animation_graph_index, model, name);
 }
 
 int16 h1_scenario_object_type_get(datum object_index)
