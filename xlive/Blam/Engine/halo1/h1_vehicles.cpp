@@ -27,6 +27,7 @@ enum
 	k_h2_shape_type_list = 14,
 	k_h2_object_type_vehicle = 1,
 	k_h2_rigid_body_motion_type_dynamic = 2,
+	k_h2_rigid_body_motion_type_keyframed = 4,
 	k_maximum_list_children = 4,
 };
 
@@ -67,7 +68,7 @@ static real_quaternion h1_quaternion_to_h2(const real_quaternion* rotation);
 static datum h1_camera_track_build(datum h1_track_index);
 static datum h1_render_model_build(const h1_mode* h1_model, const char* name, const h1_phys* h1_physics, const h1_vehi* h1_vehicle);
 static datum h1_collision_model_build(const h1_coll* h1_collision, const h1_mode* h1_model, const char* name);
-static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1_model, const h1_coll* h1_collision, const char* name);
+static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1_model, const h1_coll* h1_collision, const char* name, bool stub);
 static datum h1_model_build(const s_h1_vehicle_tags* tags, const h1_mode* h1_model, const h1_coll* h1_collision, const char* name);
 static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle, const h1_phys* h1_physics, const h1_mode* h1_model, datum model_index);
 static string_id h1_global_material_name(int16 global_material_index);
@@ -99,8 +100,8 @@ datum h1_vehicle_build(datum h1_vehicle_index)
 		h1_log("vehicles: %s is missing its model", h1_name);
 		return NONE;
 	}
-	// the campaign's props and cinematic vehicles (the cryotubes, chairs, the astral pelican) have no physics or collision: they never
-	// move by themselves, riders still sit in them and scripts animate them
+	// the campaign's props and cinematic vehicles (the cryotubes, chairs, the halo, the fighterbombers) lack physics or collision: the
+	// physics-less never move by themselves, riders still sit in them and scripts animate them
 	static const h1_phys k_no_physics = {};
 	static const h1_coll k_no_collision = {};
 	const bool has_physics = h1_physics != NULL && h1_physics->mass > 0.f && h1_physics->mass_points.count > 0;
@@ -117,7 +118,8 @@ datum h1_vehicle_build(datum h1_vehicle_index)
 	s_h1_vehicle_tags tags;
 	tags.render_model = h1_render_model_build(h1_model, name, h1_physics, h1_vehicle);
 	tags.collision_model = has_collision ? h1_collision_model_build(h1_collision, h1_model, name) : NONE;
-	tags.physics_model = has_physics && has_collision ? h1_physics_model_build(h1_physics, h1_model, h1_collision, name) : NONE;
+	// (halo 2's vehicle_new refuses a vehicle without a physics model: the physics-less get a keyframed stub)
+	tags.physics_model = h1_physics_model_build(h1_physics, h1_model, h1_collision, name, !has_physics);
 	tags.animation_graph = h1_animation_graph_build(h1_vehicle->animation_graph.index, h1_model, name, h1_physics);
 	tags.model = h1_model_build(&tags, h1_model, h1_collision, name);
 	if (tags.render_model == NONE || tags.model == NONE)
@@ -508,7 +510,7 @@ static datum h1_collision_model_build(const h1_coll* h1_collision, const h1_mode
 	return collision_index;
 }
 
-static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1_model, const h1_coll* h1_collision, const char* name)
+static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1_model, const h1_coll* h1_collision, const char* name, bool stub)
 {
 	h2x_phmo* physics = NULL;
 	const datum physics_index = h1_runtime_tag_new('phmo', name, &physics);
@@ -517,7 +519,9 @@ static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1
 		return NONE;
 	}
 
-	physics->mass = h1_physics->mass;
+	// a stub: one small sphere at the origin, keyframed (nothing moves it but its scripts)
+	const real32 mass = stub ? 1.f : h1_physics->mass;
+	physics->mass = mass;
 	physics->low_frequency_deactivation_scale = 1.f;
 	physics->high_frequency_deactivation_scale = 1.f;
 
@@ -545,6 +549,15 @@ static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1
 		{
 			hull_points.push_back(g_h1_cache_file->block_get(h1_physics->mass_points, i));
 		}
+	}
+	static h1_phys_mass_points stub_point = {};
+	if (stub)
+	{
+		csstrncpy(stub_point.name, "hull", sizeof(stub_point.name));
+		stub_point.powered_mass_point_index = NONE;
+		stub_point.mass = 1.f;
+		stub_point.radius = 0.05f;
+		hull_points.assign(1, &stub_point);
 	}
 	const int32 sphere_count = MIN((int32)hull_points.size(), k_maximum_list_children * k_maximum_list_children);
 
@@ -640,20 +653,20 @@ static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1
 	body->bounding_sphere_offset = { (bounds.x0 + bounds.x1) * 0.5f, (bounds.y0 + bounds.y1) * 0.5f, (bounds.z0 + bounds.z1) * 0.5f };
 	const real32 dx = (bounds.x1 - bounds.x0) * 0.5f, dy = (bounds.y1 - bounds.y0) * 0.5f, dz = (bounds.z1 - bounds.z0) * 0.5f;
 	body->bounding_sphere_radius = sqrtf(dx * dx + dy * dy + dz * dz);
-	body->motion_type = k_h2_rigid_body_motion_type_dynamic;
+	body->motion_type = (int16)(stub ? k_h2_rigid_body_motion_type_keyframed : k_h2_rigid_body_motion_type_dynamic);
 	body->no_phantom_power_alternative_rigid_body_index = NONE;
 	body->size = 4;
 	body->inertia_tensor_scale = 1.f;
 	body->angular_damping = 0.05f;
 	body->shape_type = shape_type;
 	body->shape_index = shape_index;
-	body->mass = h1_physics->mass;
+	body->mass = mass;
 	real_point3d center_of_mass;
 	matrix4x3_transform_point(model_to_root, &h1_physics->center_of_mass, &center_of_mass);
 	body->center_of_mass = { center_of_mass.x, center_of_mass.y, center_of_mass.z };
-	body->inertia_tensor_x = { h1_physics->xx_moment, 0.f, 0.f };
-	body->inertia_tensor_y = { 0.f, h1_physics->yy_moment, 0.f };
-	body->inertia_tensor_z = { 0.f, 0.f, h1_physics->zz_moment };
+	body->inertia_tensor_x = { stub ? 1.f : h1_physics->xx_moment, 0.f, 0.f };
+	body->inertia_tensor_y = { 0.f, stub ? 1.f : h1_physics->yy_moment, 0.f };
+	body->inertia_tensor_z = { 0.f, 0.f, stub ? 1.f : h1_physics->zz_moment };
 	body->collision_quality_override_type = NONE;
 
 	// one region and permutation holding the rigid body
