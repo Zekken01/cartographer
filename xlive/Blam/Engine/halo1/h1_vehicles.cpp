@@ -41,7 +41,10 @@ enum
 	_friction_point_front_turning_bit = 2,
 	_friction_point_rear_turning_bit = 3,
 	_friction_point_attached_to_e_brake_bit = 4,
+	_friction_point_bit_5 = 5,		// every halo 2 wheel has it
 };
+
+constexpr int32 k_h2_phantom_maximum_spheres = 8;
 
 /* structures */
 
@@ -380,7 +383,7 @@ static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1
 	for (int32 i = 0; i < h1_physics->mass_points.count; i++)
 	{
 		const h1_phys_mass_points* mass_point = g_h1_cache_file->block_get(h1_physics->mass_points, i);
-		if (mass_point->powered_mass_point_index == NONE)
+		if (!h1_mass_point_is_wheel(h1_physics, mass_point))
 		{
 			hull_points.push_back(mass_point);
 		}
@@ -824,10 +827,10 @@ static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle
 			h2x_vehi_friction_points* point = &friction_points[wheel_index++];
 			point->marker_name = marker;
 			// the "front" powered mass point steers
-			point->flags = FLAG(_friction_point_powered_bit) | FLAG(_friction_point_attached_to_e_brake_bit);
+			point->flags = FLAG(_friction_point_powered_bit) | FLAG(_friction_point_attached_to_e_brake_bit) | FLAG(_friction_point_bit_5);
 			if (powered && _stricmp(powered->name, "front") == 0)
 			{
-				point->flags = FLAG(_friction_point_powered_bit) | FLAG(_friction_point_front_turning_bit);
+				point->flags = FLAG(_friction_point_powered_bit) | FLAG(_friction_point_front_turning_bit) | FLAG(_friction_point_bit_5);
 			}
 			point->fraction_of_total_mass = 100.f * mass_point->mass / MAX(h1_physics->mass, 1.f);
 			point->radius = mass_point->radius;
@@ -847,13 +850,51 @@ static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle
 			point->antigrav_strength = powered->antigrav_strength;
 			point->antigrav_offset = powered->antigrav_offset;
 			point->antigrav_height = powered->antigrav_height;
-			point->antigrav_damp_factor = powered->antigrav_damp_fraction;
+			// halo 1's damping is a fraction per tick, halo 2's vehicles all damp at 1
+			point->antigrav_damp_factor = 1.f;
 			point->antigrav_normal_k1 = powered->antigrav_normal_k1;
 			point->antigrav_normal_k0 = powered->antigrav_normal_k0;
 			point->radius = mass_point->radius;
 			point->damage_source_region_index = NONE;
 			point->damage_source_region_name = _string_id_empty_string;
 		}
+	}
+
+	// halo 2's wheels touch the ground through a havok multi sphere phantom at the wheels (vehicle space, as the mass points):
+	// the host's warthog phantom with the halo 1 wheels' spheres
+	const datum host_warthog_index = tag_loaded('vehi', "objects\\vehicles\\warthog\\warthog");
+	const h2x_vehi* host_warthog = host_warthog_index != NONE ? (const h2x_vehi*)tag_get('vehi', host_warthog_index) : NULL;
+	if (wheel_count > 0 && host_warthog && host_warthog->phantom_shapes.count > 0)
+	{
+		h2x_vehi_phantom_shapes* phantom = h1_runtime_block_new(&vehicle->phantom_shapes, 1);
+		*phantom = *host_warthog->phantom_shapes[0];
+		real_vector3d* sphere_centers = &phantom->sphere_0;
+		uint32 sphere_count = 0;
+		real_rectangle3d bounds = { FLT_MAX, -FLT_MAX, FLT_MAX, -FLT_MAX, FLT_MAX, -FLT_MAX };
+		for (int32 i = 0; i < h1_physics->mass_points.count && sphere_count < k_h2_phantom_maximum_spheres; i++)
+		{
+			const h1_phys_mass_points* mass_point = g_h1_cache_file->block_get(h1_physics->mass_points, i);
+			if (!h1_mass_point_is_wheel(h1_physics, mass_point))
+			{
+				continue;
+			}
+			// each sphere is a center and a radius (w)
+			real_vector3d* center = (real_vector3d*)((uint8*)sphere_centers + sphere_count * 16);
+			*center = { mass_point->position.x, mass_point->position.y, mass_point->position.z };
+			*(real32*)(center + 1) = mass_point->radius;
+			bounds.x0 = MIN(bounds.x0, mass_point->position.x - mass_point->radius); bounds.x1 = MAX(bounds.x1, mass_point->position.x + mass_point->radius);
+			bounds.y0 = MIN(bounds.y0, mass_point->position.y - mass_point->radius); bounds.y1 = MAX(bounds.y1, mass_point->position.y + mass_point->radius);
+			bounds.z0 = MIN(bounds.z0, mass_point->position.z - mass_point->radius); bounds.z1 = MAX(bounds.z1, mass_point->position.z + mass_point->radius);
+			sphere_count++;
+		}
+		for (uint32 i = sphere_count; i < k_h2_phantom_maximum_spheres; i++)
+		{
+			csmemset((uint8*)sphere_centers + i * 16, 0, 16);
+		}
+		phantom->number_of_spheres = sphere_count;
+		phantom->x0 = bounds.x0; phantom->x1 = bounds.x1;
+		phantom->y0 = bounds.y0; phantom->y1 = bounds.y1;
+		phantom->z0 = bounds.z0; phantom->z1 = bounds.z1;
 	}
 	return;
 }
