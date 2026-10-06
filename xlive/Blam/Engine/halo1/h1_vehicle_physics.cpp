@@ -83,7 +83,12 @@ enum
 // vehicle definition flags
 enum
 {
+	_h1_vehicle_flag_speed_wakes_physics_bit = 0,
+	_h1_vehicle_flag_turn_wakes_physics_bit = 1,
+	_h1_vehicle_flag_driver_power_wakes_physics_bit = 2,
+	_h1_vehicle_flag_gunner_power_wakes_physics_bit = 3,
 	_h1_vehicle_flag_control_opposite_speed_sets_brake_bit = 4,
+	_h1_vehicle_flag_slide_wakes_physics_bit = 5,
 };
 
 // halo 2's unit control flags (unit_control copies the control's)
@@ -440,22 +445,9 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 	state->suspension_sounded = false;
 	state->commanded = false;
 
-	// at rest until its controls or something moving it (a hit, a push) wake it
-	if (state->at_rest)
+	// at rest until its controls (h1_vehicle_tick) or something moving it (a hit, a push) wake it
+	if (state->at_rest && (magnitude_squared3d(&state->linear_velocity) > 0.0011111111f || magnitude_squared3d(&state->angular_velocity) > 0.0027415568f))
 	{
-		const unit_datum* unit = (const unit_datum*)object_get_and_verify_type(vehicle_index, _object_mask_unit);
-		const bool controlled = unit->unit.driver_seat_power > 0.f || h1_vehicle_driver_get(vehicle_index) != NONE ||
-			unit->unit.throttle.i != 0.f || unit->unit.throttle.j != 0.f || unit->unit.throttle.k != 0.f;
-		const bool moved = magnitude_squared3d(&state->linear_velocity) > 0.0011111111f || magnitude_squared3d(&state->angular_velocity) > 0.0027415568f;
-		if (!controlled && !moved)
-		{
-			const real_vector3d zero = *global_zero_vector3d;
-			real_vector3d hold = { 0.f, 0.f, physics_constants_get()->gravity * game_tick_length() };
-			Memory::GetAddress<void(__cdecl*)(datum, const real_vector3d*, const real_vector3d*)>(0x135123)(vehicle_index, &hold, &zero);
-			state->leftover_ticks = 0.f;
-			h1_vehicle_animation_state_set(vehicle_index, state);
-			return true;
-		}
 		state->at_rest = false;
 	}
 
@@ -465,6 +457,18 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 	{
 		state->leftover_ticks -= 1.f;
 		h1_vehicle_tick(vehicle_index, h1_vehicle, physics, state);
+	}
+
+	// at rest it holds where it is
+	if (state->at_rest)
+	{
+		const real_vector3d zero = *global_zero_vector3d;
+		real_vector3d hold = { 0.f, 0.f, physics_constants_get()->gravity * game_tick_length() };
+		Memory::GetAddress<void(__cdecl*)(datum, const real_vector3d*, const real_vector3d*)>(0x135123)(vehicle_index, &hold, &zero);
+		state->linear_velocity = *global_zero_vector3d;
+		state->angular_velocity = *global_zero_vector3d;
+		h1_vehicle_animation_state_set(vehicle_index, state);
+		return true;
 	}
 
 	// halo 1's velocities as havok's; havok adds its gravity over the tick it steps
@@ -1091,6 +1095,21 @@ static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, cons
 	else
 	{
 		h1_speed_update_seek(&state->turn, speed_parameters, PIN(steering * 0.63661975f, -1.f, 1.f) * h1_vehicle->maximum_forward_speed, 2.f);
+	}
+
+	// its controls wake its physics as its definition says, at rest it skips them
+	const uint32 flags = h1_vehicle->flags_3;
+	if ((TEST_BIT(flags, _h1_vehicle_flag_speed_wakes_physics_bit) && state->speed != 0.f) ||
+		(TEST_BIT(flags, _h1_vehicle_flag_turn_wakes_physics_bit) && state->turn != 0.f) ||
+		(TEST_BIT(flags, _h1_vehicle_flag_driver_power_wakes_physics_bit) && unit->unit.driver_seat_power != 0.f) ||
+		(TEST_BIT(flags, _h1_vehicle_flag_gunner_power_wakes_physics_bit) && unit->unit.gunner_seat_power != 0.f) ||
+		(TEST_BIT(flags, _h1_vehicle_flag_slide_wakes_physics_bit) && state->slide != 0.f))
+	{
+		state->at_rest = false;
+	}
+	if (state->at_rest)
+	{
+		return;
 	}
 
 	s_h1_powered_mass_point powered[k_h1_maximum_mass_points] = {};
