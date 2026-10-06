@@ -62,6 +62,8 @@ struct s_h1_vehicle_tags
 
 static const char* h1_name_last_component(const char* path);
 static string_id h1_string_id(const char* string);
+static string_id h1_marker_string_id(const char* name);
+static datum h1_camera_track_build(datum h1_track_index);
 static datum h1_render_model_build(const h1_mode* h1_model, const char* name, const h1_phys* h1_physics, const h1_vehi* h1_vehicle);
 static datum h1_collision_model_build(const h1_coll* h1_collision, const h1_mode* h1_model, const char* name);
 static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1_model, const h1_coll* h1_collision, const char* name);
@@ -133,6 +135,79 @@ static const char* h1_name_last_component(const char* path)
 static string_id h1_string_id(const char* string)
 {
 	return string && *string ? string_id_find_or_add(string) : _string_id_empty_string;
+}
+
+// halo 2's camera track (trak): the halo 1 track's control points, offsets from the camera marker and orientations (halo 2's
+// quaternions are halo 1's conjugates)
+struct s_h2_camera_track_control_point
+{
+	real_vector3d position;
+	real_quaternion orientation;
+};
+static_assert(sizeof(s_h2_camera_track_control_point) == 28);
+
+struct s_h2_camera_track
+{
+	uint32 flags;
+	tag_block<s_h2_camera_track_control_point> control_points;
+};
+static_assert(sizeof(s_h2_camera_track) == 12);
+
+static datum h1_camera_track_build(datum h1_track_index)
+{
+	if (h1_track_index == NONE)
+	{
+		return NONE;
+	}
+	char name[256];
+	sprintf_s(name, "halo1\\%s", g_h1_cache_file->tag_name_get(h1_track_index));
+	const datum existing = h1_runtime_tag_find('trak', name);
+	if (existing != NONE)
+	{
+		return existing;
+	}
+	// halo 1's track: flags, then its control points (a position and an orientation, padded to 0x3C)
+	const uint8* h1_track = (const uint8*)g_h1_cache_file->tag_get('trak', h1_track_index);
+	if (!h1_track)
+	{
+		return NONE;
+	}
+	const h1_tag_block<uint8>* h1_points = (const h1_tag_block<uint8>*)(h1_track + 4);
+	const uint8* h1_point_data = h1_points->count > 0 ? (const uint8*)g_h1_cache_file->block_get(*h1_points, 0) : NULL;
+	if (!h1_point_data)
+	{
+		return NONE;
+	}
+
+	s_h2_camera_track* track = NULL;
+	const datum track_index = h1_runtime_tag_new('trak', name, &track);
+	if (track_index == NONE)
+	{
+		return NONE;
+	}
+	track->flags = *(const uint32*)h1_track;
+	s_h2_camera_track_control_point* points = h1_runtime_block_new(&track->control_points, h1_points->count);
+	for (int32 i = 0; i < h1_points->count; i++)
+	{
+		const real32* h1_point = (const real32*)(h1_point_data + i * 0x3C);
+		points[i].position = { h1_point[0], h1_point[1], h1_point[2] };
+		points[i].orientation = { { -h1_point[3], -h1_point[4], -h1_point[5] }, h1_point[6] };
+	}
+	return track_index;
+}
+
+// halo 2 looks markers up by its own names, which spell halo 1's spaces as underscores (h1_object_tags, the effects' locations)
+static string_id h1_marker_string_id(const char* name)
+{
+	std::string marker = name ? name : "";
+	for (char& c : marker)
+	{
+		if (c == ' ')
+		{
+			c = '_';
+		}
+	}
+	return h1_string_id(marker.c_str());
 }
 
 // the name of a halo 2 global material (matg materials)
@@ -261,7 +336,7 @@ static datum h1_render_model_build(const h1_mode* h1_model, const char* name, co
 	for (int32 i = 0; i < h1_model->markers.count; i++)
 	{
 		const h1_mode_markers* h1_marker = g_h1_cache_file->block_get(h1_model->markers, i);
-		groups[i].name = h1_string_id(h1_marker->name);
+		groups[i].name = h1_marker_string_id(h1_marker->name);
 		h2x_mode_marker_groups_markers* markers = h1_runtime_block_new(&groups[i].markers, h1_marker->instances.count);
 		for (int32 j = 0; j < h1_marker->instances.count; j++)
 		{
@@ -301,7 +376,7 @@ static datum h1_render_model_build(const h1_mode* h1_model, const char* name, co
 	{
 		const h1_vehi_seats* seat = g_h1_cache_file->block_get(h1_vehicle->seats, i);
 		h2x_mode_marker_groups* group = &groups[h1_model->markers.count + (int32)powered_points.size() + i];
-		group->name = h1_string_id(h1_seat_entry_marker_name(seat->marker_name).c_str());
+		group->name = h1_marker_string_id(h1_seat_entry_marker_name(seat->marker_name).c_str());
 
 		const h1_mode_markers_instances* seat_marker = NULL;
 		for (int32 m = 0; m < h1_model->markers.count && !seat_marker; m++)
@@ -725,8 +800,8 @@ static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle
 	h1_runtime_reference_set(&vehicle->integrated_light_toggle, (tag_group)NONE, NONE);
 	vehicle->camera_field_of_view = h1_vehicle->camera_field_of_view;
 	vehicle->camera_stiffness = h1_vehicle->camera_stiffness;
-	vehicle->camera_marker_name = h1_string_id(h1_vehicle->camera_marker_name);
-	vehicle->camera_submerged_marker_name = h1_string_id(h1_vehicle->camera_submerged_marker_name);
+	vehicle->camera_marker_name = h1_marker_string_id(h1_vehicle->camera_marker_name);
+	vehicle->camera_submerged_marker_name = h1_marker_string_id(h1_vehicle->camera_submerged_marker_name);
 	vehicle->pitch_auto_level = h1_vehicle->pitch_auto_level;
 	vehicle->pitch_range = h1_vehicle->pitch_range;
 	// halo 1 scales the unit's acceleration (its acceleration overlays: the warthog's turret sways) per tick squared, halo 2 per
@@ -826,8 +901,8 @@ static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle
 		// the first 11 seat flags are the same in both games
 		seat->flags = h1_seat->flags & 0x7FF;
 		seat->seat_animation = h1_string_id(h1_seat_animation_name(h1_seat->label).c_str());
-		seat->seat_marker_name = h1_string_id(h1_seat->marker_name);
-		seat->entry_marker_s_name = h1_string_id(h1_seat_entry_marker_name(h1_seat->marker_name).c_str());
+		seat->seat_marker_name = h1_marker_string_id(h1_seat->marker_name);
+		seat->entry_marker_s_name = h1_marker_string_id(h1_seat_entry_marker_name(h1_seat->marker_name).c_str());
 		seat->ping_scale = 1.f;
 		seat->turnover_time = 0.65f;
 		// halo 1 scales the seat's acceleration per tick squared, halo 2 per second squared
@@ -843,8 +918,8 @@ static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle
 		seat->listener_interpolation_factor = 0.6f;
 		seat->yaw_rate_bounds = { h1_seat->yaw_rate, h1_seat->yaw_rate };
 		seat->pitch_rate_bounds = { h1_seat->pitch_rate, h1_seat->pitch_rate };
-		seat->camera_marker_name = h1_string_id(h1_seat->camera_marker_name);
-		seat->camera_submerged_marker_name = h1_string_id(h1_seat->camera_submerged_marker_name);
+		seat->camera_marker_name = h1_marker_string_id(h1_seat->camera_marker_name);
+		seat->camera_submerged_marker_name = h1_marker_string_id(h1_seat->camera_submerged_marker_name);
 		seat->pitch_auto_level = h1_seat->pitch_auto_level;
 		seat->pitch_range = h1_seat->pitch_range;
 		seat->yaw = h1_seat->yaw;
@@ -856,14 +931,36 @@ static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle
 		seat->maximum_relative_velocity = 3.f;
 		seat->invisible_seat_region_index = NONE;
 
+		// the seat's own camera tracks, the host's without them
+		std::vector<datum> tracks;
+		for (int32 t = 0; t < h1_seat->camera_tracks.count; t++)
+		{
+			const datum track = h1_camera_track_build(g_h1_cache_file->block_get(h1_seat->camera_tracks, t)->track.index);
+			if (track != NONE)
+			{
+				tracks.push_back(track);
+			}
+		}
+
 		const h2x_vehi_seats* host_seat = host_seat_get(h1_seat->flags);
 		if (host_seat)
 		{
 			seat->enter_seat_string = host_seat->enter_seat_string;
-			seat->camera_tracks = host_seat->camera_tracks;
+			if (tracks.empty())
+			{
+				seat->camera_tracks = host_seat->camera_tracks;
+			}
 			seat->unit_hud_interface = host_seat->unit_hud_interface;
 			seat->ai_scariness = host_seat->ai_scariness;
 			seat->ai_seat_type = host_seat->ai_seat_type;
+		}
+		if (!tracks.empty())
+		{
+			h2x_vehi_seats_camera_tracks* seat_tracks = h1_runtime_block_new(&seat->camera_tracks, (int32)tracks.size());
+			for (size_t t = 0; t < tracks.size(); t++)
+			{
+				h1_runtime_reference_set(&seat_tracks[t].track, 'trak', tracks[t]);
+			}
 		}
 	}
 
