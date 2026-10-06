@@ -13,6 +13,9 @@ void h1_scenario_objects_place(void);
 // object_new_by_name: the named placement's object (the existing one when it's there), NONE when it can't be made
 datum h1_scenario_object_new_by_name(int16 name_index);
 
+// the halo 2 animation graph of a halo 1 animation graph the scripts play (built at scenario build when build is set)
+datum h1_scenario_animation_graph_get(datum h1_animation_graph_index, bool build);
+
 // the halo 1 object type of an object placed from the scenario, NONE for the others
 int16 h1_scenario_object_type_get(datum object_index);
 

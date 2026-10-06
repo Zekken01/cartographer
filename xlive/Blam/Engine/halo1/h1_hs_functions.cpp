@@ -18,6 +18,7 @@
 #include "math/real_math.h"
 #include "objects/object_types.h"
 #include "objects/objects.h"
+#include "tag_files/tag_groups.h"
 
 #include <vector>
 
@@ -636,6 +637,120 @@ static int32 hs_cinematic_skip_start_internal(const int32* arguments) { H2_FUNCT
 static int32 hs_cinematic_skip_stop_internal(const int32* arguments) { H2_FUNCTION(0x3A755, t_void)(); return 0; }
 static int32 hs_cinematic_show_letterbox(const int32* arguments) { H2_FUNCTION(0x3A75F, t_void_bool)(ARGUMENT_BOOLEAN(0)); return 0; }
 
+/* ---------- animations: the converted halo 1 graphs, played by halo 2's own custom and scenery animations */
+
+typedef bool (__cdecl* t_unit_custom_animation)(datum unit_index, datum graph_index, string_id animation, bool interpolate);
+typedef bool (__cdecl* t_unit_custom_animation_at_frame)(datum unit_index, datum graph_index, string_id animation, bool interpolate, int16 frame);
+typedef void (__cdecl* t_scenery_animation_start)(datum scenery_index, datum graph_index, string_id animation);
+typedef void (__cdecl* t_scenery_animation_start_at_frame)(datum scenery_index, datum graph_index, string_id animation, int16 frame);
+typedef int16 (__cdecl* t_animation_time)(datum object_index);
+
+// the halo 2 label of a halo 1 animation name (h1_animations)
+static string_id hs_animation_name(const char* name)
+{
+	char label[64];
+	strncpy_s(label, name ? name : "", _TRUNCATE);
+	for (char* c = label; *c; c++)
+	{
+		*c = (*c == '-' || *c == ' ') ? '_' : *c;
+	}
+	return string_id_find_or_add(label);
+}
+
+static bool hs_object_is_unit(datum object_index)
+{
+	return hs_object_exists(object_index) && object_try_and_get_and_verify_type(object_index, _object_mask_unit) != NULL;
+}
+
+static bool hs_object_is_scenery(datum object_index)
+{
+	return hs_object_exists(object_index) && object_try_and_get_and_verify_type(object_index, FLAG(_object_type_scenery)) != NULL;
+}
+
+static bool hs_custom_animation(datum object_index, datum h1_graph_index, const char* name, bool interpolate, int16 frame)
+{
+	const datum graph_index = h1_scenario_animation_graph_get(h1_graph_index, false);
+	if (graph_index == NONE || !hs_object_exists(object_index))
+	{
+		h1_log("hs: custom animation %s on %08X: %s", name ? name : "", object_index, graph_index == NONE ? "no graph" : "no object");
+		return false;
+	}
+	const string_id animation = hs_animation_name(name);
+	if (hs_object_is_unit(object_index))
+	{
+		return frame == NONE ?
+			H2_FUNCTION(0x18561D, t_unit_custom_animation)(object_index, graph_index, animation, interpolate) :
+			H2_FUNCTION(0x18596D, t_unit_custom_animation_at_frame)(object_index, graph_index, animation, interpolate, frame);
+	}
+	// the scenario's vehicles and devices are scenery here
+	if (hs_object_is_scenery(object_index))
+	{
+		if (frame == NONE)
+		{
+			H2_FUNCTION(0x18A373, t_scenery_animation_start)(object_index, graph_index, animation);
+		}
+		else
+		{
+			H2_FUNCTION(0x18A3F9, t_scenery_animation_start_at_frame)(object_index, graph_index, animation, frame);
+		}
+		return true;
+	}
+	return false;
+}
+
+static int16 hs_animation_time(datum object_index)
+{
+	if (hs_object_is_unit(object_index))
+	{
+		return H2_FUNCTION(0x184ADB, t_animation_time)(object_index);
+	}
+	return hs_object_is_scenery(object_index) ? H2_FUNCTION(0x189C79, t_animation_time)(object_index) : 0;
+}
+
+static int32 hs_custom_animation_procedure(const int32* arguments)
+{
+	return hs_custom_animation(ARGUMENT_LONG(0), ARGUMENT_LONG(1), ARGUMENT_STRING(2), ARGUMENT_BOOLEAN(3), NONE);
+}
+
+static int32 hs_unit_custom_animation_at_frame(const int32* arguments)
+{
+	return hs_custom_animation(ARGUMENT_LONG(0), ARGUMENT_LONG(1), ARGUMENT_STRING(2), ARGUMENT_BOOLEAN(3), ARGUMENT_SHORT(4));
+}
+
+static int32 hs_custom_animation_list(const int32* arguments)
+{
+	bool result = false;
+	for (int16 i = 0; i < object_list_count(ARGUMENT_LONG(0)); i++)
+	{
+		result |= hs_custom_animation(object_list_get(ARGUMENT_LONG(0), i), ARGUMENT_LONG(1), ARGUMENT_STRING(2), ARGUMENT_BOOLEAN(3), NONE);
+	}
+	return result;
+}
+
+static int32 hs_unit_is_playing_custom_animation(const int32* arguments)
+{
+	if (hs_object_is_unit(ARGUMENT_LONG(0)))
+	{
+		return H2_FUNCTION(0x184B35, bool(__cdecl*)(datum))(ARGUMENT_LONG(0));
+	}
+	return hs_animation_time(ARGUMENT_LONG(0)) > 0;
+}
+
+static int32 hs_unit_get_custom_animation_time(const int32* arguments) { return hs_animation_time(ARGUMENT_LONG(0)); }
+
+static int32 hs_unit_stop_custom_animation(const int32* arguments)
+{
+	if (hs_object_is_unit(ARGUMENT_LONG(0)))
+	{
+		H2_FUNCTION(0x18595A, t_void_datum)(ARGUMENT_LONG(0));
+	}
+	return 0;
+}
+
+static int32 hs_scenery_animation_start(const int32* arguments) { hs_custom_animation(ARGUMENT_LONG(0), ARGUMENT_LONG(1), ARGUMENT_STRING(2), false, NONE); return 0; }
+static int32 hs_scenery_animation_start_at_frame(const int32* arguments) { hs_custom_animation(ARGUMENT_LONG(0), ARGUMENT_LONG(1), ARGUMENT_STRING(2), false, ARGUMENT_SHORT(3)); return 0; }
+static int32 hs_scenery_get_animation_time(const int32* arguments) { return hs_animation_time(ARGUMENT_LONG(0)); }
+
 static int32 hs_camera_control(const int32* arguments) { h1_camera_control(ARGUMENT_BOOLEAN(0)); return 0; }
 static int32 hs_camera_set(const int32* arguments) { h1_camera_set(ARGUMENT_SHORT(0), ARGUMENT_SHORT(1), NONE); return 0; }
 static int32 hs_camera_set_relative(const int32* arguments) { h1_camera_set(ARGUMENT_SHORT(0), ARGUMENT_SHORT(1), ARGUMENT_LONG(2)); return 0; }
@@ -758,6 +873,15 @@ static const s_hs_procedure_binding k_hs_procedures[] =
 	{ "cinematic_skip_start_internal", hs_cinematic_skip_start_internal },
 	{ "cinematic_skip_stop_internal", hs_cinematic_skip_stop_internal },
 	{ "cinematic_show_letterbox", hs_cinematic_show_letterbox },
+	{ "custom_animation", hs_custom_animation_procedure },
+	{ "unit_custom_animation_at_frame", hs_unit_custom_animation_at_frame },
+	{ "custom_animation_list", hs_custom_animation_list },
+	{ "unit_is_playing_custom_animation", hs_unit_is_playing_custom_animation },
+	{ "unit_get_custom_animation_time", hs_unit_get_custom_animation_time },
+	{ "unit_stop_custom_animation", hs_unit_stop_custom_animation },
+	{ "scenery_animation_start", hs_scenery_animation_start },
+	{ "scenery_animation_start_at_frame", hs_scenery_animation_start_at_frame },
+	{ "scenery_get_animation_time", hs_scenery_get_animation_time },
 	{ "camera_control", hs_camera_control },
 	{ "camera_set", hs_camera_set },
 	{ "camera_set_relative", hs_camera_set_relative },

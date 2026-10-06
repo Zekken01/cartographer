@@ -131,6 +131,7 @@ private:
 	wchar_t m_path[MAX_PATH];
 	h1_cache_file_header m_header;
 	uint8* m_data;
+	bool m_data_committed;		// in the reserved address space
 	uint32 m_size;
 	h1_cache_file_tags_header* m_tags_header;
 	h1_cache_file_tag_instance* m_instances;
@@ -155,3 +156,6 @@ bool h1_cache_file_read_header(const wchar_t* path, h1_cache_file_header* out_he
 
 // the Halo 1 cache file backing the currently loaded game, or NULL
 extern c_h1_cache_file* g_h1_cache_file;
+
+// reserves the address space halo 1 maps decompress into, early while the process has it in one piece
+void h1_cache_file_reserve_memory(void);

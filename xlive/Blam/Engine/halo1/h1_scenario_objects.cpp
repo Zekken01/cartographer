@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "h1_scenario_objects.h"
 
+#include "h1_animations.h"
 #include "h1_bipeds.h"
 #include "h1_cache_file.h"
 #include "h1_hs.h"
@@ -157,7 +158,17 @@ void h1_scenario_objects_build(void)
 			definition_count += definition_index != NONE;
 		}
 	}
-	h1_log("objects: %d object definitions for the scenario's placements", definition_count);
+	// the animation graphs the scripts play (custom_animation, scenery_animation_start), on the skeleton of their models
+	int32 graph_count = 0;
+	for (int32 i = 0; i < scenario->references.count; i++)
+	{
+		const h1_scnr_references* reference = g_h1_cache_file->block_get(scenario->references, i);
+		if (reference && reference->reference.index != NONE && g_h1_cache_file->tag_get('antr', reference->reference.index))
+		{
+			graph_count += h1_scenario_animation_graph_get(reference->reference.index, true) != NONE;
+		}
+	}
+	h1_log("objects: %d object definitions for the scenario's placements, %d script animation graphs", definition_count, graph_count);
 	return;
 }
 
@@ -191,6 +202,17 @@ datum h1_scenario_object_new_by_name(int16 name_index)
 	const h1_scnr_object_names* name = g_h1_cache_file->block_get(scenario->object_names, name_index);
 	const s_h1_placement_type* type = name ? h1_placement_type_get(name->type) : NULL;
 	return type ? h1_placement_object_new(type, name->placement_index) : NONE;
+}
+
+datum h1_scenario_animation_graph_get(datum h1_animation_graph_index, bool build)
+{
+	if (h1_animation_graph_index == NONE)
+	{
+		return NONE;
+	}
+	char name[256];
+	sprintf_s(name, "halo1\\%s", g_h1_cache_file->tag_name_get(h1_animation_graph_index));
+	return build ? h1_animation_graph_build(h1_animation_graph_index, NULL, name) : h1_runtime_tag_find('jmad', name);
 }
 
 int16 h1_scenario_object_type_get(datum object_index)
@@ -278,7 +300,7 @@ static datum h1_object_shell_definition_build(datum h1_definition_index)
 	tags.render_model = h1_object_render_model_build(h1_model, name);
 	tags.collision_model = h1_collision ? h1_object_collision_model_build(h1_collision, h1_model, name) : NONE;
 	tags.physics_model = NONE;
-	tags.animation_graph = NONE;
+	tags.animation_graph = h1_object->animation_graph.index != NONE ? h1_animation_graph_build(h1_object->animation_graph.index, h1_model, name) : NONE;
 	tags.disappear_distance = 200.f;
 	const datum model_index = tags.render_model != NONE ? h1_object_model_build(&tags, h1_model, h1_collision, name) : NONE;
 	if (model_index == NONE)

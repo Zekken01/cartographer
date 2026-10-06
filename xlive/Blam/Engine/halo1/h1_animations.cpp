@@ -285,18 +285,33 @@ datum h1_animation_graph_build(datum h1_animation_graph_index, const h1_mode* h1
 
 	const h1_antr* h1_graph = h1_animation_graph_index != NONE ? (const h1_antr*)g_h1_cache_file->tag_get('antr', h1_animation_graph_index) : NULL;
 
-	// the skeleton is the model's node list (units need as many graph nodes as model nodes), with the graph's joints
-	const int32 node_count = MIN(h1_model->nodes.count, (int32)k_h1_maximum_animation_nodes);
+	// the skeleton is the model's node list (units need as many graph nodes as model nodes), with the graph's joints; without a
+	// model (the scripts' cinematic graphs) the graph's own nodes, which are its models'
+	if (!h1_model && !h1_graph)
+	{
+		return graph_index;
+	}
+	const int32 node_count = MIN(h1_model ? h1_model->nodes.count : h1_graph->nodes.count, (int32)k_h1_maximum_animation_nodes);
 	h2x_jmad_skeleton_nodes* nodes = h1_runtime_block_new(&graph->skeleton_nodes, node_count);
 	for (int32 i = 0; i < node_count; i++)
 	{
-		const h1_mode_nodes* h1_node = g_h1_cache_file->block_get(h1_model->nodes, i);
-		nodes[i].name = string_id_find_or_add(h1_node->name);
-		nodes[i].next_sibling_node_index = h1_node->next_sibling_node_index;
-		nodes[i].first_child_node_index = h1_node->first_child_node_index;
-		nodes[i].parent_node_index = h1_node->parent_node_index;
-		nodes[i].z_position = h1_node->default_translation.z;
-		const h1_antr_nodes* h1_graph_node = h1_graph && h1_graph->nodes.count == h1_model->nodes.count ? g_h1_cache_file->block_get(h1_graph->nodes, i) : NULL;
+		const h1_antr_nodes* h1_graph_node = h1_graph && (!h1_model || h1_graph->nodes.count == h1_model->nodes.count) ? g_h1_cache_file->block_get(h1_graph->nodes, i) : NULL;
+		if (h1_model)
+		{
+			const h1_mode_nodes* h1_node = g_h1_cache_file->block_get(h1_model->nodes, i);
+			nodes[i].name = string_id_find_or_add(h1_node->name);
+			nodes[i].next_sibling_node_index = h1_node->next_sibling_node_index;
+			nodes[i].first_child_node_index = h1_node->first_child_node_index;
+			nodes[i].parent_node_index = h1_node->parent_node_index;
+			nodes[i].z_position = h1_node->default_translation.z;
+		}
+		else
+		{
+			nodes[i].name = string_id_find_or_add(h1_graph_node->name);
+			nodes[i].next_sibling_node_index = h1_graph_node->next_sibling_node_index;
+			nodes[i].first_child_node_index = h1_graph_node->first_child_node_index;
+			nodes[i].parent_node_index = h1_graph_node->parent_node_index;
+		}
 		if (h1_graph_node)
 		{
 			nodes[i].node_joint_flags = (uint8)h1_graph_node->node_joint_flags;
@@ -315,7 +330,7 @@ datum h1_animation_graph_build(datum h1_animation_graph_index, const h1_mode* h1
 		const h1_antr_animations* h1_animation = g_h1_cache_file->block_get(h1_graph->animations, i);
 		h2x_jmad_animations* animation = &animations[i];
 		animation->name = string_id_find_or_add(h1_animation_label(h1_animation->name).c_str());
-		animation->node_list_checksum = h1_model->node_list_checksum;
+		animation->node_list_checksum = h1_model ? h1_model->node_list_checksum : h1_animation->node_list_checksum;
 		animation->type = (int8)h1_animation->type;
 		animation->frame_info_type = 0;
 		animation->blend_screen_index = NONE;

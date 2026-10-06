@@ -38,6 +38,7 @@ c_h1_cache_file::c_h1_cache_file(void) :
 	m_path{},
 	m_header{},
 	m_data(NULL),
+	m_data_committed(false),
 	m_size(0),
 	m_tags_header(NULL),
 	m_instances(NULL),
@@ -55,6 +56,9 @@ c_h1_cache_file::~c_h1_cache_file(void)
 	close();
 	return;
 }
+
+static uint8* h1_cache_file_memory_commit(uint32 size);
+static void h1_cache_file_memory_decommit(uint8* data, uint32 size);
 
 bool c_h1_cache_file::open(const wchar_t* path)
 {
@@ -97,8 +101,14 @@ bool c_h1_cache_file::open(const wchar_t* path)
 	}
 	else
 	{
-		// Xbox cache files are zlib compressed after the header
-		m_data = (uint8*)malloc(m_size);
+		// Xbox cache files are zlib compressed after the header; the decompressed file goes in the address space reserved at startup
+		// (a campaign map is up to 280 MB, a 32 bit process rarely has that much contiguous later on)
+		m_data = h1_cache_file_memory_commit(m_size);
+		m_data_committed = m_data != NULL;
+		if (!m_data)
+		{
+			m_data = (uint8*)malloc(m_size);
+		}
 		if (!m_data)
 		{
 			free(file_bytes);
@@ -124,8 +134,7 @@ bool c_h1_cache_file::open(const wchar_t* path)
 		if (status != Z_STREAM_END)
 		{
 			h1_log("cache: decompression of %ws failed (%d), got %u of %u bytes", path, status, stream.total_out, m_size);
-			free(m_data);
-			m_data = NULL;
+			close();
 			return false;
 		}
 	}
@@ -204,13 +213,53 @@ bool c_h1_cache_file::open(const wchar_t* path)
 	return true;
 }
 
+/* ---------- reserved memory */
+
+constexpr uint32 k_h1_cache_file_reservation_size = 0x12000000;	// 288 MB, the largest campaign map is b40 at 267 MB
+
+static uint8* g_h1_cache_file_reservation = NULL;
+static bool g_h1_cache_file_reservation_in_use = false;
+
+void h1_cache_file_reserve_memory(void)
+{
+	if (!g_h1_cache_file_reservation)
+	{
+		g_h1_cache_file_reservation = (uint8*)VirtualAlloc(NULL, k_h1_cache_file_reservation_size, MEM_RESERVE, PAGE_NOACCESS);
+		h1_log("cache: %s %u MB of address space for halo 1 maps", g_h1_cache_file_reservation ? "reserved" : "couldn't reserve", k_h1_cache_file_reservation_size >> 20);
+	}
+	return;
+}
+
+static uint8* h1_cache_file_memory_commit(uint32 size)
+{
+	if (!g_h1_cache_file_reservation || g_h1_cache_file_reservation_in_use || size > k_h1_cache_file_reservation_size)
+	{
+		return NULL;
+	}
+	uint8* data = (uint8*)VirtualAlloc(g_h1_cache_file_reservation, size, MEM_COMMIT, PAGE_READWRITE);
+	g_h1_cache_file_reservation_in_use = data != NULL;
+	return data;
+}
+
+static void h1_cache_file_memory_decommit(uint8* data, uint32 size)
+{
+	VirtualFree(data, size, MEM_DECOMMIT);
+	g_h1_cache_file_reservation_in_use = false;
+	return;
+}
+
 void c_h1_cache_file::close(void)
 {
-	if (m_data)
+	if (m_data && m_data_committed)
+	{
+		h1_cache_file_memory_decommit(m_data, m_size);
+	}
+	else if (m_data)
 	{
 		free(m_data);
 	}
 	m_data = NULL;
+	m_data_committed = false;
 	m_size = 0;
 	m_tags_header = NULL;
 	m_instances = NULL;

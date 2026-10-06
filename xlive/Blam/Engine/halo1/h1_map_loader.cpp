@@ -93,6 +93,7 @@ static bool h1_file_hash(const wchar_t* path, uint8* out_hash);
 
 void h1_maps_apply_patches(void)
 {
+	h1_cache_file_reserve_memory();
 	// custom map cache file open inside the custom map load (FUN_00464a01)
 	PatchCall(Memory::GetAddress(0x64B68), h1_custom_map_cache_file_open);
 	// the custom map load compares a hash of the file against the map id, Halo 1 entries carry our own hash
