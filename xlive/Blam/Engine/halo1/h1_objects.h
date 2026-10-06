@@ -20,6 +20,8 @@ int32 h1_objects_bound_definitions(datum* out_definitions, int32 maximum_count);
 
 // the halo 1 definition a halo 2 definition was built from, NONE if it wasn't
 datum h1_objects_h1_definition_get(datum h2_definition_index);
+// a local player's first person unit or what it holds (halo 2 doesn't draw them)
+bool h1_object_held_in_first_person(datum object_index);
 
 // true for halo 2 definitions built from halo 1 objects
 bool h1_objects_definition_bound(datum definition_index);

@@ -143,15 +143,16 @@ bool h1_first_person_marker_get(datum object_index, const char* marker_name, rea
 
 void h1_first_person_render(real32 game_time)
 {
+	// nothing in first person when it wasn't built since the last draw or while zoomed (first_person_weapon_render_update): its
+	// markers neither, the weapon's lights and effects
+	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(h1_first_person_weapon_unit_get(), _object_mask_unit);
 	const bool submitted = g_h1_first_person_frame_submitted;
 	g_h1_first_person_frame_submitted = false;
-	if (!submitted || g_h1_first_person_frame.empty())
+	if (!submitted || (unit && unit->unit.current_zoom_level != NONE))
 	{
-		return;
+		g_h1_first_person_frame.clear();
 	}
-	// first_person_weapon_render_update: hidden while zoomed
-	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(h1_first_person_weapon_unit_get(), _object_mask_unit);
-	if (unit && unit->unit.current_zoom_level != NONE)
+	if (g_h1_first_person_frame.empty())
 	{
 		return;
 	}

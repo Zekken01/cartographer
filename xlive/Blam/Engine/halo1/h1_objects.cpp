@@ -172,6 +172,11 @@ static bool h1_object_is_first_person_unit(datum object_index)
 	return false;
 }
 
+bool h1_object_held_in_first_person(datum object_index)
+{
+	return h1_object_is_first_person_unit(object_index);
+}
+
 void h1_objects_render(e_h1_render_pass pass, real32 game_time)
 {
 	if (g_h1_object_bindings.empty())

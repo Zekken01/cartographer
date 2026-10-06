@@ -3185,6 +3185,11 @@ static void h1_attachments_update(real32 dt)
 			const int16 function_index = attachment_definition->primary_scale > 0 ? (int16)(attachment_definition->primary_scale - 1) : (int16)NONE;
 			real32 function_value;
 			const bool function_active = h1_object_function_value_get(object_index, function_index, &function_value);
+			// what a first person player holds shows its effects and lights at the first person weapon only (none while that's hidden:
+			// zoomed, in a vehicle)
+			real_matrix4x3 first_person_marker;
+			const bool first_person = h1_first_person_marker_get(object_index, attachment_definition->marker, &first_person_marker);
+			const bool hidden_in_first_person = !first_person && h1_object_held_in_first_person(object_index);
 			if (group_tag == 'lsnd')
 			{
 				// game_sound.c update_potentially_audible_looping_sound: at its marker, while the object's function is active
@@ -3198,7 +3203,7 @@ static void h1_attachments_update(real32 dt)
 				attachment->effect.scale_a = function_value;
 				for (int32 tick = 0; tick < ticks; tick++)
 				{
-					if (!function_active)
+					if (!function_active || hidden_in_first_person)
 					{
 						attachment->effect.stopped = true;
 						break;
@@ -3221,9 +3226,8 @@ static void h1_attachments_update(real32 dt)
 			}
 			else
 			{
-				attachment->light.intensity_scale = function_value;
-				real_matrix4x3 first_person_marker;
-				attachment->light.first_person = h1_first_person_marker_get(object_index, attachment_definition->marker, &first_person_marker);
+				attachment->light.first_person = first_person;
+				attachment->light.intensity_scale = hidden_in_first_person ? 0.f : function_value;
 				object_marker marker;
 				if (h1_object_markers_get(object_index, attachment_definition->marker, &marker, 1) > 0)
 				{
