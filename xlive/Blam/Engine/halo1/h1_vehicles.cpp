@@ -674,7 +674,14 @@ static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle
 	vehicle->camera_submerged_marker_name = h1_string_id(h1_vehicle->camera_submerged_marker_name);
 	vehicle->pitch_auto_level = h1_vehicle->pitch_auto_level;
 	vehicle->pitch_range = h1_vehicle->pitch_range;
-	vehicle->acceleration_range = h1_vehicle->seat_acceleration_scale;
+	// halo 1 scales the unit's acceleration (its acceleration overlays: the warthog's turret sways) per tick squared, halo 2 per
+	// second squared
+	vehicle->acceleration_range =
+	{
+		h1_vehicle->seat_acceleration_scale.i / (30.f * 30.f),
+		h1_vehicle->seat_acceleration_scale.j / (30.f * 30.f),
+		h1_vehicle->seat_acceleration_scale.k / (30.f * 30.f),
+	};
 	vehicle->soft_ping_threshold = h1_vehicle->soft_ping_threshold;
 	vehicle->soft_ping_interrupt_time = h1_vehicle->soft_ping_interrupt_time;
 	vehicle->hard_ping_threshold = h1_vehicle->hard_ping_threshold;
