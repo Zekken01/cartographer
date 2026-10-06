@@ -184,16 +184,6 @@ boolean unit_add_equipment_to_inventory(long unit_index, long equipment_index, s
 	return FALSE;
 }
 
-// color_math.c rgb_colors_interpolate: from the lower bound to the upper (flags bit 0: through hue, saturation and value)
-union real_rgb_color* rgb_colors_interpolate(union real_rgb_color* rgb_result, unsigned long flags, union real_rgb_color const* rgb_lower_bound,
-	union real_rgb_color const* rgb_upper_bound, real u)
-{
-	rgb_result->red = rgb_lower_bound->red + (rgb_upper_bound->red - rgb_lower_bound->red) * u;
-	rgb_result->green = rgb_lower_bound->green + (rgb_upper_bound->green - rgb_lower_bound->green) * u;
-	rgb_result->blue = rgb_lower_bound->blue + (rgb_upper_bound->blue - rgb_lower_bound->blue) * u;
-	return rgb_result;
-}
-
 /* ---------- the AI's lifecycle */
 
 static void ai_tick(void)
