@@ -40,3 +40,6 @@ bool h1_mopp_collision_bsp_bounds(const collision_bsp* bsp, const real_matrix4x3
 bool h1_mopp_build(const std::vector<s_h1_mopp_item>& items, uint8** out_blob, uint32* out_size, real_point3d* out_bounds_min, real_point3d* out_bounds_max);
 
 void h1_mopp_free(uint8* blob);
+
+// the points of a collision bsp surface's polygon, in its order
+int32 h1_mopp_surface_vertices_get(const collision_bsp* bsp, int32 surface_index, real_point3d* out_points, int32 max_points);

@@ -5537,4 +5537,151 @@ struct h1_phys
 };
 ASSERT_STRUCT_SIZE(h1_phys, 0x80);
 
+struct h1_mach_attachments
+{
+	h1_tag_reference type; // 0x0
+	char marker[32]; // 0x10
+	int16 primary_scale; // 0x30
+	int16 secondary_scale; // 0x32
+	int16 change_color; // 0x34
+	int16 unknown; // 0x36
+	int8 pad_38[16];
+};
+ASSERT_STRUCT_SIZE(h1_mach_attachments, 0x48);
+
+struct h1_mach_widgets
+{
+	h1_tag_reference reference; // 0x0
+	int8 pad_10[16];
+};
+ASSERT_STRUCT_SIZE(h1_mach_widgets, 0x20);
+
+struct h1_mach_functions
+{
+	uint32 flags; // 0x0
+	real32 period; // 0x4
+	int16 scale_period_by; // 0x8
+	int16 function; // 0xa
+	int16 scale_function_by; // 0xc
+	int16 wobble_function; // 0xe
+	real32 wobble_period; // 0x10
+	real32 wobble_magnitude; // 0x14
+	real32 square_wave_threshold; // 0x18
+	int16 step_count; // 0x1c
+	int16 map_to; // 0x1e
+	int16 sawtooth_count; // 0x20
+	int16 add; // 0x22
+	int16 scale_result_by; // 0x24
+	int16 bounds_mode; // 0x26
+	real_bounds bounds; // 0x28
+	int8 pad_30[4];
+	int16 unknown; // 0x34
+	int16 turn_off_with_index; // 0x36
+	real32 scale_by; // 0x38
+	int8 pad_3c[252];
+	real32 inverse_bounds; // 0x138
+	real32 inverse_sawtooth; // 0x13c
+	real32 inverse_step; // 0x140
+	real32 inverse_period; // 0x144
+	char usage[32]; // 0x148
+};
+ASSERT_STRUCT_SIZE(h1_mach_functions, 0x168);
+
+struct h1_mach_change_colors_permutations
+{
+	real32 weight; // 0x0
+	real_rgb_color color_lower_bound; // 0x4
+	real_rgb_color color_upper_bound; // 0x10
+};
+ASSERT_STRUCT_SIZE(h1_mach_change_colors_permutations, 0x1c);
+
+struct h1_mach_change_colors
+{
+	int16 darken_by; // 0x0
+	int16 scale_by; // 0x2
+	uint32 scale_flags; // 0x4
+	real_rgb_color color_lower_bound; // 0x8
+	real_rgb_color color_upper_bound; // 0x14
+	h1_tag_block<h1_mach_change_colors_permutations> permutations; // 0x20
+};
+ASSERT_STRUCT_SIZE(h1_mach_change_colors, 0x2c);
+
+struct h1_mach_predicted_resources
+{
+	int16 type; // 0x0
+	int16 resource_index; // 0x2
+	datum tag_index; // 0x4
+};
+ASSERT_STRUCT_SIZE(h1_mach_predicted_resources, 0x8);
+
+struct h1_mach
+{
+	int16 object_type; // 0x0
+	uint16 flags; // 0x2
+	real32 bounding_radius; // 0x4
+	real_point3d bounding_offset; // 0x8
+	real_point3d origin_offset; // 0x14
+	real32 acceleration_scale; // 0x20
+	uint32 runtime_flags; // 0x24
+	h1_tag_reference model; // 0x28
+	h1_tag_reference animation_graph; // 0x38
+	int8 pad_48[40];
+	h1_tag_reference collision_model; // 0x70
+	h1_tag_reference physics; // 0x80
+	h1_tag_reference modifier_shader; // 0x90
+	h1_tag_reference creation_effect; // 0xa0
+	int8 pad_b0[84];
+	real32 render_bounding_radius; // 0x104
+	int16 a_in; // 0x108
+	int16 b_in; // 0x10a
+	int16 c_in; // 0x10c
+	int16 d_in; // 0x10e
+	int8 pad_110[44];
+	int16 hud_text_message_index; // 0x13c
+	int16 forced_shader_permutation_index; // 0x13e
+	h1_tag_block<h1_mach_attachments> attachments; // 0x140
+	h1_tag_block<h1_mach_widgets> widgets; // 0x14c
+	h1_tag_block<h1_mach_functions> functions; // 0x158
+	h1_tag_block<h1_mach_change_colors> change_colors; // 0x164
+	h1_tag_block<h1_mach_predicted_resources> predicted_resources; // 0x170
+	uint32 flags_2; // 0x17c
+	real32 power_transition_time; // 0x180
+	real32 power_acceleration_time; // 0x184
+	real32 position_transition_time; // 0x188
+	real32 position_acceleration_time; // 0x18c
+	real32 depowered_position_transition_time; // 0x190
+	real32 depowered_position_acceleration_time; // 0x194
+	int16 a_in_2; // 0x198
+	int16 b_in_2; // 0x19a
+	int16 c_in_2; // 0x19c
+	int16 d_in_2; // 0x19e
+	h1_tag_reference open_up; // 0x1a0
+	h1_tag_reference close_down; // 0x1b0
+	h1_tag_reference opened; // 0x1c0
+	h1_tag_reference closed; // 0x1d0
+	h1_tag_reference depowered; // 0x1e0
+	h1_tag_reference repowered; // 0x1f0
+	real32 delay_time; // 0x200
+	int8 pad_204[8];
+	h1_tag_reference delay_effect; // 0x20c
+	real32 automatic_activation_radius; // 0x21c
+	int8 pad_220[84];
+	real32 inverse_power_acceleration_time; // 0x274
+	real32 inverse_power_transition_time; // 0x278
+	real32 inverse_depowered_position_acceleration_time; // 0x27c
+	real32 inverse_depowered_position_transition_time; // 0x280
+	real32 inverse_position_acceleration_time; // 0x284
+	real32 inverse_position_transition_time; // 0x288
+	real32 delay_time_ticks; // 0x28c
+	int16 type; // 0x290
+	uint16 flags_3; // 0x292
+	real32 door_open_time; // 0x294
+	int8 pad_298[80];
+	int16 collision_response; // 0x2e8
+	int16 elevator_node; // 0x2ea
+	int8 pad_2ec[52];
+	int32 door_open_time_ticks; // 0x320
+};
+ASSERT_STRUCT_SIZE(h1_mach, 0x324);
+
 #pragma pack(pop)

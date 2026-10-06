@@ -36,6 +36,11 @@
 
 /* ---------- constants */
 
+enum
+{
+	k_h2_machine_type_gear = 2,
+};
+
 enum e_h1_object_type
 {
 	_h1_object_type_biped = 0,
@@ -334,13 +339,44 @@ static datum h1_object_shell_definition_build(datum h1_definition_index)
 	s_h1_object_tags tags;
 	tags.render_model = h1_object_render_model_build(h1_model, name);
 	tags.collision_model = h1_collision ? h1_object_collision_model_build(h1_collision, h1_model, name) : NONE;
-	tags.physics_model = NONE;
+	tags.physics_model = h1_object_physics_model_build(h1_collision, h1_model, tags.collision_model, name);
 	tags.animation_graph = h1_object->animation_graph.index != NONE ? h1_animation_graph_build(h1_object->animation_graph.index, h1_model, name) : NONE;
 	tags.disappear_distance = 200.f;
 	const datum model_index = tags.render_model != NONE ? h1_object_model_build(&tags, h1_model, h1_collision, name) : NONE;
 	if (model_index == NONE)
 	{
 		return NONE;
+	}
+
+	// with collision it's a halo 2 machine (an inert gear): halo 2 gives havok bodies, what its bipeds and vehicles collide with,
+	// only to bipeds, vehicles, machines, crates and creatures (FUN_004a150d's object type mask)
+	if (tags.physics_model != NONE)
+	{
+		h2x_mach* machine = NULL;
+		const datum machine_index = h1_runtime_tag_new('mach', name, &machine);
+		if (machine_index == NONE)
+		{
+			return NONE;
+		}
+		tag_reference* references[] = { &machine->model, &machine->crate_object, &machine->modifier_shader, &machine->creation_effect, &machine->material_effects,
+			&machine->open_up, &machine->close_down, &machine->opened, &machine->closed, &machine->depowered, &machine->repowered, &machine->delay_effect };
+		for (tag_reference* reference : references)
+		{
+			reference->group = (tag_group)NONE;
+			reference->index = NONE;
+		}
+		machine->object_type = _object_type_machine;
+		machine->bounding_radius = h1_object->bounding_radius;
+		machine->bounding_offset = h1_object->bounding_offset;
+		machine->acceleration_scale = h1_object->acceleration_scale;
+		machine->default_model_variant = _string_id_default;
+		h1_runtime_reference_set(&machine->model, 'hlmt', model_index);
+		machine->apply_collision_damage_scale = 1.f;
+		machine->hud_text_message_index = NONE;
+		machine->type = k_h2_machine_type_gear;
+		machine->elevator_node = NONE;
+		h1_objects_bind(machine_index, h1_definition_index);
+		return machine_index;
 	}
 
 	h2x_scen* scenery = NULL;

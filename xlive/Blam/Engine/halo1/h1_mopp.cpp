@@ -283,6 +283,11 @@ bool h1_mopp_build(const std::vector<s_h1_mopp_item>& items, uint8** out_blob, u
 	return true;
 }
 
+int32 h1_mopp_surface_vertices_get(const collision_bsp* bsp, int32 surface_index, real_point3d* out_points, int32 max_points)
+{
+	return collision_surface_vertices_get(bsp, surface_index, out_points, max_points);
+}
+
 void h1_mopp_free(uint8* blob)
 {
 	free(blob);

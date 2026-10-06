@@ -24,6 +24,9 @@ struct s_h1_object_tags
 datum h1_object_render_model_build(const h1_mode* h1_model, const char* name);
 datum h1_object_collision_model_build(const h1_coll* h1_collision, const h1_mode* h1_model, const char* name);
 datum h1_object_model_build(const s_h1_object_tags* tags, const h1_mode* h1_model, const h1_coll* h1_collision, const char* name);
+// a physics model of keyframed bodies over the collision model's triangles (each region's first permutation), one per node
+// with collision: halo 2's bipeds and vehicles collide only with physics
+datum h1_object_physics_model_build(const h1_coll* h1_collision, const h1_mode* h1_model, datum collision_model_index, const char* name);
 
 // the name of a halo 2 global material (matg materials)
 string_id h1_global_material_name(int16 global_material_index);

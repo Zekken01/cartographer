@@ -166,6 +166,7 @@ struct s_h1_devices_globals
 
 static s_h1_devices_globals g_h1_devices;
 static object_preprocess_node_orientations_t g_h2_scenery_preprocess_node_orientations = NULL;
+static object_preprocess_node_orientations_t g_h2_device_preprocess_node_orientations = NULL;
 
 /* prototypes */
 
@@ -179,6 +180,8 @@ static void h1_device_effect_new(datum object_index, datum effect_index);
 static bool h1_accelerate_to_position(real32* position, real32* velocity, real32 target_position, real32 maximum_velocity, real32 acceleration,
 	real32 minimum_position, real32 maximum_position, bool periodic);
 static void h1_device_preprocess_node_orientations_hook(datum object_index, uint8* node_flags, int32 node_count, real_orientation* orientations);
+static void h1_device_scenery_preprocess_node_orientations_hook(datum object_index, uint8* node_flags, int32 node_count, real_orientation* orientations);
+static void h1_device_machine_preprocess_node_orientations_hook(datum object_index, uint8* node_flags, int32 node_count, real_orientation* orientations);
 
 /* public code */
 
@@ -272,7 +275,18 @@ void h1_devices_update(void)
 		if (TEST_BIT(entry.second.flags, _h1_device_position_changed_bit))
 		{
 			SET_BIT(entry.second.flags, _h1_device_position_changed_bit, false);
+			// machine_update's object_translate: awake, its nodes again
+			object_wake(entry.first);
 			object_compute_node_matrices_with_children(entry.first);
+			// halo 2 places a machine's keyframed havok bodies at its nodes when it makes them, and never moves them: made again at
+			// the nodes where they are now (FUN_004e6deb deletes, FUN_004a150d makes the object's havok component)
+			object_datum* object = object_get(entry.first);
+			if (object->object.havok_datum != NONE)
+			{
+				Memory::GetAddress<void(__cdecl*)(datum)>(0xE6DEB)(object->object.havok_datum);
+				object->object.havok_datum = NONE;
+				Memory::GetAddress<void(__cdecl*)(datum)>(0xA150D)(entry.first);
+			}
 		}
 	}
 	return;
@@ -479,6 +493,7 @@ void h1_device_group_change_only_once_more_set(int16 group_index, bool change_on
 
 void h1_devices_apply_patches(void)
 {
+	// the device shells are scenery, or machines when they collide
 	object_type_definition* scenery_type = object_type_definition_get(_object_type_scenery);
 	for (int32 i = 0; i < k_max_object_type_inheritence; i++)
 	{
@@ -486,7 +501,18 @@ void h1_devices_apply_patches(void)
 		if (part && part->group_tag == 'scen')
 		{
 			g_h2_scenery_preprocess_node_orientations = part->object_preprocess_node_orientations;
-			part->object_preprocess_node_orientations = h1_device_preprocess_node_orientations_hook;
+			part->object_preprocess_node_orientations = h1_device_scenery_preprocess_node_orientations_hook;
+			break;
+		}
+	}
+	object_type_definition* machine_type = object_type_definition_get(_object_type_machine);
+	for (int32 i = 0; i < k_max_object_type_inheritence; i++)
+	{
+		object_type_definition* part = machine_type->part_definitions[i];
+		if (part && part->group_tag == 'mach')
+		{
+			g_h2_device_preprocess_node_orientations = part->object_preprocess_node_orientations;
+			part->object_preprocess_node_orientations = h1_device_machine_preprocess_node_orientations_hook;
 			break;
 		}
 	}
@@ -740,13 +766,29 @@ static bool h1_accelerate_to_position(real32* position, real32* velocity, real32
 	return false;
 }
 
-// device_preprocess_node_orientations: the position animation at the device's position, the power animation at its power
-static void h1_device_preprocess_node_orientations_hook(datum object_index, uint8* node_flags, int32 node_count, real_orientation* orientations)
+static void h1_device_scenery_preprocess_node_orientations_hook(datum object_index, uint8* node_flags, int32 node_count, real_orientation* orientations)
 {
 	if (g_h2_scenery_preprocess_node_orientations)
 	{
 		g_h2_scenery_preprocess_node_orientations(object_index, node_flags, node_count, orientations);
 	}
+	h1_device_preprocess_node_orientations_hook(object_index, node_flags, node_count, orientations);
+	return;
+}
+
+static void h1_device_machine_preprocess_node_orientations_hook(datum object_index, uint8* node_flags, int32 node_count, real_orientation* orientations)
+{
+	if (g_h2_device_preprocess_node_orientations)
+	{
+		g_h2_device_preprocess_node_orientations(object_index, node_flags, node_count, orientations);
+	}
+	h1_device_preprocess_node_orientations_hook(object_index, node_flags, node_count, orientations);
+	return;
+}
+
+// device_preprocess_node_orientations: the position animation at the device's position, the power animation at its power
+static void h1_device_preprocess_node_orientations_hook(datum object_index, uint8* node_flags, int32 node_count, real_orientation* orientations)
+{
 	const s_h1_device* device = h1_maps_active() ? h1_device_get(object_index) : NULL;
 	const s_h1_device_definition* definition = device ? h1_device_definition_get(device) : NULL;
 	const h1_scen* h1_object = device ? (const h1_scen*)g_h1_cache_file->tag_get('obje', device->h1_definition_index) : NULL;

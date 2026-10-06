@@ -4,6 +4,8 @@
 #include "h1_cache_file.h"
 #include "h1_runtime.h"
 #include "h1_structure_bsp.h"
+#include "h1_mopp.h"
+#include "h1_log.h"
 #include "h2_tag_definitions_generated.h"
 
 #include "game/game_globals.h"
@@ -192,6 +194,202 @@ datum h1_object_collision_model_build(const h1_coll* h1_collision, const h1_mode
 		spheres[i].radius = h1_sphere->radius;
 	}
 	return collision_index;
+}
+
+
+// halo 2's physics model shapes and motions (phmo)
+enum
+{
+	k_h2_physics_shape_type_triangle = 3,
+	k_h2_physics_shape_type_list = 14,
+	k_h2_physics_motion_type_keyframed = 4,
+	k_h2_physics_list_children = 4,
+};
+
+datum h1_object_physics_model_build(const h1_coll* h1_collision, const h1_mode* h1_model, datum collision_model_index, const char* name)
+{
+	const h2x_coll* collision = collision_model_index != NONE ? (const h2x_coll*)tag_get('coll', collision_model_index) : NULL;
+	if (!collision || !h1_model)
+	{
+		return NONE;
+	}
+
+	// the triangles of every region's first permutation, by the node they move with (in its space, as the bsps are)
+	struct s_triangle
+	{
+		real_point3d points[3];
+	};
+	std::vector<int16> body_nodes;
+	std::vector<std::vector<s_triangle>> body_triangles;
+	for (int32 r = 0; r < collision->regions.count; r++)
+	{
+		const h2x_coll_regions* region = collision->regions[r];
+		if (region->permutations.count <= 0)
+		{
+			continue;
+		}
+		const h2x_coll_regions_permutations* permutation = region->permutations[0];
+		for (int32 b = 0; b < permutation->bsps.count; b++)
+		{
+			const h2x_coll_regions_permutations_bsps* bsp_definition = permutation->bsps[b];
+			const collision_bsp* bsp = (const collision_bsp*)&bsp_definition->bsp_3d_nodes;
+			size_t body = 0;
+			while (body < body_nodes.size() && body_nodes[body] != bsp_definition->node_index)
+			{
+				body++;
+			}
+			if (body == body_nodes.size())
+			{
+				body_nodes.push_back(bsp_definition->node_index);
+				body_triangles.emplace_back();
+			}
+			for (int32 s = 0; s < bsp->surfaces.count; s++)
+			{
+				real_point3d points[32];
+				const int32 count = h1_mopp_surface_vertices_get(bsp, s, points, NUMBEROF(points));
+				for (int32 i = 1; i + 1 < count; i++)
+				{
+					body_triangles[body].push_back({ { points[0], points[i], points[i + 1] } });
+				}
+			}
+		}
+	}
+	size_t triangle_count = 0;
+	for (const auto& triangles : body_triangles)
+	{
+		triangle_count += triangles.size();
+	}
+	if (triangle_count == 0 || triangle_count > 0x7FFF)
+	{
+		return NONE;
+	}
+
+	h2x_phmo* physics = NULL;
+	const datum physics_index = h1_runtime_tag_new('phmo', name, &physics);
+	if (physics_index == NONE)
+	{
+		return NONE;
+	}
+	physics->mass = 1.f;
+	physics->low_frequency_deactivation_scale = 1.f;
+	physics->high_frequency_deactivation_scale = 1.f;
+	const h1_coll_materials* h1_material = h1_collision ? g_h1_cache_file->block_get(h1_collision->materials, 0) : NULL;
+	h2x_phmo_materials* material = h1_runtime_block_new(&physics->materials, 1);
+	material->name = h1_string_id(h1_material ? h1_material->name : "hull");
+	material->global_material_name = h1_global_material_name(h1_material_type_to_global_material(h1_material ? h1_material->material_type : 0));
+	material->phantom_type_index = NONE;
+
+	h2x_phmo_triangles* triangles = h1_runtime_block_new(&physics->triangles, (int32)triangle_count);
+	// a list tree over each body's triangles: leaves of four triangles, lists of four lists over them up to the root
+	int32 list_count = 0;
+	for (const auto& body : body_triangles)
+	{
+		int32 level = (int32)body.size();
+		while (level > 1)
+		{
+			level = (level + k_h2_physics_list_children - 1) / k_h2_physics_list_children;
+			list_count += level;
+		}
+	}
+	h2x_phmo_lists* lists = h1_runtime_block_new(&physics->lists, list_count);
+	h2x_phmo_rigid_bodies* bodies = h1_runtime_block_new(&physics->rigid_bodies, (int32)body_nodes.size());
+
+	int32 triangle_index = 0;
+	int32 list_index = 0;
+	for (size_t b = 0; b < body_nodes.size(); b++)
+	{
+		real_rectangle3d bounds = { FLT_MAX, -FLT_MAX, FLT_MAX, -FLT_MAX, FLT_MAX, -FLT_MAX };
+		std::vector<std::pair<int16, int16>> level;
+		for (const s_triangle& source : body_triangles[b])
+		{
+			h2x_phmo_triangles* triangle = &triangles[triangle_index];
+			triangle->name = _string_id_default;
+			triangle->material_index = 0;
+			triangle->relative_mass_scale = 1.f;
+			triangle->friction = 0.8f;
+			triangle->restitution = 0.2f;
+			triangle->mass_distribution_index = NONE;
+			triangle->phantom_type_index = NONE;
+			triangle->count = 128;
+			triangle->radius = 0.025f;
+			real_vector3d* corners[3] = { &triangle->point_a, &triangle->point_b, &triangle->point_c };
+			for (int32 c = 0; c < 3; c++)
+			{
+				const real_point3d* point = &source.points[c];
+				*corners[c] = { point->x, point->y, point->z };
+				bounds.x0 = MIN(bounds.x0, point->x); bounds.x1 = MAX(bounds.x1, point->x);
+				bounds.y0 = MIN(bounds.y0, point->y); bounds.y1 = MAX(bounds.y1, point->y);
+				bounds.z0 = MIN(bounds.z0, point->z); bounds.z1 = MAX(bounds.z1, point->z);
+			}
+			level.push_back({ (int16)k_h2_physics_shape_type_triangle, (int16)triangle_index });
+			triangle_index++;
+		}
+		while (level.size() > 1)
+		{
+			std::vector<std::pair<int16, int16>> parents;
+			for (size_t first = 0; first < level.size(); first += k_h2_physics_list_children)
+			{
+				const int32 count = (int32)MIN(level.size() - first, (size_t)k_h2_physics_list_children);
+				h2x_phmo_lists* list = &lists[list_index];
+				list->count = 128;
+				list->child_shapes_size = count;
+				list->child_shapes_capacity = 0x80000000 | k_h2_physics_list_children;
+				int16* children = &list->shape_type_0;
+				for (int32 c = 0; c < k_h2_physics_list_children; c++)
+				{
+					children[c * 4 + 0] = c < count ? level[first + c].first : 0;
+					children[c * 4 + 1] = c < count ? level[first + c].second : NONE;
+				}
+				parents.push_back({ (int16)k_h2_physics_shape_type_list, (int16)list_index });
+				list_index++;
+			}
+			level = parents;
+		}
+
+		h2x_phmo_rigid_bodies* body = &bodies[b];
+		body->node_index = body_nodes[b];
+		body->region_index = 0;
+		body->permutation_index = 0;
+		body->bounding_sphere_offset = { (bounds.x0 + bounds.x1) * 0.5f, (bounds.y0 + bounds.y1) * 0.5f, (bounds.z0 + bounds.z1) * 0.5f };
+		const real32 dx = (bounds.x1 - bounds.x0) * 0.5f, dy = (bounds.y1 - bounds.y0) * 0.5f, dz = (bounds.z1 - bounds.z0) * 0.5f;
+		body->bounding_sphere_radius = sqrtf(dx * dx + dy * dy + dz * dz);
+		body->motion_type = (int16)k_h2_physics_motion_type_keyframed;
+		body->no_phantom_power_alternative_rigid_body_index = NONE;
+		body->size = 4;
+		body->inertia_tensor_scale = 1.f;
+		body->angular_damping = 0.05f;
+		body->shape_type = level.empty() ? 0 : level[0].first;
+		body->shape_index = level.empty() ? 0 : level[0].second;
+		body->mass = 1.f;
+		// keyframed: its center of mass is its node's origin
+		body->center_of_mass = { 0.f, 0.f, 0.f };
+		body->inertia_tensor_x = { 1.f, 0.f, 0.f };
+		body->inertia_tensor_y = { 0.f, 1.f, 0.f };
+		body->inertia_tensor_z = { 0.f, 0.f, 1.f };
+		body->collision_quality_override_type = NONE;
+	}
+
+	// one region and permutation holding the bodies
+	h2x_phmo_regions* region = h1_runtime_block_new(&physics->regions, 1);
+	region->name = collision->regions.count > 0 ? collision->regions[0]->name : h1_string_id("default");
+	h2x_phmo_regions_permutations* permutation = h1_runtime_block_new(&region->permutations, 1);
+	permutation->name = _string_id_default;
+	h2x_phmo_regions_permutations_rigid_bodies* rigid_bodies = h1_runtime_block_new(&permutation->rigid_bodies, (int32)body_nodes.size());
+	for (size_t b = 0; b < body_nodes.size(); b++)
+	{
+		rigid_bodies[b].rigid_body_index = (int16)b;
+	}
+
+	h2x_phmo_nodes* nodes = h1_runtime_block_new(&physics->nodes, h1_model->nodes.count);
+	for (int32 i = 0; i < h1_model->nodes.count; i++)
+	{
+		const h1_mode_nodes* h1_node = g_h1_cache_file->block_get(h1_model->nodes, i);
+		nodes[i].name = h1_string_id(h1_node->name);
+		nodes[i].parent_index = h1_node->parent_node_index;
+		nodes[i].sibling_index = h1_node->next_sibling_node_index;
+		nodes[i].child_index = h1_node->first_child_node_index;
+	}
+	return physics_index;
 }
 
 datum h1_object_model_build(const s_h1_object_tags* tags, const h1_mode* h1_model, const h1_coll* h1_collision, const char* name)

@@ -10025,4 +10025,147 @@ struct h2x_phmo
 };
 ASSERT_STRUCT_SIZE(h2x_phmo, 0x110);
 
+struct h2x_mach_ai_properties
+{
+	uint32 flags; // 0x0
+	string_id ai_type_name; // 0x4
+	int8 pad_8[4];
+	int16 ai_size; // 0xc
+	int16 leap_jump_speed; // 0xe
+};
+ASSERT_STRUCT_SIZE(h2x_mach_ai_properties, 0x10);
+
+struct h2x_mach_functions
+{
+	uint32 flags; // 0x0
+	string_id import_name; // 0x4
+	string_id export_name; // 0x8
+	string_id turn_off_with; // 0xc
+	real32 minimum_value; // 0x10
+	tag_data default_function; // 0x14
+	string_id scale_by; // 0x1c
+};
+ASSERT_STRUCT_SIZE(h2x_mach_functions, 0x20);
+
+struct h2x_mach_attachments
+{
+	tag_reference type; // 0x0
+	string_id marker; // 0x8
+	int16 change_color; // 0xc
+	int16 unknown; // 0xe
+	string_id primary_scale; // 0x10
+	string_id secondary_scale; // 0x14
+};
+ASSERT_STRUCT_SIZE(h2x_mach_attachments, 0x18);
+
+struct h2x_mach_widgets
+{
+	tag_reference type; // 0x0
+};
+ASSERT_STRUCT_SIZE(h2x_mach_widgets, 0x8);
+
+struct h2x_mach_old_functions
+{
+	int8 pad_0[76];
+	string_id unknown; // 0x4c
+};
+ASSERT_STRUCT_SIZE(h2x_mach_old_functions, 0x50);
+
+struct h2x_mach_change_colors_initial_permutations
+{
+	real32 weight; // 0x0
+	real_rgb_color color_lower_bound; // 0x4
+	real_rgb_color color_upper_bound; // 0x10
+	string_id variant_name; // 0x1c
+};
+ASSERT_STRUCT_SIZE(h2x_mach_change_colors_initial_permutations, 0x20);
+
+struct h2x_mach_change_colors_functions
+{
+	int8 pad_0[4];
+	uint32 scale_flags; // 0x4
+	real_rgb_color color_lower_bound; // 0x8
+	real_rgb_color color_upper_bound; // 0x14
+	string_id darken_by; // 0x20
+	string_id scale_by; // 0x24
+};
+ASSERT_STRUCT_SIZE(h2x_mach_change_colors_functions, 0x28);
+
+struct h2x_mach_change_colors
+{
+	tag_block<h2x_mach_change_colors_initial_permutations> initial_permutations; // 0x0
+	tag_block<h2x_mach_change_colors_functions> functions; // 0x8
+};
+ASSERT_STRUCT_SIZE(h2x_mach_change_colors, 0x10);
+
+struct h2x_mach_predicted_resources
+{
+	int16 type; // 0x0
+	int16 resource_index; // 0x2
+	datum tag_index; // 0x4
+};
+ASSERT_STRUCT_SIZE(h2x_mach_predicted_resources, 0x8);
+
+struct h2x_mach
+{
+	int16 object_type; // 0x0
+	uint16 flags; // 0x2
+	real32 bounding_radius; // 0x4
+	real_point3d bounding_offset; // 0x8
+	real32 acceleration_scale; // 0x14
+	int16 lightmap_shadow_mode; // 0x18
+	int8 sweetener_size; // 0x1a
+	int8 unknown; // 0x1b
+	uint32 runtime_flags; // 0x1c
+	real32 dynamic_light_sphere_radius; // 0x20
+	real_point3d dynamic_light_sphere_offset; // 0x24
+	string_id default_model_variant; // 0x30
+	tag_reference model; // 0x34
+	tag_reference crate_object; // 0x3c
+	tag_reference modifier_shader; // 0x44
+	tag_reference creation_effect; // 0x4c
+	tag_reference material_effects; // 0x54
+	tag_block<h2x_mach_ai_properties> ai_properties; // 0x5c
+	tag_block<h2x_mach_functions> functions; // 0x64
+	real32 apply_collision_damage_scale; // 0x6c
+	real_bounds game_acceleration; // 0x70
+	real_bounds game_scale; // 0x78
+	real_bounds absolute_acceleration; // 0x80
+	real_bounds absolute_scale; // 0x88
+	int16 hud_text_message_index; // 0x90
+	int16 unknown_2; // 0x92
+	tag_block<h2x_mach_attachments> attachments; // 0x94
+	tag_block<h2x_mach_widgets> widgets; // 0x9c
+	tag_block<h2x_mach_old_functions> old_functions; // 0xa4
+	tag_block<h2x_mach_change_colors> change_colors; // 0xac
+	tag_block<h2x_mach_predicted_resources> predicted_resources; // 0xb4
+	uint32 flags_2; // 0xbc
+	real32 power_transition_time; // 0xc0
+	real32 power_acceleration_time; // 0xc4
+	real32 position_transition_time; // 0xc8
+	real32 position_acceleration_time; // 0xcc
+	real32 depowered_position_transition_time; // 0xd0
+	real32 depowered_position_acceleration_time; // 0xd4
+	uint16 lightmap_flags; // 0xd8
+	int16 unknown_3; // 0xda
+	tag_reference open_up; // 0xdc
+	tag_reference close_down; // 0xe4
+	tag_reference opened; // 0xec
+	tag_reference closed; // 0xf4
+	tag_reference depowered; // 0xfc
+	tag_reference repowered; // 0x104
+	real32 delay_time; // 0x10c
+	tag_reference delay_effect; // 0x110
+	real32 automatic_activation_radius; // 0x118
+	int16 type; // 0x11c
+	uint16 flags_3; // 0x11e
+	real32 door_open_time; // 0x120
+	real_bounds door_occlusion_bounds; // 0x124
+	int16 collision_response; // 0x12c
+	int16 elevator_node; // 0x12e
+	int16 pathfinding_policy; // 0x130
+	int16 unknown_4; // 0x132
+};
+ASSERT_STRUCT_SIZE(h2x_mach, 0x134);
+
 #pragma pack(pop)
