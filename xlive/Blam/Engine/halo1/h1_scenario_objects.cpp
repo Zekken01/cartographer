@@ -118,6 +118,7 @@ void h1_scenario_objects_build(void)
 	g_h1_scenario_objects.definitions.clear();
 	g_h1_scenario_objects.object_types.clear();
 	h1_cinematic_titles_reset();
+	h1_hud_text_reset();
 	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
 	if (scenario->type != 0)
 	{

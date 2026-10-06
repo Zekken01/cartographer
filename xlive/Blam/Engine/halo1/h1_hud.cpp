@@ -14,6 +14,7 @@
 #include "items/weapons.h"
 #include "objects/objects.h"
 #include "rasterizer/dx9/rasterizer_dx9_main.h"
+#include "cutscene/cinematics.h"
 #include "rasterizer/rasterizer_text.h"
 #include "text/draw_string.h"
 #include "text/font_group.h"
@@ -2647,6 +2648,238 @@ static void h1_hud_render_grenades(datum unit_index, const h1_weap* weapon_defin
 
 // halo 2's font for halo 1's single player font (the titles' halo 1 font isn't drawn)
 constexpr int32 k_h1_cinematic_title_font = _font_id_2;
+// and for its hud messages
+constexpr int32 k_h1_hud_message_font = _font_id_6;
+
+/* ---------- help text and objectives (hud_messaging.c scripted_hud_set_state_message, scripted_hud_set_objective and
+* hud_messaging_update's help and objective lines) */
+
+struct s_h1_hud_state_message
+{
+	char name[32];
+	uint16 text_start_index;
+	uint16 element_start_index;
+	uint8 element_count;
+	int8 pad[3];
+	int32 unused[6];
+};
+static_assert(sizeof(s_h1_hud_state_message) == 0x40);
+
+struct s_h1_hud_message_element
+{
+	uint8 type;			// 0 text (data its length), 1 icon (data its type)
+	uint8 data;
+};
+
+// the scenario's hud messages (hud_message_text_definition): their text, elements (text runs and icons) and messages
+struct s_h1_hud_message_text
+{
+	h1_tag_data text_data;
+	h1_tag_block<s_h1_hud_message_element> elements;
+	h1_tag_block<s_h1_hud_state_message> messages;
+};
+
+// hud_globals_definition: the messaging colors (hud_color_definition) and the objective's custom up and fade ticks
+constexpr uint32 k_h1_hud_globals_messaging_color_offset = 0xD0;
+constexpr uint32 k_h1_hud_globals_objective_color_offset = 0x100;
+
+struct s_h1_hud_text_globals
+{
+	int16 help_message_index;
+	bool show_help_text;
+	bool use_flash;
+	int32 flash_start_time;
+	int16 objective_message_index;
+	int16 objective_uptime;
+};
+
+static s_h1_hud_text_globals g_h1_hud_text = { NONE, true, false, 0, NONE, 0 };
+
+static const h1_matg_interface_bitmaps* h1_hud_interface_bitmaps_get(void);
+
+static const s_h1_hud_message_text* h1_hud_messages_get(void)
+{
+	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
+	return (const s_h1_hud_message_text*)g_h1_cache_file->tag_get('hmt ', scenario->hud_messages.index);
+}
+
+static const uint8* h1_hud_globals_get(void)
+{
+	const h1_matg_interface_bitmaps* interface_bitmaps = h1_hud_interface_bitmaps_get();
+	return interface_bitmaps && interface_bitmaps->hud_globals.index != NONE ? (const uint8*)g_h1_cache_file->tag_get('hudg', interface_bitmaps->hud_globals.index) : NULL;
+}
+
+void h1_hud_text_reset(void)
+{
+	g_h1_hud_text = { NONE, true, false, 0, NONE, 0 };
+	return;
+}
+
+void h1_hud_set_help_text(int16 message_index)
+{
+	if (g_h1_hud_text.show_help_text)
+	{
+		g_h1_hud_text.help_message_index = message_index;
+	}
+	return;
+}
+
+bool h1_hud_show_help_text(bool show)
+{
+	g_h1_hud_text.show_help_text = show;
+	return show;
+}
+
+void h1_hud_enable_help_flash(bool flash)
+{
+	if (flash && !g_h1_hud_text.use_flash)
+	{
+		g_h1_hud_text.flash_start_time = (int32)game_time_get();
+	}
+	g_h1_hud_text.use_flash = flash;
+	return;
+}
+
+void h1_hud_set_objective_text(int16 message_index)
+{
+	const uint8* hud_globals = h1_hud_globals_get();
+	if (!hud_globals)
+	{
+		return;
+	}
+	const int16 up_ticks = *(const int16*)(hud_globals + k_h1_hud_globals_objective_color_offset + 0x1C);
+	const int16 fade_ticks = *(const int16*)(hud_globals + k_h1_hud_globals_objective_color_offset + 0x1E);
+	g_h1_hud_text.objective_message_index = message_index;
+	g_h1_hud_text.objective_uptime = up_ticks + fade_ticks;
+	return;
+}
+
+// the message's text runs, its icons as their names (halo 1 draws the controller's buttons)
+static std::wstring h1_hud_message_string(const s_h1_hud_message_text* messages, const s_h1_hud_state_message* message)
+{
+	static const wchar_t* const k_icon_names[] =
+	{
+		L"A", L"B", L"X", L"Y", L"Black", L"White", L"Left Trigger", L"Right Trigger", L"Up", L"Down", L"Left", L"Right",
+		L"Start", L"Back", L"Left Thumb", L"Right Thumb", L"Left Stick", L"Right Stick", L"Action", L"Throw Grenade", L"Fire",
+		L"Flashlight", L"Jump", L"Use Equipment", L"Switch Weapons", L"Switch Grenades", L"Crouch", L"Zoom", L"Accept", L"Back",
+		L"Move", L"Look",
+	};
+	const wchar_t* text = (const wchar_t*)g_h1_cache_file->data_get(messages->text_data);
+	const int32 text_length = messages->text_data.size / (int32)sizeof(wchar_t);
+	std::wstring result;
+	int32 position = message->text_start_index;
+	for (int32 i = 0; i < message->element_count; i++)
+	{
+		const s_h1_hud_message_element* element = g_h1_cache_file->block_get(messages->elements, message->element_start_index + i);
+		if (!element)
+		{
+			break;
+		}
+		if (element->type == 0)
+		{
+			for (int32 c = 0; c < element->data && position + c < text_length; c++)
+			{
+				if (text[position + c])
+				{
+					result.push_back(text[position + c]);
+				}
+			}
+			position += element->data;
+		}
+		else if (element->data < NUMBEROF(k_icon_names))
+		{
+			result += L"[";
+			result += k_icon_names[element->data];
+			result += L"]";
+		}
+	}
+	return result;
+}
+
+// get_flash_color: the color, flashing to its flash color over its flashes after the start
+static real_argb_color h1_hud_flash_color(const uint8* color_definition, int32 start_time, bool flash)
+{
+	const uint32 color = *(const uint32*)color_definition;
+	const uint32 flash_color = *(const uint32*)(color_definition + 4);
+	const real32 period = *(const real32*)(color_definition + 8);
+	const real32 delay = *(const real32*)(color_definition + 0xC);
+	const int16 flash_count = *(const int16*)(color_definition + 0x10);
+	const real32 length = *(const real32*)(color_definition + 0x14);
+	uint32 pixel = color;
+	if (flash && period > 0.f)
+	{
+		const real32 time = (real32)((int32)game_time_get() - start_time) / 30.f;
+		if (time >= delay && (flash_count == 0 || time < delay + flash_count * period))
+		{
+			const real32 phase = fmodf(time - delay, period);
+			if (phase < length)
+			{
+				pixel = flash_color;
+			}
+		}
+	}
+	return
+	{
+		(real32)((pixel >> 24) & 0xFF) / 255.f,
+		(real32)((pixel >> 16) & 0xFF) / 255.f,
+		(real32)((pixel >> 8) & 0xFF) / 255.f,
+		(real32)(pixel & 0xFF) / 255.f,
+	};
+}
+
+static void h1_hud_help_text_render(int32 elapsed, const D3DVIEWPORT9* viewport, real32 scale, real32 screen_width)
+{
+	const s_h1_hud_message_text* messages = h1_hud_messages_get();
+	const uint8* hud_globals = h1_hud_globals_get();
+	if (!messages || !hud_globals || cinematic_in_progress())
+	{
+		return;
+	}
+	const bool objective_active = g_h1_hud_text.objective_message_index != NONE && g_h1_hud_text.objective_uptime > 0;
+	const bool help_active = g_h1_hud_text.show_help_text && g_h1_hud_text.help_message_index != NONE;
+	if (!objective_active && !help_active)
+	{
+		return;
+	}
+	real_argb_color color;
+	int16 message_index;
+	if (objective_active)
+	{
+		const uint8* objective_color = hud_globals + k_h1_hud_globals_objective_color_offset;
+		const int16 up_ticks = *(const int16*)(objective_color + 0x1C);
+		const int16 fade_ticks = *(const int16*)(objective_color + 0x1E);
+		color = h1_hud_flash_color(objective_color, (int32)game_time_get() + g_h1_hud_text.objective_uptime - up_ticks - fade_ticks, true);
+		color.alpha *= fade_ticks > 0 ? MIN((real32)g_h1_hud_text.objective_uptime / fade_ticks, 1.f) : 1.f;
+		message_index = g_h1_hud_text.objective_message_index;
+		g_h1_hud_text.objective_uptime = (int16)MAX(g_h1_hud_text.objective_uptime - elapsed, 0);
+	}
+	else
+	{
+		const uint8* messaging_color = hud_globals + k_h1_hud_globals_messaging_color_offset;
+		color = h1_hud_flash_color(messaging_color, g_h1_hud_text.flash_start_time, g_h1_hud_text.use_flash);
+		message_index = g_h1_hud_text.help_message_index;
+	}
+	const s_h1_hud_state_message* message = g_h1_cache_file->block_get(messages->messages, message_index);
+	if (!message)
+	{
+		return;
+	}
+	const std::wstring string = h1_hud_message_string(messages, message);
+
+	// the hud messages' place: the title safe frame's top left (48 by 36 of 640 by 480) and 60 down, five lines high
+	const real32 frame_x0 = (real32)(int32)(48.f * screen_width / 640.f);
+	rectangle2d bounds;
+	bounds.top = (int16)(viewport->Y + (36.f + 60.f) * scale);
+	bounds.left = (int16)(viewport->X + frame_x0 * scale);
+	bounds.bottom = (int16)(bounds.top + 120.f * scale);
+	bounds.right = (int16)(viewport->X + (screen_width - frame_x0) * scale);
+	draw_string_set_font(k_h1_hud_message_font);
+	draw_string_set_format(NONE, 0, 0, true);
+	draw_string_set_color(&color);
+	draw_string_set_shadow_color(global_real_argb_black);
+	rasterizer_draw_unicode_string(&bounds, string.c_str());
+	return;
+}
 
 /* ---------- cinematic titles (cinematics.c cinematic_set_title_delayed and cinematic_render's titles) */
 
@@ -2719,6 +2952,8 @@ void h1_cinematic_titles_render(void)
 	// halo 1's titles are placed on a screen 640 wide and 480 high: the window's height, its sides moved with a wider screen's
 	const real32 scale = (real32)viewport.Height / 480.f;
 	const real32 screen_width = (real32)viewport.Width / scale;
+
+	h1_hud_help_text_render(elapsed, &viewport, scale, screen_width);
 
 	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
 	for (s_h1_cinematic_title& active_title : g_h1_cinematic_titles)

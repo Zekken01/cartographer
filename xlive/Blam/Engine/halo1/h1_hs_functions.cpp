@@ -776,7 +776,7 @@ static int32 hs_players_unzoom_all(const int32* arguments) { H2_FUNCTION(0x9127B
 static int32 hs_player_enable_input(const int32* arguments) { H2_FUNCTION(0x51464, t_void_bool)(ARGUMENT_BOOLEAN(0)); return 0; }
 static int32 hs_player_camera_control(const int32* arguments) { return H2_FUNCTION(0x90B97, t_bool_bool)(ARGUMENT_BOOLEAN(0)); }
 static int32 hs_show_hud(const int32* arguments) { return H2_FUNCTION(0x224801, t_bool_bool)(ARGUMENT_BOOLEAN(0)); }
-static int32 hs_show_hud_help_text(const int32* arguments) { return H2_FUNCTION(0x220C62, t_bool_bool)(ARGUMENT_BOOLEAN(0)); }
+static int32 hs_show_hud_help_text(const int32* arguments) { H2_FUNCTION(0x220C62, t_bool_bool)(ARGUMENT_BOOLEAN(0)); return h1_hud_show_help_text(ARGUMENT_BOOLEAN(0)); }
 
 static int32 hs_player_action_test_reset(const int32* arguments) { H2_FUNCTION(0x912B7, t_void)(); return 0; }
 #define HS_PLAYER_ACTION_TEST(name, offset) static int32 name(const int32* arguments) { return H2_FUNCTION(offset, t_bool)(); }
@@ -1352,6 +1352,9 @@ static int32 hs_object_set_collideable(const int32* arguments)
 	return 0;
 }
 
+static int32 hs_hud_set_help_text(const int32* arguments) { h1_hud_set_help_text(ARGUMENT_SHORT(0)); return 0; }
+static int32 hs_hud_set_objective_text(const int32* arguments) { h1_hud_set_objective_text(ARGUMENT_SHORT(0)); return 0; }
+static int32 hs_enable_hud_help_flash(const int32* arguments) { h1_hud_enable_help_flash(ARGUMENT_BOOLEAN(0)); return 0; }
 static int32 hs_cinematic_set_title(const int32* arguments) { h1_cinematic_set_title_delayed(ARGUMENT_SHORT(0), 0.f); return 0; }
 static int32 hs_cinematic_set_title_delayed(const int32* arguments) { h1_cinematic_set_title_delayed(ARGUMENT_SHORT(0), ARGUMENT_REAL(1)); return 0; }
 
@@ -1475,6 +1478,9 @@ static const s_hs_procedure_binding k_hs_procedures[] =
 	{ "sound_cache_flush", hs_nothing },
 	{ "cls", hs_nothing },
 	{ "cinematic_set_title", hs_cinematic_set_title },
+	{ "hud_set_help_text", hs_hud_set_help_text },
+	{ "hud_set_objective_text", hs_hud_set_objective_text },
+	{ "enable_hud_help_flash", hs_enable_hud_help_flash },
 	{ "cinematic_set_title_delayed", hs_cinematic_set_title_delayed },
 	{ "objects_attach", hs_objects_attach },
 	{ "objects_detach", hs_objects_detach },

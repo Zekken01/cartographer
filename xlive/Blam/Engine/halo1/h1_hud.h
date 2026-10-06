@@ -20,3 +20,12 @@ bool h1_hud_hides_halo2_motion_sensor(void);
 void h1_cinematic_titles_reset(void);
 void h1_cinematic_set_title_delayed(int16 title_index, real32 delay);
 void h1_cinematic_titles_render(void);
+
+// hud_messaging.c: the scripts' help text (hud_set_help_text, shown while show_hud_help_text allows it, flashing with
+// enable_hud_help_flash) and objectives (hud_set_objective_text, shown for the hud globals' objective time), drawn with the
+// cinematic titles
+void h1_hud_text_reset(void);
+void h1_hud_set_help_text(int16 message_index);
+bool h1_hud_show_help_text(bool show);
+void h1_hud_enable_help_flash(bool flash);
+void h1_hud_set_objective_text(int16 message_index);
