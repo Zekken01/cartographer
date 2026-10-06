@@ -191,6 +191,8 @@ enum : uint32
 {
 	k_h2_unit_control_primary_trigger_pressed = FLAG(8),
 	k_h2_unit_control_primary_trigger_held = FLAG(18),
+	k_h2_unit_control_grenade_pressed = FLAG(13),		// the grenade button: halo 1's secondary trigger of weapons it overrides (the scorpion's gun)
+	k_h2_unit_control_grenade_held = FLAG(23),
 	k_h2_unit_control_reload = FLAG(30),
 	k_h2_weapon_control_busy = FLAG(5),
 };
@@ -513,6 +515,10 @@ static bool h1_weapon_update_hook(datum weapon_index)
 		if (unit_control & (k_h2_unit_control_primary_trigger_held | k_h2_unit_control_primary_trigger_pressed))
 		{
 			control_flags |= FLAG(_h1_weapon_control_primary_trigger_bit);
+		}
+		if (unit_control & (k_h2_unit_control_grenade_held | k_h2_unit_control_grenade_pressed))
+		{
+			control_flags |= FLAG(_h1_weapon_control_secondary_trigger_bit);
 		}
 		if (unit_control & k_h2_unit_control_reload)
 		{

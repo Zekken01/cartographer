@@ -34,3 +34,16 @@ string_id h1_animation_vehicle_weapon_class(datum h1_animation_graph_index);
 // units.c's aiming overlay of a vehicle (its graph's first unit's first weapon's aim-still, aiming_screen_apply) on halo 2's node
 // orientations, the aim's yaw (left positive) and pitch in the vehicle's frame; false without one
 bool h1_animation_vehicle_aim_apply(datum h1_animation_graph_index, real32 yaw, real32 pitch, real_orientation* orientations, int32 node_count);
+
+// a vehicle's base animations (its unit's): its idle, and its seat animations opening (the driver left: the scorpion's hatch opens)
+// and closing (the driver is in)
+enum e_h1_vehicle_base_animation
+{
+	_h1_vehicle_base_idle = 0,
+	_h1_vehicle_base_opening,
+	_h1_vehicle_base_closing,
+};
+// the animation's index in the graph (its frame count out), NONE without one
+int16 h1_animation_vehicle_base_get(datum h1_animation_graph_index, e_h1_vehicle_base_animation which, int16* out_frame_count);
+// a base animation's frame onto halo 2's node orientations: the nodes it animates take its frame (the others keep theirs)
+void h1_animation_base_frame_apply(datum h1_animation_graph_index, int16 animation_index, int32 frame_index, real_orientation* orientations, int32 node_count);

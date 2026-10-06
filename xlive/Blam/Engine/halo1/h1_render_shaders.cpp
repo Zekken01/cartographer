@@ -1414,6 +1414,15 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 			const real32 range = shader->reflection_falloff_distance - shader->reflection_cutoff_distance;
 			reflection_fraction = range != 0.f ? PIN((distance - shader->reflection_cutoff_distance) / range, 0.f, 1.f) : 1.f;
 		}
+		// shader_texture_animation_evaluate: the base map's u and v offsets, each its function of the time (in its period, from its
+		// phase) times its scale and its source's value (the scorpion's treads scroll by their positions)
+		auto texture_animation = [game_time](int16 source, int16 function, real32 period, real32 phase, real32 scale) -> real32
+		{
+			const real32 input = source > 0 && source <= 4 && g_h1_object_function_values ? g_h1_object_function_values[source - 1] : 1.f;
+			return h1_periodic_function(function, (phase + game_time) / (period != 0.f ? period : 1.f)) * scale * input;
+		};
+		const real32 u_offset = texture_animation(shader->u_animation_source, shader->u_animation_function, shader->u_animation_period, shader->u_animation_phase, shader->u_animation_scale);
+		const real32 v_offset = texture_animation(shader->v_animation_source, shader->v_animation_function, shader->v_animation_period, shader->v_animation_phase, shader->v_animation_scale);
 		const real_point3d camera_point = global_window_parameters_get()->camera.point;
 		const real_argb_color tint = light->reflection_tint;
 		const real32 model_constants[6][4] =
@@ -1425,7 +1434,7 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 				shader->perpendicular_tint_color.blue * tint.blue, shader->perpendicular_brightness * reflection_fraction * tint.alpha },
 			{ shader->parallel_tint_color.red * tint.red, shader->parallel_tint_color.green * tint.green,
 				shader->parallel_tint_color.blue * tint.blue, shader->parallel_brightness * reflection_fraction * tint.alpha },
-			{ reflection ? 1.f : 0.f, 0.f, 0.f, shader->translucency },
+			{ reflection ? 1.f : 0.f, u_offset, v_offset, shader->translucency },
 			{ camera_point.x, camera_point.y, camera_point.z, 1.f },
 		};
 		device->SetPixelShaderConstantF(7, &model_constants[0][0], 6);

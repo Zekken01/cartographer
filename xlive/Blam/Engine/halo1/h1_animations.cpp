@@ -692,6 +692,63 @@ bool h1_animation_vehicle_aim_apply(datum h1_animation_graph_index, real32 yaw, 
 	return true;
 }
 
+int16 h1_animation_vehicle_base_get(datum h1_animation_graph_index, e_h1_vehicle_base_animation which, int16* out_frame_count)
+{
+	const h1_antr* graph = h1_animation_graph_index != NONE ? (const h1_antr*)g_h1_cache_file->tag_get('antr', h1_animation_graph_index) : NULL;
+	const h1_antr_units* unit = graph && graph->units.count > 0 ? g_h1_cache_file->block_get(graph->units, 0) : NULL;
+	if (!unit)
+	{
+		return NONE;
+	}
+	// the unit's seat animations opening and closing, its first weapon class's idle
+	constexpr int32 k_seat_opening = 27, k_seat_closing = 28, k_weapon_class_idle = 0;
+	int16 animation_index = NONE;
+	if (which == _h1_vehicle_base_idle)
+	{
+		const h1_antr_units_weapons* weapon = unit->weapons.count > 0 ? g_h1_cache_file->block_get(unit->weapons, 0) : NULL;
+		animation_index = weapon && weapon->animations.count > k_weapon_class_idle ? g_h1_cache_file->block_get(weapon->animations, k_weapon_class_idle)->animation_index : NONE;
+	}
+	else
+	{
+		const int32 slot = which == _h1_vehicle_base_opening ? k_seat_opening : k_seat_closing;
+		animation_index = unit->animations.count > slot ? g_h1_cache_file->block_get(unit->animations, slot)->animation_index : NONE;
+	}
+	if (!VALID_INDEX(animation_index, graph->animations.count))
+	{
+		return NONE;
+	}
+	*out_frame_count = g_h1_cache_file->block_get(graph->animations, animation_index)->frame_count;
+	return animation_index;
+}
+
+void h1_animation_base_frame_apply(datum h1_animation_graph_index, int16 animation_index, int32 frame_index, real_orientation* orientations, int32 node_count)
+{
+	const h1_antr* graph = h1_animation_graph_index != NONE ? (const h1_antr*)g_h1_cache_file->tag_get('antr', h1_animation_graph_index) : NULL;
+	if (!graph || !VALID_INDEX(animation_index, graph->animations.count))
+	{
+		return;
+	}
+	const h1_antr_animations* animation = g_h1_cache_file->block_get(graph->animations, animation_index);
+	s_h1_node_orientation nodes[k_h1_maximum_animation_nodes];
+	for (s_h1_node_orientation& node : nodes)
+	{
+		node = { { 0.f, 0.f, 0.f, 1.f }, { 0.f, 0.f, 0.f }, 1.f };
+	}
+	h1_animation_frame_decode(animation, PIN(frame_index, 0, MAX(animation->frame_count - 1, 0)), nodes);
+	for (int32 node = 0; node < animation->node_count && node < node_count && node < k_h1_maximum_animation_nodes; node++)
+	{
+		if (h1_animation_node_flag(animation->node_rotation_flags_0, animation->node_rotation_flags_1, node))
+		{
+			orientations[node].rotation = nodes[node].rotation;
+		}
+		if (h1_animation_node_flag(animation->node_transformation_flags_0, animation->node_transformation_flags_1, node))
+		{
+			orientations[node].translation = nodes[node].translation;
+		}
+	}
+	return;
+}
+
 string_id h1_animation_vehicle_weapon_class(datum h1_animation_graph_index)
 {
 	const h1_antr* graph = h1_animation_graph_index != NONE ? (const h1_antr*)g_h1_cache_file->tag_get('antr', h1_animation_graph_index) : NULL;

@@ -207,6 +207,10 @@ struct s_h1_vehicle_state
 	bool at_rest;						// _object_at_rest_bit: halo 1 skips its physics until the vehicle wakes
 	uint8 suspension[8];				// each suspension animation's compression, 0 extended, 0xFF compressed
 	bool on_ground;						// a mass point touched the ground in the last tick
+	int8 base_animation;				// e_h1_vehicle_base_animation: idle, opening (held open) or closing (held shut)
+	int16 base_frame;
+	bool had_driver;
+	real32 base_leftover_ticks;
 	bool suspension_sounded;			// the suspension sound played since the last update
 	bool commanded;						// the velocity halo 1 gave havok last update (havok collides: what it changed is the crash)
 	real_vector3d commanded_velocity;
@@ -225,6 +229,7 @@ static void h1_vehicle_slipping_effects(datum vehicle_index, const h1_vehi* h1_v
 static void h1_vehicle_ghost_effect(datum vehicle_index, const h1_vehi* h1_vehicle);
 static void h1_material_effect_new(datum definition_index, int16 effect_index, int16 material_type, const real_point3d* position, const real_vector3d* normal, real32 scale);
 static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, s_h1_vehicle_state* state);
+static void h1_vehicle_base_animation_update(datum vehicle_index, const h1_vehi* h1_vehicle, s_h1_vehicle_state* state);
 static void h1_physics_update(datum vehicle_index, const h1_phys* physics, s_h1_vehicle_state* state, s_h1_powered_mass_point* powered_mass_points,
 	const real_vector3d* magic_force, const real_vector3d* magic_torque, s_h1_mass_point* mass_points);
 
@@ -353,6 +358,14 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 		found = g_h1_vehicle_states.emplace(vehicle_index, s_h1_vehicle_state{}).first;
 	}
 	s_h1_vehicle_state* state = &found->second;
+
+	// its base animation, at halo 1's 30 ticks a second whether it's at rest or not
+	state->base_leftover_ticks += game_tick_length() * k_h1_ticks_per_second;
+	while (state->base_leftover_ticks >= 1.f)
+	{
+		state->base_leftover_ticks -= 1.f;
+		h1_vehicle_base_animation_update(vehicle_index, h1_vehicle, state);
+	}
 
 	// riders ride, a vehicle on a parent doesn't move by itself
 	if (object->object.parent_object_index != NONE)
@@ -614,6 +627,51 @@ static datum h1_vehicle_driver_get(datum vehicle_index)
 		}
 	}
 	return NONE;
+}
+
+// units.c's vehicle states opening and closing: the driver getting out opens the vehicle (the scorpion's hatch), its enter animation
+// done closes it; both hold their last frame, the vehicle idles otherwise (each halo 1 tick)
+static void h1_vehicle_base_animation_update(datum vehicle_index, const h1_vehi* h1_vehicle, s_h1_vehicle_state* state)
+{
+	const datum driver_index = h1_vehicle_driver_get(vehicle_index);
+	const unit_datum* driver = driver_index != NONE ? (const unit_datum*)object_get(driver_index) : NULL;
+	bool driver_in = false;
+	if (driver)
+	{
+		// in once its seat's enter animation is done
+		const uint8* manager = (const uint8*)driver + *(const int16*)((const uint8*)driver + 0x12A);
+		const datum graph_index = *(const datum*)(manager + 0x68);
+		const int16 animation_index = *(const int16*)(manager + 6);
+		const h2x_jmad* graph = graph_index != NONE ? (const h2x_jmad*)tag_get('jmad', graph_index) : NULL;
+		const char* name = graph && VALID_INDEX(animation_index, graph->animations.count) ? string_id_get_string_const(graph->animations[animation_index]->name) : "";
+		driver_in = !strstr(name, "_enter") && !strstr(name, "_exit");
+		// unit_exit_seat: the driver starting to get out opens it
+		if (strstr(name, "_exit") && state->base_animation != _h1_vehicle_base_opening)
+		{
+			state->base_animation = _h1_vehicle_base_opening;
+			state->base_frame = 0;
+		}
+	}
+	if (state->had_driver && !driver && state->base_animation != _h1_vehicle_base_opening)
+	{
+		state->base_animation = _h1_vehicle_base_opening;
+		state->base_frame = 0;
+	}
+	else if (driver_in && state->base_animation != _h1_vehicle_base_closing)
+	{
+		state->base_animation = _h1_vehicle_base_closing;
+		state->base_frame = 0;
+	}
+	state->had_driver = driver != NULL;
+
+	int16 frame_count = 0;
+	if (h1_animation_vehicle_base_get(h1_vehicle->animation_graph.index, (e_h1_vehicle_base_animation)state->base_animation, &frame_count) != NONE)
+	{
+		// opening and closing hold their last frame, the idle loops
+		state->base_frame = state->base_animation == _h1_vehicle_base_idle ? (int16)((state->base_frame + 1) % MAX(frame_count, (int16)1)) :
+			MIN((int16)(state->base_frame + 1), (int16)(frame_count - 1));
+	}
+	return;
 }
 
 // halo 2's vehicle animations (vehicle_preprocess_node_orientations alike) read the vehicle's turn, speed, wheel and suspension:
@@ -907,6 +965,14 @@ static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, cons
 	{
 		const real32 left_speed = state->speed - state->turn;
 		const real32 right_speed = state->turn + state->speed;
+		// the treads' positions (their shaders scroll by them)
+		if (h1_vehicle->wheel_circumference > 0.f)
+		{
+			state->left_tread = fmodf(state->left_tread + left_speed, h1_vehicle->wheel_circumference);
+			if (state->left_tread < 0.f) state->left_tread += h1_vehicle->wheel_circumference;
+			state->right_tread = fmodf(state->right_tread + right_speed, h1_vehicle->wheel_circumference);
+			if (state->right_tread < 0.f) state->right_tread += h1_vehicle->wheel_circumference;
+		}
 		if (physics->powered_mass_points.count == 2)
 		{
 			powered[0].ground_friction_velocity = left_speed;
@@ -1303,6 +1369,19 @@ static void h1_vehicle_preprocess_node_orientations_hook(datum vehicle_index, ui
 	if (found != g_h1_vehicle_states.end())
 	{
 		h1_vehicle_animation_state_set(vehicle_index, &found->second);
+	}
+	// halo 2 plays no base animation on halo 1's vehicles: the vehicle's idle, opening or closing frame first, its overlays after
+	{
+		const vehicle_datum* vehicle = found != g_h1_vehicle_states.end() ? (const vehicle_datum*)object_try_and_get_and_verify_type(vehicle_index, _object_mask_vehicle) : NULL;
+		const datum h1_definition_index = vehicle ? h1_objects_h1_definition_get(vehicle->definition_index) : NONE;
+		const h1_vehi* h1_vehicle = h1_definition_index != NONE ? (const h1_vehi*)g_h1_cache_file->tag_get('vehi', h1_definition_index) : NULL;
+		int16 frame_count = 0;
+		const int16 animation_index = h1_vehicle ?
+			h1_animation_vehicle_base_get(h1_vehicle->animation_graph.index, (e_h1_vehicle_base_animation)found->second.base_animation, &frame_count) : (int16)NONE;
+		if (animation_index != NONE)
+		{
+			h1_animation_base_frame_apply(h1_vehicle->animation_graph.index, animation_index, found->second.base_frame, orientations, node_count);
+		}
 	}
 	g_h2_vehicle_preprocess_node_orientations(vehicle_index, node_flags, node_count, orientations);
 
