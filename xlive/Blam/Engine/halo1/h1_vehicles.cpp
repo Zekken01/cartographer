@@ -710,6 +710,35 @@ static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle
 		powered_seats[i].driver_powerdown_time = h1_powered->driver_powerdown_time;
 	}
 
+	// halo 2's seats carry what halo 1's don't (the enter prompt, the seat camera tracks, the seat hud): the host's vehicle of the
+	// same kind, its seat in the same role
+	static const char* const k_host_vehicles[] =
+	{
+		"objects\\vehicles\\scorpion\\scorpion",		// human tank
+		"objects\\vehicles\\warthog\\warthog",			// human jeep
+		"objects\\vehicles\\warthog\\warthog",			// human boat
+		"objects\\vehicles\\banshee\\banshee",			// human plane
+		"objects\\vehicles\\ghost\\ghost",				// alien scout
+		"objects\\vehicles\\banshee\\banshee",			// alien fighter
+		"objects\\vehicles\\c_turret_ap\\c_turret_ap",	// turret
+	};
+	const datum host_vehicle_index = tag_loaded('vehi', k_host_vehicles[VALID_INDEX(h1_vehicle->type, NUMBEROF(k_host_vehicles)) ? h1_vehicle->type : 1]);
+	const h2x_vehi* host_vehicle = host_vehicle_index != NONE ? (const h2x_vehi*)tag_get('vehi', host_vehicle_index) : NULL;
+	auto host_seat_get = [host_vehicle](uint32 flags) -> const h2x_vehi_seats*
+	{
+		// driver (bit 2), gunner (bit 3), or a seat that's neither
+		const uint32 role = flags & (FLAG(2) | FLAG(3));
+		for (int32 i = 0; host_vehicle && i < host_vehicle->seats.count; i++)
+		{
+			const h2x_vehi_seats* seat = host_vehicle->seats[i];
+			if ((role == 0 && (seat->flags & (FLAG(2) | FLAG(3))) == 0) || (role != 0 && (seat->flags & role) != 0))
+			{
+				return seat;
+			}
+		}
+		return host_vehicle && host_vehicle->seats.count > 0 ? host_vehicle->seats[0] : NULL;
+	};
+
 	h2x_vehi_seats* seats = h1_runtime_block_new(&vehicle->seats, h1_vehicle->seats.count);
 	for (int32 i = 0; i < h1_vehicle->seats.count; i++)
 	{
@@ -739,6 +768,16 @@ static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle
 		seat->entry_marker_facing_angle = 1.2217305f;
 		seat->maximum_relative_velocity = 3.f;
 		seat->invisible_seat_region_index = NONE;
+
+		const h2x_vehi_seats* host_seat = host_seat_get(h1_seat->flags);
+		if (host_seat)
+		{
+			seat->enter_seat_string = host_seat->enter_seat_string;
+			seat->camera_tracks = host_seat->camera_tracks;
+			seat->unit_hud_interface = host_seat->unit_hud_interface;
+			seat->ai_scariness = host_seat->ai_scariness;
+			seat->ai_seat_type = host_seat->ai_seat_type;
+		}
 	}
 
 	// vehicle
