@@ -3,6 +3,7 @@
 #include "h1_hs_internal.h"
 
 #include "h1_cache_file.h"
+#include "h1_camera.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
 #include "h1_sound.h"
@@ -525,9 +526,9 @@ static int32 hs_structure_bsp_index(const int32* arguments) { return h1_maps_str
 static int32 hs_switch_bsp(const int32* arguments)
 {
 	const int16 bsp_index = ARGUMENT_SHORT(0);
+	h1_log("hs: switch_bsp %d (from %d)", bsp_index, h1_maps_structure_bsp_index());
 	if (bsp_index != h1_maps_structure_bsp_index() && VALID_INDEX(bsp_index, g_h1_cache_file->structure_bsp_count()))
 	{
-		h1_log("hs: switch_bsp %d", bsp_index);
 		main_switch_structure_bsp_request(bsp_index);
 	}
 	return 0;
@@ -562,6 +563,12 @@ static int32 hs_cinematic_stop(const int32* arguments) { H2_FUNCTION(0x3A8C9, t_
 static int32 hs_cinematic_skip_start_internal(const int32* arguments) { H2_FUNCTION(0x3A74B, t_void)(); return 0; }
 static int32 hs_cinematic_skip_stop_internal(const int32* arguments) { H2_FUNCTION(0x3A755, t_void)(); return 0; }
 static int32 hs_cinematic_show_letterbox(const int32* arguments) { H2_FUNCTION(0x3A75F, t_void_bool)(ARGUMENT_BOOLEAN(0)); return 0; }
+
+static int32 hs_camera_control(const int32* arguments) { h1_camera_control(ARGUMENT_BOOLEAN(0)); return 0; }
+static int32 hs_camera_set(const int32* arguments) { h1_camera_set(ARGUMENT_SHORT(0), ARGUMENT_SHORT(1), NONE); return 0; }
+static int32 hs_camera_set_relative(const int32* arguments) { h1_camera_set(ARGUMENT_SHORT(0), ARGUMENT_SHORT(1), ARGUMENT_LONG(2)); return 0; }
+static int32 hs_camera_set_first_person(const int32* arguments) { h1_camera_set_first_person(ARGUMENT_LONG(0)); return 0; }
+static int32 hs_camera_time(const int32* arguments) { return h1_camera_time(); }
 
 static int32 hs_players_unzoom_all(const int32* arguments) { H2_FUNCTION(0x9127B, t_void)(); return 0; }
 static int32 hs_player_enable_input(const int32* arguments) { H2_FUNCTION(0x51464, t_void_bool)(ARGUMENT_BOOLEAN(0)); return 0; }
@@ -673,6 +680,11 @@ static const s_hs_procedure_binding k_hs_procedures[] =
 	{ "cinematic_skip_start_internal", hs_cinematic_skip_start_internal },
 	{ "cinematic_skip_stop_internal", hs_cinematic_skip_stop_internal },
 	{ "cinematic_show_letterbox", hs_cinematic_show_letterbox },
+	{ "camera_control", hs_camera_control },
+	{ "camera_set", hs_camera_set },
+	{ "camera_set_relative", hs_camera_set_relative },
+	{ "camera_set_first_person", hs_camera_set_first_person },
+	{ "camera_time", hs_camera_time },
 	{ "players_unzoom_all", hs_players_unzoom_all },
 	{ "player_enable_input", hs_player_enable_input },
 	{ "player_camera_control", hs_player_camera_control },
@@ -749,6 +761,7 @@ void hs_functions_initialize_for_new_map(void)
 	}
 	g_hs_library.looping_sounds.clear();
 	g_hs_library.scripted_sound_end_times.clear();
+	h1_camera_reset();
 	return;
 }
 
@@ -762,6 +775,7 @@ void hs_functions_dispose_from_old_map(void)
 	g_hs_library.scripted_sound_end_times.clear();
 	g_hs_library.named_objects.clear();
 	g_hs_library.device_group_values.clear();
+	h1_camera_reset();
 	return;
 }
 

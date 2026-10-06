@@ -8,6 +8,7 @@
 #include "game/game.h"
 #include "game/game_time.h"
 #include "game/players.h"
+#include "halo1/h1_camera.h"
 #include "interface/first_person_weapons.h"
 #include "math/matrix_math.h"
 #include "main/console.h"
@@ -95,6 +96,8 @@ void observer_update(real32 dt)
 
 			s_location bsp_point;
 			observer_postcheck(user_index);
+			// halo 1 cutscenes' scripted camera
+			h1_camera_observer_override(user_index, dt, &observer->result);
 			observer_apply_camera_effect(user_index);
 			scenario_location_from_point(&bsp_point, &observer->result.position);
 			if (!cinematic_in_progress())
