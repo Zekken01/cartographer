@@ -5,7 +5,9 @@
 #include "h1_cache_file.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
+#include "h1_effects.h"
 #include "h1_objects.h"
+#include "h1_projectile_logic.h"
 #include "h1_sound.h"
 
 #include "game/game_time.h"
@@ -112,6 +114,7 @@ struct s_h1_mass_point
 	real_vector3d velocity_relative_to_ground;
 	real_plane3d ground_plane;
 	real32 ground_depth;
+	int16 ground_material_type;			// halo 1's material type of the ground, NONE without
 	real32 normal_force_magnitude;
 	real_vector3d normal_force;
 	s_h1_friction ground_friction;
@@ -203,6 +206,10 @@ struct s_h1_vehicle_state
 	real32 leftover_ticks;
 	bool at_rest;						// _object_at_rest_bit: halo 1 skips its physics until the vehicle wakes
 	uint8 suspension[8];				// each suspension animation's compression, 0 extended, 0xFF compressed
+	bool on_ground;						// a mass point touched the ground in the last tick
+	bool suspension_sounded;			// the suspension sound played since the last update
+	bool commanded;						// the velocity halo 1 gave havok last update (havok collides: what it changed is the crash)
+	real_vector3d commanded_velocity;
 };
 
 /* ---------- globals */
@@ -213,7 +220,10 @@ static std::unordered_map<datum, s_h1_vehicle_state> g_h1_vehicle_states;
 
 static datum h1_vehicle_driver_get(datum vehicle_index);
 static void h1_vehicle_animation_state_set(datum vehicle_index, const s_h1_vehicle_state* state);
-static void h1_vehicle_suspension_update(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, s_h1_vehicle_state* state);
+static bool h1_vehicle_suspension_update(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, s_h1_vehicle_state* state);
+static void h1_vehicle_slipping_effects(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, const s_h1_mass_point* mass_points);
+static void h1_vehicle_ghost_effect(datum vehicle_index, const h1_vehi* h1_vehicle);
+static void h1_material_effect_new(datum definition_index, int16 effect_index, int16 material_type, const real_point3d* position, const real_vector3d* normal, real32 scale);
 static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, s_h1_vehicle_state* state);
 static void h1_physics_update(datum vehicle_index, const h1_phys* physics, s_h1_vehicle_state* state, s_h1_powered_mass_point* powered_mass_points,
 	const real_vector3d* magic_force, const real_vector3d* magic_torque, s_h1_mass_point* mass_points);
@@ -366,6 +376,23 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 	state->linear_velocity = { (havok_linear.i - spin.i) / k_h1_ticks_per_second, (havok_linear.j - spin.j) / k_h1_ticks_per_second, (havok_linear.k - spin.k) / k_h1_ticks_per_second };
 	state->angular_velocity = { havok_angular.i / k_h1_ticks_per_second, havok_angular.j / k_h1_ticks_per_second, havok_angular.k / k_h1_ticks_per_second };
 
+	// create_crashing_effects: what havok's collisions took from the velocity halo 1 gave it, on the ground, without the suspension's
+	// sound (halo 1 plays one or the other)
+	if (state->commanded && state->on_ground && !state->suspension_sounded && h1_vehicle->crash_sound.index != NONE)
+	{
+		// (havok's contacts with the ground nudge the vertical velocity every step: halo 1's landings are the suspension's)
+		real_vector3d delta;
+		vector_from_points3d((const real_point3d*)&state->commanded_velocity, (const real_point3d*)&state->linear_velocity, &delta);
+		delta.k = 0.f;
+		const real32 speed = magnitude3d(&delta);
+		if (speed > 0.02f)
+		{
+			h1_sound_impulse(h1_vehicle->crash_sound.index, &object->object.position, PIN((speed - 0.02f) * 45.454544f, 0.f, 1.f));
+		}
+	}
+	state->suspension_sounded = false;
+	state->commanded = false;
+
 	// at rest until its controls or something moving it (a hit, a push) wake it
 	if (state->at_rest)
 	{
@@ -402,6 +429,8 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 		state->linear_velocity.k * k_h1_ticks_per_second + spin.k + physics_constants_get()->gravity * game_tick_length(),
 	};
 	Memory::GetAddress<void(__cdecl*)(datum, const real_vector3d*, const real_vector3d*)>(0x135123)(vehicle_index, &linear, &angular);
+	state->commanded_velocity = state->linear_velocity;
+	state->commanded = true;
 	h1_vehicle_animation_state_set(vehicle_index, state);
 	return true;
 }
@@ -617,12 +646,12 @@ static void h1_vehicle_animation_state_set(datum vehicle_index, const s_h1_vehic
 
 // update_suspension: each suspension animation's mass point probes the ground along its normal over the animation's ground depths,
 // halfway from the last compression to the new one
-static void h1_vehicle_suspension_update(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, s_h1_vehicle_state* state)
+static bool h1_vehicle_suspension_update(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, s_h1_vehicle_state* state)
 {
 	const h1_antr* graph = h1_vehicle->animation_graph.index != NONE ? (const h1_antr*)g_h1_cache_file->tag_get('antr', h1_vehicle->animation_graph.index) : NULL;
 	if (!graph || graph->vehicles.count <= 0)
 	{
-		return;
+		return false;
 	}
 	const h1_antr_vehicles* animation = g_h1_cache_file->block_get(graph->vehicles, 0);
 	const object_datum* object = object_get(vehicle_index);
@@ -663,6 +692,132 @@ static void h1_vehicle_suspension_update(datum vehicle_index, const h1_vehi* h1_
 	if (h1_vehicle->suspension_sound.index != NONE && maximum_shift > 0.3f)
 	{
 		h1_sound_impulse(h1_vehicle->suspension_sound.index, &object->object.position, PIN((maximum_shift - 0.3f) * (1.f / (0.9f - 0.3f)), 0.f, 1.f));
+		return true;
+	}
+	return false;
+}
+
+// material_effects.c material_effect_new: the material effects' effect and sound for the material at the point, a hundredth along the
+// normal
+static void h1_material_effect_new(datum definition_index, int16 effect_index, int16 material_type, const real_point3d* position, const real_vector3d* normal, real32 scale)
+{
+	// material effects (foot): effects (0x1C) of materials (0x30): an effect and a sound
+	const h1_tag_block<uint8>* effects = definition_index != NONE ? (const h1_tag_block<uint8>*)g_h1_cache_file->tag_get('foot', definition_index) : NULL;
+	if (!effects || !VALID_INDEX(effect_index, effects->count) || material_type == NONE)
+	{
+		return;
+	}
+	const uint8* effect = (const uint8*)g_h1_cache_file->block_get(*effects, 0) + effect_index * 0x1C;
+	const h1_tag_block<uint8>* materials = (const h1_tag_block<uint8>*)effect;
+	if (!VALID_INDEX(material_type, materials->count))
+	{
+		return;
+	}
+	const uint8* material = (const uint8*)g_h1_cache_file->block_get(*materials, 0) + material_type * 0x30;
+	const h1_tag_reference* material_effect = (const h1_tag_reference*)material;
+	const h1_tag_reference* material_sound = (const h1_tag_reference*)(material + 0x10);
+
+	const real_point3d point = { position->x + normal->i * 0.01f, position->y + normal->j * 0.01f, position->z + normal->k * 0.01f };
+	if (material_effect->index != NONE)
+	{
+		const char* marker_name = "";
+		h1_effect_new_from_markers(material_effect->index, NONE, 1, &marker_name, &point, normal, scale, 0.f);
+	}
+	if (material_sound->index != NONE)
+	{
+		h1_sound_impulse(material_sound->index, &point, scale);
+	}
+	return;
+}
+
+// create_slipping_effects: every mass point sliding over the ground kicks up its material (the tires' effects, or the hull's for
+// the metallic ones)
+static void h1_vehicle_slipping_effects(datum vehicle_index, const h1_vehi* h1_vehicle, const h1_phys* physics, const s_h1_mass_point* mass_points)
+{
+	if (h1_vehicle->material_effects.index == NONE)
+	{
+		return;
+	}
+	for (int32 i = 0; i < physics->mass_points.count && i < k_h1_maximum_mass_points; i++)
+	{
+		const s_h1_mass_point* mass_point = &mass_points[i];
+		if (!TEST_BIT(mass_point->flags, _point_on_ground_bit))
+		{
+			continue;
+		}
+		const real32 speed = magnitude3d(&mass_point->velocity_relative_to_ground);
+		if (speed <= 0.03f)
+		{
+			continue;
+		}
+		const h1_phys_mass_points* definition = g_h1_cache_file->block_get(physics->mass_points, i);
+		const real32 depth = mass_point->ground_depth - definition->radius + 0.003f;
+		const real_point3d position =
+		{
+			mass_point->position.x + mass_point->ground_plane.n.i * depth,
+			mass_point->position.y + mass_point->ground_plane.n.j * depth,
+			mass_point->position.z + mass_point->ground_plane.n.k * depth,
+		};
+		real_vector3d normal;
+		scale_vector3d(&mass_point->velocity_relative_to_ground, 0.8660254f / speed, &normal);
+		h1_vector_scale_add(&normal, &mass_point->ground_plane.n, 0.5f);
+		h1_material_effect_new(h1_vehicle->material_effects.index, TEST_BIT(definition->flags, 0) ? 10 : 9, mass_point->ground_material_type,
+			&position, &normal, PIN((speed - 0.03f) * 4.5454545f, 0.f, 1.f));
+	}
+	return;
+}
+
+// create_ghost_effect: while driven, each hover thruster's effect where a ray in a 15 degree cone about it meets the ground, stronger
+// the nearer and the more it points down
+static void h1_vehicle_ghost_effect(datum vehicle_index, const h1_vehi* h1_vehicle)
+{
+	const unit_datum* unit = (const unit_datum*)object_get_and_verify_type(vehicle_index, _object_mask_unit);
+	if (h1_vehicle->effect.index == NONE || unit->unit.driver_seat_power <= 0.f)
+	{
+		return;
+	}
+	object_marker markers[15];
+	const int16 marker_count = object_get_markers_by_string_id(vehicle_index, string_id_find_or_add("hover_thrusters"), markers, NUMBEROF(markers));
+	for (int16 m = 0; m < marker_count; m++)
+	{
+		const real_vector3d* forward = &markers[m].matrix.vectors.forward;
+		// a direction in the cone about the thruster
+		real_vector3d side, other;
+		const real_vector3d reference = fabsf(forward->k) < 0.9f ? real_vector3d{ 0.f, 0.f, 1.f } : real_vector3d{ 1.f, 0.f, 0.f };
+		cross_product3d(forward, &reference, &side);
+		normalize3d(&side);
+		cross_product3d(forward, &side, &other);
+		const real32 angle = DEGREES_TO_RADIANS(15.f) * (real32)rand() / (real32)RAND_MAX;
+		const real32 around = 2.f * _pi * (real32)rand() / (real32)RAND_MAX;
+		real_vector3d direction = *forward;
+		scale_vector3d(&direction, cosf(angle), &direction);
+		h1_vector_scale_add(&direction, &side, sinf(angle) * cosf(around));
+		h1_vector_scale_add(&direction, &other, sinf(angle) * sinf(around));
+
+		collision_result collision;
+		const uint32 flags = FLAG(_collision_test_structure_bit) | FLAG(_collision_test_instanced_geometry_bit);
+		if (!collision_test_vector(flags, &markers[m].matrix.position, &direction, vehicle_index, NONE, &collision))
+		{
+			continue;
+		}
+		const real32 scale = PIN(-forward->k * (1.f - collision.t) * unit->unit.driver_seat_power, 0.f, 1.f);
+		if (scale <= 0.f)
+		{
+			continue;
+		}
+		const real_vector3d* normal = &collision.fog_plane.n;
+		real_vector3d reflected = direction;
+		h1_vector_scale_add(&reflected, normal, -2.f * dot_product3d(&direction, normal));
+		const char* const marker_names[4] = { "incident", "normal", "reflected", "midpoint" };
+		const real_point3d midpoint =
+		{
+			(markers[m].matrix.position.x + collision.point.x) * 0.5f,
+			(markers[m].matrix.position.y + collision.point.y) * 0.5f,
+			(markers[m].matrix.position.z + collision.point.z) * 0.5f,
+		};
+		const real_point3d marker_points[4] = { collision.point, collision.point, collision.point, midpoint };
+		const real_vector3d marker_forwards[4] = { { -direction.i, -direction.j, -direction.k }, *normal, reflected, reflected };
+		h1_effect_new_from_markers(h1_vehicle->effect.index, NONE, 4, marker_names, marker_points, marker_forwards, scale, scale);
 	}
 	return;
 }
@@ -853,11 +1008,21 @@ static void h1_vehicle_tick(datum vehicle_index, const h1_vehi* h1_vehicle, cons
 	}
 
 	h1_physics_update(vehicle_index, physics, state, use_powered ? powered : NULL, &magic_force, &magic_torque, mass_points);
-	h1_vehicle_suspension_update(vehicle_index, h1_vehicle, physics, state);
+	state->suspension_sounded |= h1_vehicle_suspension_update(vehicle_index, h1_vehicle, physics, state);
+	h1_vehicle_slipping_effects(vehicle_index, h1_vehicle, physics, mass_points);
+	if (h1_vehicle->type == _h1_vehicle_type_alien_scout || h1_vehicle->type == _h1_vehicle_type_alien_fighter)
+	{
+		h1_vehicle_ghost_effect(vehicle_index, h1_vehicle);
+	}
 
 	// compute_airborne_ticks
 	if (state->airborne_ticks < 0xFF) state->airborne_ticks++;
 	bool on_ground = false;
+	state->on_ground = false;
+	for (int32 i = 0; i < physics->mass_points.count && i < k_h1_maximum_mass_points; i++)
+	{
+		state->on_ground |= TEST_BIT(mass_points[i].flags, _point_on_ground_bit);
+	}
 	for (int32 i = 0; i < physics->mass_points.count && i < k_h1_maximum_mass_points; i++)
 	{
 		if (TEST_BIT(mass_points[i].flags, _point_on_ground_bit))
@@ -923,6 +1088,7 @@ static void h1_friction_evaluate(int16 friction_type, real32 parallel_scale, rea
 static void h1_mass_point_ground(datum vehicle_index, s_h1_mass_point* mass_point, real32 radius)
 {
 	mass_point->ground_depth = 0.f;
+	mass_point->ground_material_type = NONE;
 	// from a radius above the point (a point sunk into the ground still finds it) to a radius below it
 	const real_point3d start = { mass_point->position.x, mass_point->position.y, mass_point->position.z + radius };
 	real_vector3d probe = { 0.f, 0.f, -2.f * radius };
@@ -931,6 +1097,7 @@ static void h1_mass_point_ground(datum vehicle_index, s_h1_mass_point* mass_poin
 	if (collision_test_vector(flags, &start, &probe, vehicle_index, NONE, &collision))
 	{
 		mass_point->ground_plane = collision.fog_plane;
+		mass_point->ground_material_type = h1_projectile_logic_collision_material_type(&collision);
 		// the distance to the surface's plane along its normal, from the hit straight below
 		const real32 distance = (collision.t * 2.f * radius - radius) * fabsf(collision.fog_plane.n.k);
 		mass_point->ground_depth = radius - distance;
