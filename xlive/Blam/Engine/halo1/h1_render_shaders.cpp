@@ -390,7 +390,7 @@ PS_OUTPUT main(PS_INPUT input)
 // shader_model: base map, detail map, multipurpose map (self illumination in green), object lighting
 static const char k_h1_model_pixel_shader[] = H1_PIXEL_SHADER_COMMON R"(
 sampler2D base_map : register(s0);
-sampler2D multipurpose_map : register(s1);	// red reflection mask, green self-illumination mask, alpha change color mask
+sampler2D multipurpose_map : register(s1);	// red reflection mask, green self-illumination mask, blue change color mask, alpha auxiliary
 sampler2D detail_map : register(s2);
 samplerCUBE reflection_map : register(s4);
 
@@ -430,9 +430,13 @@ PS_OUTPUT main(PS_INPUT input)
 	// combiner 3: the detail map fades to neutral outside its mask
 	float mask = 1.0f;
 	float detail_mask = modes.z;
-	if (detail_mask > 0.5f && detail_mask < 1.5f) mask = 1.0f - multipurpose.r;
-	else if (detail_mask > 1.5f && detail_mask < 2.5f) mask = multipurpose.r;
-	else if (detail_mask > 2.5f) mask = fmod(detail_mask, 2.0f) > 0.5f ? 1.0f - multipurpose.a : multipurpose.a;
+	// rasterizer_xbox_models.c's detail mask inputs: the reflection, self-illumination, change color and auxiliary masks (odd ones
+	// inverted)
+	if (detail_mask > 0.5f)
+	{
+		float channel = detail_mask < 2.5f ? multipurpose.r : detail_mask < 4.5f ? multipurpose.g : detail_mask < 6.5f ? multipurpose.b : multipurpose.a;
+		mask = fmod(detail_mask, 2.0f) > 0.5f ? 1.0f - channel : channel;
+	}
 	float neutral = modes.x > 0.5f && modes.x < 1.5f ? 1.0f : 0.5f;
 	float3 masked_detail = lerp(float3(neutral, neutral, neutral), detail.rgb, mask);
 
@@ -445,7 +449,8 @@ PS_OUTPUT main(PS_INPUT input)
 		saturate(dot(normal, -light1_direction.xyz)) * light1_color.rgb +
 		dynamic_light(input.world, normal);
 	light = saturate(saturate(light) + multipurpose.g * self_illumination_color.rgb);
-	light *= lerp(float3(1.0f, 1.0f, 1.0f), change_color.rgb, multipurpose.a);
+	// (the xbox combiners' alpha inputs read the multipurpose map's blue)
+	light *= lerp(float3(1.0f, 1.0f, 1.0f), change_color.rgb, multipurpose.b);
 
 	// the reflection: the cube map tinted between the parallel and perpendicular colors by the view angle, masked
 	// model vertex shader (reflection permutation): the reflection vector 2(n.e)n - e of the eye vector, and vertex color 1 the
