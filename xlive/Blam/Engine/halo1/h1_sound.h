@@ -23,6 +23,16 @@ void h1_sound_listener_set(const render_camera* camera);
 // plays a halo 1 sound once at a point (effect parts, particles)
 void h1_sound_impulse(datum sound_index, const real_point3d* position, real32 scale);
 
+// game_sound.c scripted_sound_new: a sound a script starts, at a point or (NULL) unspatialized; it replaces the sound's last
+// scripted instance
+void h1_sound_scripted_start(datum sound_index, const real_point3d* position, real32 scale);
+// where the sounds are heard from, false before the first rendered frame
+bool h1_sound_listener_point_get(real_point3d* out_point);
+// scripted_sound_stop
+void h1_sound_scripted_stop(datum sound_index);
+// the sound's longest permutation in seconds (sound_definition longest_permutation_length)
+real32 h1_sound_duration(datum sound_index);
+
 // game_sound.c game_looping_sound_new for an object's attachment: a looping sound that follows the object, a handle for the
 // calls below (0 when it can't play)
 int32 h1_sound_looping_attached_new(datum looping_sound_index);

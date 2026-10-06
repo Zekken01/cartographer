@@ -6,6 +6,7 @@
 #include "h1_scenery.h"
 #include "h1_projectile_logic.h"
 #include "h1_weapon_logic.h"
+#include "h1_hs.h"
 #include "h1_log.h"
 #include "h1_render.h"
 #include "h1_runtime.h"
@@ -276,7 +277,7 @@ static int32 h1_maps_structure_bsp_cluster_get(int32 bsp_index, const real_point
 }
 
 // scenario.c scenario_trigger_volume_test_point: inside the trigger volume's box (oriented by its forward and up)
-static bool h1_maps_trigger_volume_test_point(int16 trigger_volume_index, const real_point3d* point)
+bool h1_maps_trigger_volume_test_point(int16 trigger_volume_index, const real_point3d* point)
 {
 	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
 	const h1_scnr_trigger_volumes* volume = scenario && VALID_INDEX(trigger_volume_index, scenario->trigger_volumes.count) ?
@@ -328,7 +329,8 @@ static void h1_maps_structure_bsp_follow_player(void)
 		return;
 	}
 
-	if (h1_maps_structure_bsp_cluster_get(current, &position) != NONE)
+	// without scripts (switch_bsp), the player's leaving the current structure bsp for another
+	if (h1_hs_running() || h1_maps_structure_bsp_cluster_get(current, &position) != NONE)
 	{
 		return;
 	}
@@ -366,18 +368,27 @@ void h1_maps_update(void)
 	h1_maps_structure_bsp_follow_player();
 	h1_sound_update();
 
-	// a halo 2 campaign game starts faded to black for its scripts to fade in; until halo 1's scripts run, the level fades in once
-	// its first tick has run
-	static bool s_campaign_faded_in = false;
+	// halo 1's scripts run in campaign games, from the game's first tick (a halo 2 campaign game starts faded to black for them to
+	// fade in; a map whose scripts don't load fades in by itself)
+	static bool s_campaign_started = false;
 	if (!h1_maps_active() || !game_in_progress() || !game_is_campaign())
 	{
-		s_campaign_faded_in = false;
+		if (s_campaign_started)
+		{
+			h1_hs_dispose_from_old_map();
+		}
+		s_campaign_started = false;
 	}
-	else if (!s_campaign_faded_in && game_time_get() > 0)
+	else if (!s_campaign_started && game_time_get() > 0)
 	{
-		s_campaign_faded_in = true;
-		scripted_player_effect_screen_fade_in(0.f, 0.f, 0.f, 30);
+		s_campaign_started = true;
+		h1_hs_initialize_for_new_map();
+		if (!h1_hs_running())
+		{
+			scripted_player_effect_screen_fade_in(0.f, 0.f, 0.f, 30);
+		}
 	}
+	h1_hs_update();
 
 	if (g_h1_autolaunch_done)
 	{

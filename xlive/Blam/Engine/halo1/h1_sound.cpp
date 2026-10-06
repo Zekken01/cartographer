@@ -128,6 +128,8 @@ struct s_h1_detail_voice
 	real_point3d position;
 	real32 gain;
 	real32 maximum_distance = FLT_MAX;
+	bool two_dimensional = false;	// heard at its gain wherever the listener is (scripted sounds without a source object)
+	datum scripted_sound_index = NONE;	// started by a script, which can stop it
 };
 
 struct s_h1_sound_globals
@@ -358,8 +360,11 @@ void h1_sound_update(void)
 			g_h1_sound.detail_voices.erase(g_h1_sound.detail_voices.begin() + i);
 			continue;
 		}
-		real32 left, right;
-		h1_sound_spatialize(&detail->position, detail->voice->sound->minimum_distance, detail->maximum_distance, detail->gain, &left, &right);
+		real32 left = detail->gain, right = detail->gain;
+		if (!detail->two_dimensional)
+		{
+			h1_sound_spatialize(&detail->position, detail->voice->sound->minimum_distance, detail->maximum_distance, detail->gain, &left, &right);
+		}
 		h1_sound_voice_set_gain(detail->voice.get(), left, right);
 		i++;
 	}
@@ -398,6 +403,71 @@ void h1_sound_impulse(datum sound_index, const real_point3d* position, real32 sc
 	impulse.maximum_distance = voice->sound->maximum_distance > 0.f ? voice->sound->maximum_distance : FLT_MAX;
 	g_h1_sound.detail_voices.push_back(impulse);
 	return;
+}
+
+void h1_sound_scripted_start(datum sound_index, const real_point3d* position, real32 scale)
+{
+	if (!g_h1_sound.active || sound_index == NONE)
+	{
+		return;
+	}
+	h1_sound_scripted_stop(sound_index);
+
+	std::lock_guard<std::mutex> lock(g_h1_sound.voices_lock);
+	std::shared_ptr<s_h1_voice> voice = h1_sound_voice_new(sound_index, false);
+	if (!voice)
+	{
+		return;
+	}
+	s_h1_detail_voice impulse;
+	impulse.voice = voice;
+	impulse.gain = voice->sound->gain * scale;
+	impulse.two_dimensional = position == NULL;
+	impulse.position = position ? *position : real_point3d{};
+	impulse.maximum_distance = voice->sound->maximum_distance > 0.f ? voice->sound->maximum_distance : FLT_MAX;
+	impulse.scripted_sound_index = sound_index;
+	g_h1_sound.detail_voices.push_back(impulse);
+	return;
+}
+
+void h1_sound_scripted_stop(datum sound_index)
+{
+	for (size_t i = 0; i < g_h1_sound.detail_voices.size();)
+	{
+		if (g_h1_sound.detail_voices[i].scripted_sound_index == sound_index)
+		{
+			g_h1_sound.detail_voices[i].voice->remove = true;
+			g_h1_sound.detail_voices.erase(g_h1_sound.detail_voices.begin() + i);
+			continue;
+		}
+		i++;
+	}
+	return;
+}
+
+bool h1_sound_listener_point_get(real_point3d* out_point)
+{
+	if (!g_h1_sound.listener_valid)
+	{
+		return false;
+	}
+	*out_point = g_h1_sound.listener_point;
+	return true;
+}
+
+real32 h1_sound_duration(datum sound_index)
+{
+	std::shared_ptr<const s_h1_sound_data> sound = sound_index != NONE ? h1_sound_data_get(sound_index) : NULL;
+	if (!sound || sound->sample_rate <= 0 || sound->channel_count <= 0)
+	{
+		return 0.f;
+	}
+	size_t longest = 0;
+	for (const s_h1_sound_permutation& permutation : sound->permutations)
+	{
+		longest = MAX(longest, permutation.samples.size());
+	}
+	return (real32)longest / (real32)(sound->sample_rate * sound->channel_count);
 }
 
 int32 h1_sound_looping_attached_new(datum looping_sound_index)

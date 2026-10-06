@@ -40,3 +40,6 @@ void h1_maps_update(void);
 
 // the halo 1 structure bsp of halo 2's current structure bsp (they're built in the same order), 0 without one
 int16 h1_maps_structure_bsp_index(void);
+
+// whether a point is inside one of the halo 1 scenario's trigger volumes
+bool h1_maps_trigger_volume_test_point(int16 trigger_volume_index, const real_point3d* point);
