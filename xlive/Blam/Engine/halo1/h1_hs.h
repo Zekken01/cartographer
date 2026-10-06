@@ -33,3 +33,5 @@ bool h1_hs_scripted_dialog_is_playing(void);
 // the scripts' custom_animation (a halo 1 graph's animation by name on a unit or scenery) and its ticks left
 bool h1_hs_custom_animation(datum object_index, datum h1_graph_index, const char* name, bool interpolate);
 int16 h1_hs_animation_time(datum object_index);
+// a unit's own graph's animation by name (halo 1's unit animations: the AI's impulses)
+bool h1_hs_unit_animation_play(datum unit_index, const char* name, bool interpolate);

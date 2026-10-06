@@ -839,4 +839,44 @@ byte *animation_get_frame_data(struct animation const *animation, short frame_in
 	return frame_data;
 }
 
+short animation_choose_random_permutation_internal(
+	long render_or_affects_game_state,
+	long animation_graph_index,
+	short animation_index)
+{
+	struct animation_graph const *animation_graph = animation_graph_definition_get(animation_graph_index);
+	real random;
+
+	if (render_or_affects_game_state == animation_update_kind_affects_game_state)
+	{
+		random = real_seed_random(get_global_random_seed_address());
+	}
+	else
+	{
+		random = real_seed_random(get_global_local_random_seed_address());
+		match_assert(
+			"c:\\halo\\SOURCE\\models\\model_animations.c",
+			1008,
+			(animation_update_kind_affects_game_state==render_or_affects_game_state) ||
+			(animation_update_kind_render_only==render_or_affects_game_state));
+	}
+
+	while (animation_index != NONE)
+	{
+		struct animation const *animation = TAG_BLOCK_GET_ELEMENT(
+			&animation_graph->animations,
+			animation_index,
+			struct animation);
+
+		if (random <= animation->runtime_normalized_weight)
+		{
+			break;
+		}
+
+		animation_index = animation->next_animation_index;
+	}
+
+	return animation_index;
+}
+
 } // namespace h1_ai

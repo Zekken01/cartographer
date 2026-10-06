@@ -1258,4 +1258,241 @@ static short seat_label_to_base_seat_index(
 	return result;
 }
 
+static short unit_animation_impulse_get_index(
+	short animation_impulse,
+	short *interpolation_frame_count)
+{
+	short index = NONE;
+
+	match_assert(
+		"c:\\halo\\SOURCE\\units\\units.c",
+		5364,
+		animation_impulse>=0 && animation_impulse<NUMBER_OF_UNIT_ANIMATION_IMPULSES);
+
+	switch (animation_impulse)
+	{
+	case 0:
+		index = _unit_weapon_class_animation_berserk;
+		break;
+	case 1:
+		index = _unit_weapon_class_animation_signal_move;
+		break;
+	case 2:
+		index = _unit_weapon_class_animation_signal_attack;
+		break;
+	case 3:
+		index = _unit_weapon_class_animation_signal_warn;
+		break;
+	case 4:
+		index = _unit_weapon_class_animation_surprise_front;
+		break;
+	case 5:
+		index = _unit_weapon_class_animation_surprise_back;
+		break;
+	case 6:
+		index = _unit_weapon_class_animation_evade_left;
+		break;
+	case 7:
+		index = _unit_weapon_class_animation_evade_right;
+		break;
+	case 8:
+		index = _unit_weapon_class_animation_diving_front;
+		break;
+	case 9:
+		index = _unit_weapon_class_animation_diving_back;
+		break;
+	case 10:
+		index = _unit_weapon_class_animation_diving_left;
+		break;
+	case 11:
+		index = _unit_weapon_class_animation_diving_right;
+		break;
+	case 12:
+		index = _unit_weapon_class_animation_celebrate;
+		break;
+	case 13:
+		index = _unit_weapon_class_animation_panic;
+		break;
+	default:
+		display_assert(NULL, "c:\\halo\\SOURCE\\units\\units.c", 5383, TRUE);
+		system_exit(-1);
+		break;
+	}
+
+	match_assert(
+		"c:\\halo\\SOURCE\\units\\units.c",
+		5385,
+		index!=NONE);
+
+	if (interpolation_frame_count!=NULL)
+	{
+		switch (animation_impulse)
+		{
+		case 4:
+		case 5:
+		case 8:
+		case 9:
+		case 10:
+		case 11:
+			*interpolation_frame_count = 3;
+			break;
+		case 0:
+		case 1:
+		case 2:
+		case 3:
+		case 6:
+		case 7:
+		case 12:
+		case 13:
+			*interpolation_frame_count = 6;
+			break;
+		default:
+			display_assert(NULL, "c:\\halo\\SOURCE\\units\\units.c", 5412, TRUE);
+			system_exit(-1);
+			break;
+		}
+	}
+
+	return index;
+}
+
+static boolean unit_can_play_animation_impulse(
+	long unit_index,
+	short animation_impulse)
+{
+	struct unit_datum *unit = unit_get(unit_index);
+	boolean result = FALSE;
+
+	switch (unit->unit.animation.state)
+	{
+	case _unit_state_hard_ping:
+	case _unit_state_dying_airborne:
+	case _unit_state_dying:
+	case _unit_state_entering_seat:
+	case _unit_state_exiting_seat:
+	case _unit_state_ai_impulse:
+	case _unit_state_melee_attack:
+	case _unit_state_melee_airborne:
+	case _unit_state_melee_continuous:
+	case _unit_state_throw_grenade:
+	case _unit_state_resurrect_front:
+	case _unit_state_resurrect_back:
+	case _unit_state_leap_start:
+	case _unit_state_leap_melee:
+		result = FALSE;
+		break;
+
+	default:
+		if (unit->object.parent_object_index!=NONE)
+		{
+			struct unit_datum *parent_unit;
+			struct unit_definition *parent_unit_definition;
+			struct unit_seat *seat;
+
+			if (unit->unit.parent_seat_index!=NONE)
+			{
+				parent_unit = unit_try_and_get(unit->object.parent_object_index);
+				if (parent_unit!=NULL)
+				{
+					long impulse_index;
+
+					parent_unit_definition = unit_definition_get(parent_unit->definition_index);
+					seat = TAG_BLOCK_GET_ELEMENT(
+						&parent_unit_definition->unit.seats,
+						unit->unit.parent_seat_index,
+						struct unit_seat);
+					impulse_index = animation_impulse;
+
+					if (impulse_index>=12 &&
+						impulse_index<=13)
+					{
+						result = (boolean)TEST_FLAG(seat->flags, _unit_seat_unknown8_bit);
+					}
+				}
+			}
+		}
+		else
+		{
+			long impulse_index = animation_impulse;
+
+			if (impulse_index>=12 &&
+				impulse_index<=13)
+			{
+				result = FALSE;
+			}
+			else
+			{
+				result = TRUE;
+			}
+		}
+		break;
+	}
+
+	return result;
+}
+
+boolean unit_test_animation_impulse(
+	long unit_index,
+	short animation_impulse)
+{
+	struct unit_datum *unit = unit_get(unit_index);
+	struct unit_definition *unit_definition;
+	struct animation_graph *animation_graph;
+	struct animation_graph_unit_seat *unit_seat;
+	struct animation_graph_weapon_class *weapon_class;
+	short interpolation_frame_count;
+	short animation_type;
+
+	if (unit_can_play_animation_impulse(unit_index, animation_impulse))
+	{
+		unit_definition = unit_definition_get(unit->definition_index);
+		animation_graph = animation_graph_definition_get(
+			unit_definition->object.animation_graph.index);
+		unit_seat = TAG_BLOCK_GET_ELEMENT(
+			&animation_graph->unit_seats,
+			unit->unit.animation.seat_index,
+			struct animation_graph_unit_seat);
+		weapon_class = TAG_BLOCK_GET_ELEMENT(
+			&unit_seat->weapon_classes,
+			unit->unit.animation.weapon_index,
+			struct animation_graph_weapon_class);
+		animation_type = unit_animation_impulse_get_index(
+			animation_impulse,
+			&interpolation_frame_count);
+
+		if (animation_type>=0 && animation_type<weapon_class->animations.count)
+		{
+			animation_type =
+				animation_graph_animation_index_get(&weapon_class->animations)
+					[animation_type].animation_index;
+		}
+		else
+		{
+			animation_type = NONE;
+		}
+
+		return (boolean)(animation_type!=NONE);
+	}
+
+	return FALSE;
+}
+
+
+/* ---------- the port's: the seat and weapon class units.c's unit_new, unit_ready_desired_weapon and unit_enter_seat pick */
+
+short h1_ai_unit_animation_impulse_index(short animation_impulse, short *interpolation_frame_count)
+{
+	return unit_animation_impulse_get_index(animation_impulse, interpolation_frame_count);
+}
+
+void h1_ai_unit_animation_labels_set(long unit_index, char const *seat_label, char const *weapon_label)
+{
+	if (!unit_set_or_test_seat_and_weapon_label(unit_index, seat_label, weapon_label, TRUE))
+	{
+		unit_set_or_test_seat_and_weapon_label(unit_index, seat_label, NULL, TRUE);
+	}
+
+	return;
+}
+
 } // namespace h1_ai

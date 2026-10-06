@@ -25,6 +25,8 @@
 #include "game/players.h"
 #include "main/main.h"
 #include "math/real_math.h"
+#include "objects/object_definition.h"
+#include "h2_tag_definitions_generated.h"
 #include "objects/damage.h"
 #include "scenario/scenario.h"
 #include "objects/object_types.h"
@@ -1729,6 +1731,21 @@ void h1_hs_sound_dialog_note(datum sound_index)
 bool h1_hs_custom_animation(datum object_index, datum h1_graph_index, const char* name, bool interpolate)
 {
 	return h1_hs::hs_custom_animation(object_index, h1_graph_index, name, interpolate, NONE);
+}
+
+bool h1_hs_unit_animation_play(datum unit_index, const char* name, bool interpolate)
+{
+	if (!h1_hs::hs_object_is_unit(unit_index))
+	{
+		return false;
+	}
+	const object_definition* definition = (const object_definition*)tag_get('obje', object_get(unit_index)->definition_index);
+	const h2x_hlmt* model = definition && definition->object.model.index != NONE ? (const h2x_hlmt*)tag_get('hlmt', definition->object.model.index) : NULL;
+	if (!model || model->animation.index == NONE)
+	{
+		return false;
+	}
+	return H2_FUNCTION(0x18561D, h1_hs::t_unit_custom_animation)(unit_index, model->animation.index, h1_hs::hs_animation_name(name), interpolate);
 }
 
 int16 h1_hs_animation_time(datum object_index)

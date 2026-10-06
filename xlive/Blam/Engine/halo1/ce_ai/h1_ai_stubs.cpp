@@ -152,14 +152,4 @@ boolean unit_leap_begin(long unit_index, real_vector2d const *alignment_vector)
 	return FALSE;
 }
 
-boolean unit_start_animation_impulse(long unit_index, short animation_impulse, real_vector2d *alignment_vector)
-{
-	return FALSE;
-}
-
-boolean unit_test_animation_impulse(long unit_index, short animation_impulse)
-{
-	return FALSE;
-}
-
 } // namespace h1_ai

@@ -8,6 +8,7 @@
 #include "../h1_recordings.h"
 #include "../h1_weapon_logic.h"
 
+#include <unordered_map>
 #include <unordered_set>
 
 #include "h1_ai_internal.h"
@@ -61,10 +62,19 @@ typedef void(__cdecl* t_h2_unit_exit_seat_end)(datum unit_index, int32 ticks);
 
 // units halo 1 started a melee on, for their next control
 static std::unordered_set<long> g_melee_units;
+// each unit's animation seat and weapon labels (units.c sets its animation seat and weapon class when they change)
+struct s_unit_animation_labels
+{
+	const char* seat_label;
+	const char* weapon_label;
+};
+static std::unordered_map<long, s_unit_animation_labels> g_unit_animation_labels;
 // breakable_surfaces.c: every surface whole (breaking isn't halo 1's here)
 static uint32 g_breakable_surface_flags[0x800];
 
 /* ---------- private prototypes */
+
+static void unit_animation_labels_update(long unit_index, unit_datum* unit);
 
 static void unit_running_blind(long unit_index, real_vector3d* run_vector);
 
@@ -157,6 +167,7 @@ void h1_ai_unit_control_update(long unit_index, unit_datum* unit, bool* controll
 {
 	// unit_update's speech
 	unit_dialogue_update(unit_index);
+	unit_animation_labels_update(unit_index, unit);
 
 	// an actor's team (game teams are numbered alike)
 	::unit_datum* h2_unit = (::unit_datum*)::object_try_and_get_and_verify_type(unit_index, ::_object_mask_unit);
@@ -318,12 +329,38 @@ boolean unit_start_user_animation(long unit_index, long animation_graph_index, c
 	return TRUE;
 }
 
+// units.c unit_start_animation_impulse: the impulse's animation of the unit's seat and weapon class, played by halo 2 (by name,
+// from the unit's own graph)
+boolean unit_start_animation_impulse(long unit_index, short animation_impulse, real_vector2d* alignment_vector)
+{
+	unit_datum* unit = (unit_datum*)unit_get(unit_index);
+	if (!unit_test_animation_impulse(unit_index, animation_impulse))
+	{
+		return FALSE;
+	}
+	struct unit_definition* unit_definition = unit_definition_get(unit->definition_index);
+	struct animation_graph* animation_graph = animation_graph_definition_get(unit_definition->object.animation_graph.index);
+	struct animation_graph_unit_seat* unit_seat = TAG_BLOCK_GET_ELEMENT(&animation_graph->unit_seats, unit->unit.animation.seat_index, struct animation_graph_unit_seat);
+	struct animation_graph_weapon_class* weapon_class = TAG_BLOCK_GET_ELEMENT(&unit_seat->weapon_classes, unit->unit.animation.weapon_index, struct animation_graph_weapon_class);
+	short interpolation_frame_count;
+	const short animation_type = h1_ai_unit_animation_impulse_index(animation_impulse, &interpolation_frame_count);
+	short animation_index = animation_graph_animation_index_get(&weapon_class->animations)[animation_type].animation_index;
+	animation_index = animation_choose_random_permutation_internal(TRUE, unit_definition->object.animation_graph.index, animation_index);
+	struct animation* animation = TAG_BLOCK_GET_ELEMENT(&animation_graph->animations, animation_index, struct animation);
+	if (!animation || !h1_hs_unit_animation_play(unit_index, animation->name, interpolation_frame_count > 0))
+	{
+		return FALSE;
+	}
+	unit->unit.animation.state = _unit_state_ai_impulse;
+	return TRUE;
+}
+
 // units.c unit_get_animation_frames_remaining: a user animation's ticks left
 short unit_get_animation_frames_remaining(long unit_index, short* animation_state)
 {
 	unit_datum* unit = (unit_datum*)unit_get(unit_index);
 	const short frames_remaining = h1_hs_animation_time(unit_index);
-	if (unit->unit.animation.state == _unit_state_user_animation && frames_remaining <= 0)
+	if ((unit->unit.animation.state == _unit_state_user_animation || unit->unit.animation.state == _unit_state_ai_impulse) && frames_remaining <= 0)
 	{
 		unit->unit.animation.state = _unit_state_idle;
 	}
@@ -406,6 +443,31 @@ boolean sound_scripted_dialog_is_playing(void)
 }
 
 /* ---------- private code */
+
+// the unit's seat (its parent's seat's label, standing without one) and weapon (its current one's label, unarmed without one)
+static void unit_animation_labels_update(long unit_index, unit_datum* unit)
+{
+	const char* seat_label = "stand";
+	if (unit->object.parent_object_index != NONE && unit->unit.parent_seat_index != NONE)
+	{
+		const object_datum* parent = (const object_datum*)object_get(unit->object.parent_object_index);
+		struct unit_definition* parent_definition = TEST_FLAG(_object_mask_unit, parent->object.type) ? unit_definition_get(parent->definition_index) : NULL;
+		struct unit_seat* seat = parent_definition ? TAG_BLOCK_GET_ELEMENT(&parent_definition->unit.seats, unit->unit.parent_seat_index, struct unit_seat) : NULL;
+		if (seat)
+		{
+			seat_label = seat->label;
+		}
+	}
+	const long weapon_index = unit->unit.current_weapon_index != NONE ? unit->unit.weapon_object_indices[unit->unit.current_weapon_index] : NONE;
+	const char* weapon_label = weapon_index != NONE ? weapon_get_label(weapon_index) : "unarmed";
+	s_unit_animation_labels& labels = g_unit_animation_labels[unit_index];
+	if (labels.seat_label != seat_label || labels.weapon_label != weapon_label)
+	{
+		labels = { seat_label, weapon_label };
+		h1_ai_unit_animation_labels_set(unit_index, seat_label, weapon_label);
+	}
+	return;
+}
 
 // units.c unit_running_blind: the direction a unit running blindly runs in, wandering
 static void unit_running_blind(long unit_index, real_vector3d* run_vector)

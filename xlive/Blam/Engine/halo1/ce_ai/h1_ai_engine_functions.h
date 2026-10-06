@@ -8,6 +8,11 @@
 namespace h1_ai
 {
 
+// ce_units.cpp: the unit's animation seat and weapon class from their labels (the stand seat without one)
+void h1_ai_unit_animation_labels_set(long unit_index, char const* seat_label, char const* weapon_label);
+// ce_units.cpp: units.c unit_animation_impulse_get_index
+short h1_ai_unit_animation_impulse_index(short animation_impulse, short* interpolation_frame_count);
+
 // game_sound.c: an impulse sound from an object's node (its handle, NONE when it doesn't play)
 long object_impulse_sound_new(long object_index, long sound_definition_index, short node_index, real_point3d const* position, real_vector3d const* forward, real scale);
 

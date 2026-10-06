@@ -343,4 +343,20 @@ static struct weapon_trigger *weapon_trigger_get(
 	return &weapon->weapon.triggers[trigger_index];
 }
 
+char const *weapon_get_label(
+	long weapon_index)
+{
+	char const *label = "";
+
+	if (weapon_index!=NONE)
+	{
+		struct weapon_datum *weapon = weapon_get(weapon_index);
+		struct weapon_definition *weapon_definition = weapon_definition_get(weapon->definition_index);
+
+		label = weapon_definition->weapon.label;
+	}
+
+	return label;
+}
+
 } // namespace h1_ai
