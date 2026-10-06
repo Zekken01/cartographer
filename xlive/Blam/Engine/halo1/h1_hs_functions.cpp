@@ -9,6 +9,7 @@
 #include "h1_recordings.h"
 #include "h1_scenario_objects.h"
 #include "h1_sound.h"
+#include "h1_devices.h"
 #include "h1_effects.h"
 #include "h1_hud.h"
 #include "h1_objects.h"
@@ -585,21 +586,19 @@ static int32 hs_unit_kill_silent(const int32* arguments)
 	return 0;
 }
 
-static int32 hs_device_group_get(const int32* arguments)
-{
-	const int16 group_index = ARGUMENT_SHORT(0);
-	return hs_real_result(VALID_INDEX(group_index, (int16)g_hs_library.device_group_values.size()) ? g_hs_library.device_group_values[group_index] : 0.f);
-}
-
-static int32 hs_device_group_set(const int32* arguments)
-{
-	const int16 group_index = ARGUMENT_SHORT(0);
-	if (VALID_INDEX(group_index, (int16)g_hs_library.device_group_values.size()))
-	{
-		g_hs_library.device_group_values[group_index] = PIN(ARGUMENT_REAL(1), 0.f, 1.f);
-	}
-	return true;
-}
+// devices.c (h1_devices)
+static int32 hs_device_group_get(const int32* arguments) { return hs_real_result(h1_device_group_get(ARGUMENT_SHORT(0))); }
+static int32 hs_device_group_set(const int32* arguments) { h1_device_group_set(ARGUMENT_SHORT(0), ARGUMENT_REAL(1)); return true; }
+static int32 hs_device_group_set_immediate(const int32* arguments) { h1_device_group_set_immediate(ARGUMENT_SHORT(0), ARGUMENT_REAL(1)); return 0; }
+static int32 hs_device_get_position(const int32* arguments) { return hs_real_result(h1_device_get_position(ARGUMENT_LONG(0))); }
+static int32 hs_device_get_power(const int32* arguments) { return hs_real_result(h1_device_get_power(ARGUMENT_LONG(0))); }
+static int32 hs_device_set_position(const int32* arguments) { return h1_device_set_position(ARGUMENT_LONG(0), ARGUMENT_REAL(1)); }
+static int32 hs_device_set_position_immediate(const int32* arguments) { h1_device_set_position_immediate(ARGUMENT_LONG(0), ARGUMENT_REAL(1)); return 0; }
+static int32 hs_device_set_power(const int32* arguments) { h1_device_set_power(ARGUMENT_LONG(0), ARGUMENT_REAL(1)); return 0; }
+static int32 hs_device_set_never_appears_locked(const int32* arguments) { h1_device_set_never_appears_locked(ARGUMENT_LONG(0), ARGUMENT_BOOLEAN(1)); return 0; }
+static int32 hs_device_one_sided_set(const int32* arguments) { h1_device_one_sided_set(ARGUMENT_LONG(0), ARGUMENT_BOOLEAN(1)); return 0; }
+static int32 hs_device_operates_automatically_set(const int32* arguments) { h1_device_operates_automatically_set(ARGUMENT_LONG(0), ARGUMENT_BOOLEAN(1)); return 0; }
+static int32 hs_device_group_change_only_once_more_set(const int32* arguments) { h1_device_group_change_only_once_more_set(ARGUMENT_SHORT(0), ARGUMENT_BOOLEAN(1)); return 0; }
 
 static int32 hs_game_time(const int32* arguments) { return (int32)game_time_get(); }
 static int32 hs_game_difficulty_get(const int32* arguments) { return game_options_get()->difficulty; }
@@ -1400,7 +1399,16 @@ static const s_hs_procedure_binding k_hs_procedures[] =
 	{ "unit_kill_silent", hs_unit_kill_silent },
 	{ "device_group_get", hs_device_group_get },
 	{ "device_group_set", hs_device_group_set },
-	{ "device_group_set_immediate", hs_device_group_set },
+	{ "device_group_set_immediate", hs_device_group_set_immediate },
+	{ "device_get_position", hs_device_get_position },
+	{ "device_get_power", hs_device_get_power },
+	{ "device_set_position", hs_device_set_position },
+	{ "device_set_position_immediate", hs_device_set_position_immediate },
+	{ "device_set_power", hs_device_set_power },
+	{ "device_set_never_appears_locked", hs_device_set_never_appears_locked },
+	{ "device_one_sided_set", hs_device_one_sided_set },
+	{ "device_operates_automatically_set", hs_device_operates_automatically_set },
+	{ "device_group_change_only_once_more_set", hs_device_group_change_only_once_more_set },
 	{ "game_time", hs_game_time },
 	{ "game_difficulty_get", hs_game_difficulty_get },
 	{ "game_difficulty_get_real", hs_game_difficulty_get },

@@ -47,3 +47,8 @@ enum e_h1_vehicle_base_animation
 int16 h1_animation_vehicle_base_get(datum h1_animation_graph_index, e_h1_vehicle_base_animation which, int16* out_frame_count);
 // a base animation's frame onto halo 2's node orientations: the nodes it animates take its frame (the others keep theirs)
 void h1_animation_base_frame_apply(datum h1_animation_graph_index, int16 animation_index, int32 frame_index, real_orientation* orientations, int32 node_count);
+
+// devices.c device_preprocess_node_orientations: a device's position (0) or power (1) animation at the frame (fractional, blended
+// with the next unless not interpolated) on halo 2's node orientations; false without one
+bool h1_animation_device_apply(datum h1_animation_graph_index, int16 device_animation, real32 frame, bool loops, bool interpolated,
+	real_orientation* orientations, int32 node_count);

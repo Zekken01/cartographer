@@ -9,6 +9,7 @@
 #include "h1_hs.h"
 #include "h1_items.h"
 #include "h1_vehicle_physics.h"
+#include "h1_devices.h"
 #include "h1_log.h"
 #include "h1_render.h"
 #include "h1_runtime.h"
@@ -107,6 +108,7 @@ void h1_maps_apply_patches(void)
 	h1_scenery_apply_patches();
 	h1_items_apply_patches();
 	h1_vehicle_physics_apply_patches();
+	h1_devices_apply_patches();
 	h1_weapon_logic_apply_patches();
 	h1_projectile_logic_apply_patches();
 	return;
@@ -407,6 +409,7 @@ void h1_maps_update(void)
 		}
 	}
 	h1_hs_update();
+	h1_devices_update();
 
 	if (g_h1_autolaunch_done)
 	{

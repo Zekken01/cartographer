@@ -6,6 +6,7 @@
 #include "h1_log.h"
 #include "h1_render_shaders.h"
 #include "h1_vehicle_physics.h"
+#include "h1_devices.h"
 #include "h1_weapons.h"
 #include "h1_weapon_logic.h"
 
@@ -573,6 +574,7 @@ void h1_objects_update_functions(void)
 		}
 		h1_object_functions_export(binding->h1_definition_index, &vitality, functions);
 		h1_vehicle_functions_export(object_index, functions->incoming);
+		h1_device_functions_export(object_index, functions->incoming);
 		const datum h1_weapon_index = h1_weapon_h1_get(object->definition_index);
 		if (h1_weapon_index != NONE)
 		{

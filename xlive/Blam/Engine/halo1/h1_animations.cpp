@@ -749,6 +749,91 @@ void h1_animation_base_frame_apply(datum h1_animation_graph_index, int16 animati
 	return;
 }
 
+bool h1_animation_device_apply(datum h1_animation_graph_index, int16 device_animation, real32 frame, bool loops, bool interpolated,
+	real_orientation* orientations, int32 node_count)
+{
+	const h1_antr* graph = h1_animation_graph_index != NONE ? (const h1_antr*)g_h1_cache_file->tag_get('antr', h1_animation_graph_index) : NULL;
+	const h1_antr_devices* device = graph && graph->devices.count > 0 ? g_h1_cache_file->block_get(graph->devices, 0) : NULL;
+	if (!device || device->animations.count <= device_animation)
+	{
+		return false;
+	}
+	const int16 animation_index = g_h1_cache_file->block_get(device->animations, device_animation)->animation_index;
+	if (!VALID_INDEX(animation_index, graph->animations.count))
+	{
+		return false;
+	}
+	const h1_antr_animations* animation = g_h1_cache_file->block_get(graph->animations, animation_index);
+	const int32 frame_count = animation->frame_count;
+	if (frame_count <= 0)
+	{
+		return false;
+	}
+
+	// overlay_animation_apply (the frame) or overlay_animation_apply_continuous (the two frames about it, blended)
+	int32 frame0 = (int32)floorf(frame);
+	real32 fraction = interpolated ? frame - (real32)frame0 : 0.f;
+	frame0 = loops ? ((frame0 % frame_count) + frame_count) % frame_count : PIN(frame0, 0, frame_count - 1);
+	const int32 frame1 = loops ? (frame0 + 1) % frame_count : MIN(frame0 + 1, frame_count - 1);
+	static s_h1_node_orientation frames[2][k_h1_maximum_animation_nodes];
+	for (int32 f = 0; f < 2; f++)
+	{
+		for (s_h1_node_orientation& node : frames[f])
+		{
+			node = { { 0.f, 0.f, 0.f, 1.f }, { 0.f, 0.f, 0.f }, 1.f };
+		}
+	}
+	h1_animation_frame_decode(animation, frame0, frames[0]);
+	if (fraction > 0.f)
+	{
+		h1_animation_frame_decode(animation, frame1, frames[1]);
+	}
+	const bool overlay = animation->type == _h1_animation_overlay;
+	for (int32 node = 0; node < animation->node_count && node < node_count && node < k_h1_maximum_animation_nodes; node++)
+	{
+		real_orientation* orientation = &orientations[node];
+		if (h1_animation_node_flag(animation->node_rotation_flags_0, animation->node_rotation_flags_1, node))
+		{
+			const real_quaternion d = fraction > 0.f ? h1_quaternion_interpolate(&frames[0][node].rotation, &frames[1][node].rotation, fraction) : frames[0][node].rotation;
+			if (overlay)
+			{
+				const real_quaternion o = orientation->rotation;
+				orientation->rotation =
+				{
+					{
+						o.w * d.v.i + o.v.i * d.w + o.v.j * d.v.k - o.v.k * d.v.j,
+						o.w * d.v.j - o.v.i * d.v.k + o.v.j * d.w + o.v.k * d.v.i,
+						o.w * d.v.k + o.v.i * d.v.j - o.v.j * d.v.i + o.v.k * d.w,
+					},
+					o.w * d.w - o.v.i * d.v.i - o.v.j * d.v.j - o.v.k * d.v.k,
+				};
+			}
+			else
+			{
+				orientation->rotation = d;
+			}
+		}
+		if (h1_animation_node_flag(animation->node_transformation_flags_0, animation->node_transformation_flags_1, node))
+		{
+			const real_point3d* a = &frames[0][node].translation;
+			const real_point3d* b = &frames[1][node].translation;
+			const real_point3d t = fraction > 0.f ?
+				real_point3d{ a->x + (b->x - a->x) * fraction, a->y + (b->y - a->y) * fraction, a->z + (b->z - a->z) * fraction } : *a;
+			if (overlay)
+			{
+				orientation->translation.x += t.x;
+				orientation->translation.y += t.y;
+				orientation->translation.z += t.z;
+			}
+			else
+			{
+				orientation->translation = t;
+			}
+		}
+	}
+	return true;
+}
+
 string_id h1_animation_vehicle_weapon_class(datum h1_animation_graph_index)
 {
 	const h1_antr* graph = h1_animation_graph_index != NONE ? (const h1_antr*)g_h1_cache_file->tag_get('antr', h1_animation_graph_index) : NULL;

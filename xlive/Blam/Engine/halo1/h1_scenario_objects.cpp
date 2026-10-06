@@ -7,6 +7,7 @@
 #include "h1_hs.h"
 #include "h1_items.h"
 #include "h1_log.h"
+#include "h1_devices.h"
 #include "h1_hud.h"
 #include "h1_object_tags.h"
 #include "h1_objects.h"
@@ -183,6 +184,7 @@ void h1_scenario_objects_build(void)
 void h1_scenario_objects_place(void)
 {
 	g_h1_scenario_objects.object_types.clear();
+	h1_devices_reset();
 	if (g_h1_scenario_objects.definitions.empty())
 	{
 		return;
@@ -403,6 +405,7 @@ static datum h1_placement_object_new(const s_h1_placement_type* type, int32 plac
 		return NONE;
 	}
 	g_h1_scenario_objects.object_types[object_index] = type->h1_object_type;
+	h1_device_place(object_index, type->h1_object_type, placement);
 	// biped_place: a biped placed dead (scenario_biped flags bit 0) is a body (unit_kill_silent)
 	if (type->h1_object_type == _h1_object_type_biped && TEST_BIT(*(const uint32*)((const uint8*)placement + 0x4C), 0))
 	{
