@@ -6,6 +6,7 @@
 #include "h1_camera.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
+#include "h1_recordings.h"
 #include "h1_scenario_objects.h"
 #include "h1_sound.h"
 
@@ -751,6 +752,11 @@ static int32 hs_scenery_animation_start(const int32* arguments) { hs_custom_anim
 static int32 hs_scenery_animation_start_at_frame(const int32* arguments) { hs_custom_animation(ARGUMENT_LONG(0), ARGUMENT_LONG(1), ARGUMENT_STRING(2), false, ARGUMENT_SHORT(3)); return 0; }
 static int32 hs_scenery_get_animation_time(const int32* arguments) { return hs_animation_time(ARGUMENT_LONG(0)); }
 
+static int32 hs_recording_play(const int32* arguments) { return h1_recording_play(ARGUMENT_LONG(0), ARGUMENT_SHORT(1), false); }
+static int32 hs_recording_play_and_delete(const int32* arguments) { return h1_recording_play(ARGUMENT_LONG(0), ARGUMENT_SHORT(1), true); }
+static int32 hs_recording_kill(const int32* arguments) { h1_recording_kill(ARGUMENT_LONG(0)); return 0; }
+static int32 hs_recording_time(const int32* arguments) { return h1_recording_time(ARGUMENT_LONG(0)); }
+
 static int32 hs_camera_control(const int32* arguments) { h1_camera_control(ARGUMENT_BOOLEAN(0)); return 0; }
 static int32 hs_camera_set(const int32* arguments) { h1_camera_set(ARGUMENT_SHORT(0), ARGUMENT_SHORT(1), NONE); return 0; }
 static int32 hs_camera_set_relative(const int32* arguments) { h1_camera_set(ARGUMENT_SHORT(0), ARGUMENT_SHORT(1), ARGUMENT_LONG(2)); return 0; }
@@ -882,6 +888,11 @@ static const s_hs_procedure_binding k_hs_procedures[] =
 	{ "scenery_animation_start", hs_scenery_animation_start },
 	{ "scenery_animation_start_at_frame", hs_scenery_animation_start_at_frame },
 	{ "scenery_get_animation_time", hs_scenery_get_animation_time },
+	{ "recording_play", hs_recording_play },
+	{ "recording_play_and_delete", hs_recording_play_and_delete },
+	{ "recording_play_and_hover", hs_recording_play },
+	{ "recording_kill", hs_recording_kill },
+	{ "recording_time", hs_recording_time },
 	{ "camera_control", hs_camera_control },
 	{ "camera_set", hs_camera_set },
 	{ "camera_set_relative", hs_camera_set_relative },
@@ -964,6 +975,7 @@ void hs_functions_initialize_for_new_map(void)
 	g_hs_library.looping_sounds.clear();
 	g_hs_library.scripted_sound_end_times.clear();
 	h1_camera_reset();
+	h1_recordings_reset();
 	return;
 }
 

@@ -5,6 +5,7 @@
 #include "h1_cache_file.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
+#include "h1_recordings.h"
 #include "h1_scenario_objects.h"
 
 #include "game/game.h"
@@ -274,6 +275,7 @@ void h1_hs_update(void)
 		return;
 	}
 	g_hs.last_update_time = time;
+	h1_recordings_update();
 
 	for (int32 thread_index = 0; g_hs.initialized && thread_index < k_maximum_hs_threads; thread_index++)
 	{
