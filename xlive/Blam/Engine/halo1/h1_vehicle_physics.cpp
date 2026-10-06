@@ -1403,6 +1403,47 @@ static void h1_vehicle_preprocess_node_orientations_hook(datum vehicle_index, ui
 	return;
 }
 
+static object_new_t g_h2_vehicle_new = NULL;
+
+// halo 2's vehicle_new refuses a vehicle whose model has no physics model; halo 1's vehicle_new takes one without physics (it never
+// moves by itself, nothing collides with it without a collision model): halo 2's vehicle_new without that check for those
+static bool h1_vehicle_new_hook(datum vehicle_index, object_placement_data* placement_data, bool* out_of_objects)
+{
+	uint8* vehicle = (uint8*)object_get(vehicle_index);
+	const datum definition_index = ((const object_datum*)vehicle)->definition_index;
+	const h2x_vehi* definition = h1_maps_active() && h1_objects_h1_definition_get(definition_index) != NONE ? (const h2x_vehi*)tag_get('vehi', definition_index) : NULL;
+	const h2x_hlmt* model = definition && definition->model.index != NONE ? (const h2x_hlmt*)tag_get('hlmt', definition->model.index) : NULL;
+	if (!model || model->physics_model.index != NONE)
+	{
+		return g_h2_vehicle_new(vehicle_index, placement_data, out_of_objects);
+	}
+
+	*(datum*)(vehicle + 0x3B8) = NONE;
+	*(datum*)(vehicle + 0x3BC) = NONE;
+	*(int32*)(vehicle + 0x3C0) = 0;
+	*(int32*)(vehicle + 0x3C8) = 0;
+	*(int32*)(vehicle + 0x3CC) = 0;
+	Memory::GetAddress<void(__cdecl*)(datum)>(0x16E34F)(vehicle_index);
+	if (TEST_BIT(*((const uint8*)definition + 0x2AC), 0))
+	{
+		Memory::GetAddress<void(__cdecl*)(datum, bool)>(0x132800)(vehicle_index, true);
+	}
+	if (Memory::GetAddress<bool(__cdecl*)(datum)>(0x13188F)(vehicle_index))
+	{
+		auto animation_set = Memory::GetAddress<bool(__cdecl*)(datum, string_id, string_id, real32, int32)>(0x17FFA1);
+		if (animation_set(vehicle_index, (string_id)0x7000001, (string_id)0x700005C, 0.f, 0))
+		{
+			uint8* manager = vehicle + *(const int16*)(vehicle + 0x12A);
+			Memory::GetAddress<void(__thiscall*)(void*)>(0xF3AE5)(manager);
+		}
+		else
+		{
+			animation_set(vehicle_index, (string_id)0x7000001, (string_id)0x400000C, 0.f, 0);
+		}
+	}
+	return true;
+}
+
 static bool h1_vehicle_update_hook(datum vehicle_index)
 {
 	const bool result = g_h2_vehicle_update(vehicle_index);
@@ -1420,6 +1461,8 @@ void h1_vehicle_physics_apply_patches(void)
 		{
 			g_h2_vehicle_update = part->object_update;
 			part->object_update = h1_vehicle_update_hook;
+			g_h2_vehicle_new = part->object_new;
+			part->object_new = h1_vehicle_new_hook;
 			if (part->object_preprocess_node_orientations)
 			{
 				g_h2_vehicle_preprocess_node_orientations = part->object_preprocess_node_orientations;
