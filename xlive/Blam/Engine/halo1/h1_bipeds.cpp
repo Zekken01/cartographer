@@ -94,8 +94,19 @@ datum h1_biped_definition_build(datum h1_biped_index)
 	h1_runtime_reference_set(&biped->integrated_light_toggle, (tag_group)NONE, NONE);
 	biped->camera_field_of_view = h1_biped->camera_field_of_view;
 	biped->camera_stiffness = h1_biped->camera_stiffness;
-	biped->camera_marker_name = string_id_find_or_add(h1_biped->camera_marker_name);
-	biped->camera_submerged_marker_name = string_id_find_or_add(h1_biped->camera_submerged_marker_name);
+	// marker names as the models' (h1_object_tags.cpp): lowercase, spaces as underscores
+	auto marker_string_id = [](const char* name) -> string_id
+	{
+		char marker[32];
+		strncpy_s(marker, name, _TRUNCATE);
+		for (char* c = marker; *c; c++)
+		{
+			*c = *c == ' ' ? '_' : (char)tolower((unsigned char)*c);
+		}
+		return string_id_find_or_add(marker);
+	};
+	biped->camera_marker_name = marker_string_id(h1_biped->camera_marker_name);
+	biped->camera_submerged_marker_name = marker_string_id(h1_biped->camera_submerged_marker_name);
 	biped->pitch_auto_level = h1_biped->pitch_auto_level;
 	biped->pitch_range = h1_biped->pitch_range;
 	biped->soft_ping_threshold = h1_biped->soft_ping_threshold;

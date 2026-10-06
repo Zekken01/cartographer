@@ -311,6 +311,7 @@ short object_get_marker_by_name(long object_index, char const* name, struct obje
 	strncpy_s(marker_name, name ? name : "", _TRUNCATE);
 	for (char* c = marker_name; *c; c++)
 	{
+		*c = (char)tolower((unsigned char)*c);
 		if (*c == ' ')
 		{
 			*c = '_';

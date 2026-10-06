@@ -104,6 +104,7 @@ datum h1_object_render_model_build(const h1_mode* h1_model, const char* name)
 		strncpy_s(marker_name, h1_marker->name, _TRUNCATE);
 		for (char* c = marker_name; *c; c++)
 		{
+			*c = (char)tolower((unsigned char)*c);
 			if (*c == ' ')
 			{
 				*c = '_';

@@ -225,6 +225,7 @@ static string_id h1_marker_string_id(const char* name)
 	std::string marker = name ? name : "";
 	for (char& c : marker)
 	{
+		c = (char)tolower((unsigned char)c);
 		if (c == ' ')
 		{
 			c = '_';

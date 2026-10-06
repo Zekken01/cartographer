@@ -2937,6 +2937,7 @@ static int16 h1_object_markers_get_third_person(datum object_index, const char* 
 	strncpy_s(marker_name, name, _TRUNCATE);
 	for (char* c = marker_name; *c; c++)
 	{
+		*c = (char)tolower((unsigned char)*c);
 		if (*c == ' ')
 		{
 			*c = '_';
@@ -2966,6 +2967,7 @@ static int16 h1_object_markers_get(datum object_index, const char* name, object_
 	strncpy_s(marker_name, name, _TRUNCATE);
 	for (char* c = marker_name; *c; c++)
 	{
+		*c = (char)tolower((unsigned char)*c);
 		if (*c == ' ')
 		{
 			*c = '_';

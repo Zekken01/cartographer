@@ -878,6 +878,7 @@ static string_id hs_marker_name(const char* name)
 	strncpy_s(marker, name ? name : "", _TRUNCATE);
 	for (char* c = marker; *c; c++)
 	{
+		*c = (char)tolower((unsigned char)*c);
 		if (*c == ' ')
 		{
 			*c = '_';
