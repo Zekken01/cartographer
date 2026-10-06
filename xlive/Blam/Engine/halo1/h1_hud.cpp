@@ -17,6 +17,7 @@
 #include "render/render.h"
 #include "tag_files/tag_groups.h"
 #include "units/units.h"
+#include "h2_tag_definitions_generated.h"
 
 /* constants */
 
@@ -1148,6 +1149,19 @@ static bool h1_hud_weapon_get(datum* unit_index, datum* weapon_index, const h1_w
 {
 	*unit_index = h1_first_person_weapon_unit_get();
 	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(*unit_index, _object_mask_unit);
+	// unit_get_aiming_unit: in a gunning seat, the weapon is the vehicle's
+	const unit_datum* vehicle = unit && unit->object.parent_object_index != NONE ?
+		(const unit_datum*)object_try_and_get_and_verify_type(unit->object.parent_object_index, _object_mask_unit) : NULL;
+	if (vehicle && vehicle->unit.weapon_indices[0] != NONE)
+	{
+		const h2x_vehi* vehicle_definition = (const h2x_vehi*)tag_get('vehi', vehicle->definition_index);
+		if (vehicle_definition && VALID_INDEX(unit->unit.parent_seat_index, vehicle_definition->seats.count) &&
+			TEST_BIT(vehicle_definition->seats[unit->unit.parent_seat_index]->flags, 3))
+		{
+			*unit_index = unit->object.parent_object_index;
+			unit = vehicle;
+		}
+	}
 	if (!unit || unit->unit.weapon_indices[0] == NONE)
 	{
 		return false;

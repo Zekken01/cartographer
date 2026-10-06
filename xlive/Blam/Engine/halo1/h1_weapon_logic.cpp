@@ -292,6 +292,7 @@ static const h1_weap_triggers* h1_trigger_definition_get(const s_h1_weapon_logic
 static const h1_weap_magazines* h1_magazine_definition_get(const s_h1_weapon_logic_context* context, int16 magazine_index);
 static bool h1_weapon_belongs_to_player(const s_h1_weapon_logic_context* context);
 static datum h1_weapon_owner_object_index(const s_h1_weapon_logic_context* context);
+static datum h1_weapon_effect_object_index(const s_h1_weapon_logic_context* context);
 static void h1_first_person_weapon_message(s_h1_weapon_logic_context* context, e_h1_first_person_weapon_message message);
 static int32 h1_weapon_effect_new(s_h1_weapon_logic_context* context, const h1_tag_reference* effect, real32 scale, real32 error, bool looping);
 static int16 h1_weapon_first_person_animation_time(const s_h1_weapon_logic_context* context, bool key_frame, int16 animation_type, int16 shotgun_reload_type);
@@ -1081,6 +1082,14 @@ static datum h1_weapon_owner_object_index(const s_h1_weapon_logic_context* conte
 	return parent_index != NONE && object_try_and_get_and_verify_type(parent_index, _object_mask_unit) ? parent_index : NONE;
 }
 
+// weapons.c weapon_get_effect_object_index: an invisible weapon (a vehicle's gun without a model) fires and makes its effects from
+// what holds it (the ghost's trigger markers)
+static datum h1_weapon_effect_object_index(const s_h1_weapon_logic_context* context)
+{
+	const datum parent_index = context->weapon->object.parent_object_index;
+	return context->definition->model.index == NONE && parent_index != NONE ? parent_index : context->weapon_index;
+}
+
 // first_person_weapons.c first_person_weapon_message_from_weapon: kept for the first person weapon
 static void h1_first_person_weapon_message(s_h1_weapon_logic_context* context, e_h1_first_person_weapon_message message)
 {
@@ -1106,12 +1115,12 @@ static int32 h1_weapon_effect_new(s_h1_weapon_logic_context* context, const h1_t
 		{
 			// (its world origin: a held weapon's position is its parent's space)
 			real_point3d origin;
-			object_get_origin(context->weapon_index, &origin, false);
+			object_get_origin(h1_weapon_effect_object_index(context), &origin, false);
 			h1_sound_impulse(effect->index, &origin, scale);
 		}
 		return 0;
 	}
-	return h1_effect_new_on_object_ex(effect->index, context->weapon_index, scale, error, looping);
+	return h1_effect_new_on_object_ex(effect->index, h1_weapon_effect_object_index(context), scale, error, looping);
 }
 
 // weapons.c weapon_get_first_person_animation_time: a first person animation's frames (or key frame) in halo 1 ticks
@@ -1805,8 +1814,15 @@ static void h1_weapon_trigger_create_projectiles(s_h1_weapon_logic_context* cont
 	const unit_datum* unit = owner_object_index != NONE ? (const unit_datum*)object_try_and_get_and_verify_type(owner_object_index, _object_mask_unit) : NULL;
 
 	object_marker markers[k_h1_maximum_trigger_markers];
-	int16 marker_count = object_get_markers_by_string_id(context->weapon_index, string_id_find_or_add(trigger_index == 0 ? "primary_trigger" : "secondary_trigger"),
+	// the halo 1 models keep halo 1's marker names
+	const datum effect_object_index = h1_weapon_effect_object_index(context);
+	int16 marker_count = object_get_markers_by_string_id(effect_object_index, string_id_find_or_add(trigger_index == 0 ? "primary trigger" : "secondary trigger"),
 		markers, k_h1_maximum_trigger_markers);
+	if (marker_count <= 0)
+	{
+		marker_count = object_get_markers_by_string_id(effect_object_index, string_id_find_or_add(trigger_index == 0 ? "primary_trigger" : "secondary_trigger"),
+			markers, k_h1_maximum_trigger_markers);
+	}
 	if (marker_count <= 0)
 	{
 		markers[0].matrix.position = weapon->object.position;

@@ -151,9 +151,10 @@ datum h1_weapon_definition_build(datum h1_weapon_index)
 	const h1_weap* h1_weapon = (const h1_weap*)g_h1_cache_file->tag_get('weap', h1_weapon_index);
 	const h1_mode* h1_model = h1_weapon ? (const h1_mode*)g_h1_cache_file->tag_get('mode', h1_weapon->model.index) : NULL;
 	const h1_coll* h1_collision = h1_weapon ? (const h1_coll*)g_h1_cache_file->tag_get('coll', h1_weapon->collision_model.index) : NULL;
-	if (!h1_model || h1_weapon->triggers.count <= 0)
+	// (a vehicle's guns have no model: they fire from where the vehicle holds them)
+	if (!h1_weapon || h1_weapon->triggers.count <= 0)
 	{
-		h1_log("weapons: %s is missing its model or triggers", h1_name);
+		h1_log("weapons: %s is missing its triggers", h1_name);
 		return NONE;
 	}
 
@@ -166,16 +167,20 @@ datum h1_weapon_definition_build(datum h1_weapon_index)
 		projectiles[i] = trigger->projectile.index != NONE ? h1_projectile_definition_build(trigger->projectile.index) : NONE;
 	}
 
-	s_h1_object_tags tags;
-	tags.render_model = h1_object_render_model_build(h1_model, name);
-	tags.collision_model = h1_collision ? h1_object_collision_model_build(h1_collision, h1_model, name) : NONE;
-	tags.physics_model = NONE;
-	tags.animation_graph = NONE;
-	tags.disappear_distance = 80.f;
-	const datum model_index = tags.render_model != NONE ? h1_object_model_build(&tags, h1_model, h1_collision, name) : NONE;
-	if (model_index == NONE)
+	datum model_index = NONE;
+	if (h1_model)
 	{
-		return NONE;
+		s_h1_object_tags tags;
+		tags.render_model = h1_object_render_model_build(h1_model, name);
+		tags.collision_model = h1_collision ? h1_object_collision_model_build(h1_collision, h1_model, name) : NONE;
+		tags.physics_model = NONE;
+		tags.animation_graph = NONE;
+		tags.disappear_distance = 80.f;
+		model_index = tags.render_model != NONE ? h1_object_model_build(&tags, h1_model, h1_collision, name) : NONE;
+		if (model_index == NONE)
+		{
+			return NONE;
+		}
 	}
 
 	h2x_weap* weapon = NULL;

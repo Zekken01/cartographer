@@ -7,6 +7,7 @@
 #include "h1_objects.h"
 #include "h1_runtime.h"
 #include "h1_structure_bsp.h"
+#include "h1_weapons.h"
 #include "h2_tag_definitions_generated.h"
 
 #include "game/game_globals.h"
@@ -799,6 +800,23 @@ static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle
 		}
 		return host_vehicle && host_vehicle->seats.count > 0 ? host_vehicle->seats[0] : NULL;
 	};
+
+	// the unit's weapons (the ghost's guns): halo 1 weapons the vehicle holds, its gunning seat fires them
+	std::vector<datum> weapons;
+	for (int32 i = 0; i < h1_vehicle->weapons.count; i++)
+	{
+		const h1_vehi_weapons* h1_weapon = g_h1_cache_file->block_get(h1_vehicle->weapons, i);
+		const datum weapon_index = h1_weapon->weapon.index != NONE ? h1_weapon_definition_build(h1_weapon->weapon.index) : NONE;
+		if (weapon_index != NONE)
+		{
+			weapons.push_back(weapon_index);
+		}
+	}
+	h2x_vehi_weapons* vehicle_weapons = h1_runtime_block_new(&vehicle->weapons, (int32)weapons.size());
+	for (size_t i = 0; i < weapons.size(); i++)
+	{
+		h1_runtime_reference_set(&vehicle_weapons[i].weapon, 'weap', weapons[i]);
+	}
 
 	h2x_vehi_seats* seats = h1_runtime_block_new(&vehicle->seats, h1_vehicle->seats.count);
 	for (int32 i = 0; i < h1_vehicle->seats.count; i++)
