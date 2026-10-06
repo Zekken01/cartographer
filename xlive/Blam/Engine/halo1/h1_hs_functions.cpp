@@ -6,6 +6,7 @@
 #include "h1_camera.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
+#include "h1_scenario_objects.h"
 #include "h1_sound.h"
 
 #include "effects/player_effects.h"
@@ -195,7 +196,9 @@ bool hs_object_type_mask_test(int16 object_type_index, datum object_index)
 	{
 		return false;
 	}
-	return TEST_BIT(hs_object_type_masks[object_type_index], object_get_type(object_index));
+	// the scenario's objects keep their halo 1 type
+	const int16 h1_object_type = h1_scenario_object_type_get(object_index);
+	return TEST_BIT(hs_object_type_masks[object_type_index], h1_object_type != NONE ? h1_object_type : object_get_type(object_index));
 }
 
 static bool hs_object_exists(datum object_index)
@@ -267,6 +270,8 @@ static void hs_object_orient(datum object_index, int16 cutscene_flag_index, bool
 	}
 	const real32 cos_pitch = cosf(flag->facing.pitch);
 	real_vector3d forward = { cosf(flag->facing.yaw) * cos_pitch, sinf(flag->facing.yaw) * cos_pitch, sinf(flag->facing.pitch) };
+	const real32 sin_pitch = sinf(flag->facing.pitch);
+	real_vector3d up = { -cosf(flag->facing.yaw) * sin_pitch, -sinf(flag->facing.yaw) * sin_pitch, cos_pitch };
 
 	// halo 2's own: object_reset and its unit reset, the unit's desired facing, player_teleport, player_control_set_facing,
 	// object_set_position
@@ -301,7 +306,7 @@ static void hs_object_orient(datum object_index, int16 cutscene_flag_index, bool
 		object_index,
 		set_position && !player ? &flag->position : NULL,
 		set_facing && !player ? &forward : NULL,
-		NULL,
+		set_facing && !player ? &up : NULL,
 		0);
 	return;
 }
@@ -448,11 +453,78 @@ static int32 hs_volume_teleport_players_not_inside(const int32* arguments)
 static int32 hs_object_teleport(const int32* arguments) { hs_object_orient(ARGUMENT_LONG(0), ARGUMENT_SHORT(1), true, true); return 0; }
 static int32 hs_object_set_facing(const int32* arguments) { hs_object_orient(ARGUMENT_LONG(0), ARGUMENT_SHORT(1), false, true); return 0; }
 
-static int32 hs_object_destroy(const int32* arguments)
+static void hs_object_destroy_internal(datum object_index)
 {
-	if (hs_object_exists(ARGUMENT_LONG(0)))
+	if (!hs_object_exists(object_index))
 	{
-		object_delete(ARGUMENT_LONG(0));
+		return;
+	}
+	for (datum& named : g_hs_library.named_objects)
+	{
+		if (named == object_index)
+		{
+			named = NONE;
+		}
+	}
+	h1_scenario_object_delete(object_index);
+	return;
+}
+
+static int32 hs_object_destroy(const int32* arguments) { hs_object_destroy_internal(ARGUMENT_LONG(0)); return 0; }
+
+// hs_object_create: the named object unless it's there
+static void hs_object_create_internal(int16 name_index, bool anew)
+{
+	if (anew)
+	{
+		hs_object_destroy_internal(object_index_from_name_index(name_index));
+	}
+	if (object_index_from_name_index(name_index) == NONE)
+	{
+		h1_scenario_object_new_by_name(name_index);
+	}
+	return;
+}
+
+// hs_object_iterate_names_containing
+template<typename t_procedure>
+static void hs_object_names_containing(const char* substring, t_procedure procedure)
+{
+	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
+	for (int16 name_index = 0; name_index < scenario->object_names.count; name_index++)
+	{
+		const h1_scnr_object_names* name = g_h1_cache_file->block_get(scenario->object_names, name_index);
+		if (name && strstr(name->name, substring))
+		{
+			procedure(name_index);
+		}
+	}
+	return;
+}
+
+static int32 hs_object_create(const int32* arguments) { hs_object_create_internal(ARGUMENT_SHORT(0), false); return 0; }
+static int32 hs_object_create_anew(const int32* arguments) { hs_object_create_internal(ARGUMENT_SHORT(0), true); return 0; }
+static int32 hs_object_create_containing(const int32* arguments)
+{
+	hs_object_names_containing(ARGUMENT_STRING(0), [](int16 name_index) { hs_object_create_internal(name_index, false); });
+	return 0;
+}
+static int32 hs_object_create_anew_containing(const int32* arguments)
+{
+	hs_object_names_containing(ARGUMENT_STRING(0), [](int16 name_index) { hs_object_create_internal(name_index, true); });
+	return 0;
+}
+static int32 hs_object_destroy_containing(const int32* arguments)
+{
+	hs_object_names_containing(ARGUMENT_STRING(0), [](int16 name_index) { hs_object_destroy_internal(object_index_from_name_index(name_index)); });
+	return 0;
+}
+// the scenario's objects (halo 1 keeps the players and what they hold)
+static int32 hs_object_destroy_all(const int32* arguments)
+{
+	for (int16 name_index = 0; name_index < (int16)g_hs_library.named_objects.size(); name_index++)
+	{
+		hs_object_destroy_internal(object_index_from_name_index(name_index));
 	}
 	return 0;
 }
@@ -644,6 +716,12 @@ static const s_hs_procedure_binding k_hs_procedures[] =
 	{ "object_teleport", hs_object_teleport },
 	{ "object_set_facing", hs_object_set_facing },
 	{ "object_destroy", hs_object_destroy },
+	{ "object_create", hs_object_create },
+	{ "object_create_anew", hs_object_create_anew },
+	{ "object_create_containing", hs_object_create_containing },
+	{ "object_create_anew_containing", hs_object_create_anew_containing },
+	{ "object_destroy_containing", hs_object_destroy_containing },
+	{ "object_destroy_all", hs_object_destroy_all },
 	{ "list_get", hs_list_get },
 	{ "list_count", hs_list_count },
 	{ "random_range", hs_random_range },
@@ -794,4 +872,9 @@ void h1_hs_object_name_set(int16 name_index, datum object_index)
 		h1_hs::g_hs_library.named_objects[name_index] = object_index;
 	}
 	return;
+}
+
+datum h1_hs_object_index_from_name_index(int16 name_index)
+{
+	return h1_hs::object_index_from_name_index(name_index);
 }

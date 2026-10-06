@@ -5,6 +5,7 @@
 #include "h1_cache_file.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
+#include "h1_scenario_objects.h"
 
 #include "game/game.h"
 #include "game/game_time.h"
@@ -171,6 +172,8 @@ void h1_hs_initialize_for_new_map(void)
 
 	hs_functions_initialize();
 	hs_functions_initialize_for_new_map();
+	// objects_place, before the scripts start
+	h1_scenario_objects_place();
 	if (!hs_compile_postprocess())
 	{
 		h1_log("hs: the scripts didn't load, they don't run");

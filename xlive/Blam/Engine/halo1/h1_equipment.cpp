@@ -5,6 +5,7 @@
 #include "h1_effects.h"
 #include "h1_items.h"
 #include "h1_log.h"
+#include "h1_scenario_objects.h"
 #include "h1_objects.h"
 #include "h1_projectiles.h"
 #include "h1_scenery.h"
@@ -213,6 +214,7 @@ void h1_equipment_build(scenario* h2_scenario, const h1_scnr* h1_scenario)
 	h1_grenades_build();
 	h1_weapons_build_multiplayer();
 	h1_first_person_hands_build();
+	h1_scenario_objects_build();
 	h1_simulation_definition_table_extend(h2_scenario);
 	h1_log("equipment: %d netgame items and vehicles from %d halo 1 items and %d vehicles, %d starting equipment", count, h1_item_count, vehicle_count, starting_count);
 	return;

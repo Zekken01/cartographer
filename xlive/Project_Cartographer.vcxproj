@@ -1190,6 +1190,7 @@
     <ClCompile Include="Blam\Engine\halo1\h1_hs_compile.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_hs_functions.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_hs_runtime.cpp" />
+    <ClCompile Include="Blam\Engine\halo1\h1_scenario_objects.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_sound.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_render_models.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_render_shaders.cpp" />
@@ -2181,6 +2182,7 @@
     <ClInclude Include="Blam\Engine\halo1\h1_camera.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_hs.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_hs_internal.h" />
+    <ClInclude Include="Blam\Engine\halo1\h1_scenario_objects.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_sound.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_render_models.h" />
     <ClInclude Include="Blam\Engine\halo1\h1_render_shaders.h" />

@@ -20,3 +20,5 @@ bool h1_hs_wake_by_name(const char* name);
 
 // the object a scenario object name names (object_create, the scenario's placements), for the scripts
 void h1_hs_object_name_set(int16 name_index, datum object_index);
+// the object a scenario object name names, NONE when there isn't one
+datum h1_hs_object_index_from_name_index(int16 name_index);
