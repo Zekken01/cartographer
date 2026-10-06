@@ -681,6 +681,7 @@ struct s_h1_light
 	real32 occlusion_fraction;
 	uint32 id;				// matches the occlusion queries to the light
 	bool first_person;		// at the local player's first person weapon: tested in the first person depth range
+	bool hidden;			// held by a first person player whose first person weapon is hidden: no light, no flare
 };
 
 // the occlusion queries of a lens flare (the occlusion point depth tested, and all its pixels)
@@ -3185,11 +3186,11 @@ static void h1_attachments_update(real32 dt)
 			const int16 function_index = attachment_definition->primary_scale > 0 ? (int16)(attachment_definition->primary_scale - 1) : (int16)NONE;
 			real32 function_value;
 			const bool function_active = h1_object_function_value_get(object_index, function_index, &function_value);
-			// what a first person player holds shows its effects and lights at the first person weapon only (none while that's hidden:
-			// zoomed, in a vehicle)
+			// what a first person player holds shows its effects and lights at the first person weapon only; a hidden object shows none
+			// (objects.c object_set_visibility disconnects its lights: a weapon stowed while its holder rides a vehicle)
 			real_matrix4x3 first_person_marker;
 			const bool first_person = h1_first_person_marker_get(object_index, attachment_definition->marker, &first_person_marker);
-			const bool hidden_in_first_person = !first_person && h1_object_held_in_first_person(object_index);
+			const bool hidden_in_first_person = (!first_person && h1_object_held_in_first_person(object_index)) || object->object.flags.test(_object_hidden_bit);
 			if (group_tag == 'lsnd')
 			{
 				// game_sound.c update_potentially_audible_looping_sound: at its marker, while the object's function is active
@@ -3227,6 +3228,7 @@ static void h1_attachments_update(real32 dt)
 			else
 			{
 				attachment->light.first_person = first_person;
+				attachment->light.hidden = hidden_in_first_person;
 				attachment->light.intensity_scale = hidden_in_first_person ? 0.f : function_value;
 				object_marker marker;
 				if (h1_object_markers_get(object_index, attachment_definition->marker, &marker, 1) > 0)
@@ -4022,7 +4024,7 @@ static void h1_lens_flares_render(void)
 	}
 	for (s_h1_attachment& attachment : g_h1_effects.attachments)
 	{
-		if (attachment.group_tag == 'ligh' && (!attachment.light.first_person || !h1_first_person_hidden()))
+		if (attachment.group_tag == 'ligh' && !attachment.light.hidden && (!attachment.light.first_person || !h1_first_person_hidden()))
 		{
 			h1_lens_flare_render(&attachment.light);
 		}
