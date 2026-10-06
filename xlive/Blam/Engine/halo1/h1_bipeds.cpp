@@ -176,7 +176,7 @@ datum h1_biped_definition_build(datum h1_biped_index)
 	biped->death_spawn_count = 0;
 
 	h1_objects_bind(biped_index, h1_biped_index);
-	h1_log("bipeds: %s from the host's %s (jump %.3f, the host's %.3f)", name, tag_get_name(template_index), biped->jump_velocity, template_biped->jump_velocity);
+	h1_log("bipeds: %s from the host's %s", name, tag_get_name(template_index));
 	return biped_index;
 }
 

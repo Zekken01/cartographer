@@ -267,9 +267,14 @@ datum h1_object_model_build(const s_h1_object_tags* tags, const h1_mode* h1_mode
 	h2x_hlmt_new_damage_info* damage = h1_runtime_block_new(&model->new_damage_info, 1);
 	damage->indirect_damage_section_index = NONE;
 	damage->maximum_vitality = h1_collision->maximum_body_vitality > 0.f ? h1_collision->maximum_body_vitality : 1.f;
+	// halo 1's stun and recharge are the shield's (its body doesn't recharge): halo 2's second set, with its runtime recharge
+	// velocity (fraction per second)
 	damage->maximum_shield_vitality = h1_collision->maximum_shield_vitality;
-	damage->stun_time = h1_collision->stun_time;
-	damage->recharge_time = h1_collision->recharge_time;
+	damage->minimum_stun_damage_2 = h1_collision->minimum_stun_damage;
+	damage->stun_time_2 = h1_collision->stun_time;
+	damage->recharge_time_2 = h1_collision->recharge_time;
+	damage->shield_recharge_velocity = h1_collision->recharge_time > 0.f ? 1.f / h1_collision->recharge_time : 0.f;
+	damage->shield_damaged_threshold = h1_collision->shield_damaged_threshold;
 	damage->shield_global_material_index = NONE;
 	damage->indirect_global_material_index = NONE;
 	h1_runtime_reference_set(&damage->shield_damaged_first_person_shader, (tag_group)NONE, NONE);
