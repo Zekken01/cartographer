@@ -7,6 +7,7 @@
 #include "h1_hs.h"
 #include "h1_items.h"
 #include "h1_log.h"
+#include "h1_hud.h"
 #include "h1_object_tags.h"
 #include "h1_objects.h"
 #include "h1_runtime.h"
@@ -116,6 +117,7 @@ void h1_scenario_objects_build(void)
 {
 	g_h1_scenario_objects.definitions.clear();
 	g_h1_scenario_objects.object_types.clear();
+	h1_cinematic_titles_reset();
 	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
 	if (scenario->type != 0)
 	{

@@ -14,6 +14,9 @@
 #include "items/weapons.h"
 #include "objects/objects.h"
 #include "rasterizer/dx9/rasterizer_dx9_main.h"
+#include "rasterizer/rasterizer_text.h"
+#include "text/draw_string.h"
+#include "text/font_group.h"
 #include "render/render.h"
 #include "tag_files/tag_groups.h"
 #include "units/units.h"
@@ -2638,6 +2641,155 @@ static void h1_hud_render_grenades(datum unit_index, const h1_weap* weapon_defin
 		overlays.bitmap = definition->overlay_bitmap;
 		overlays.items = definition->overlay_items;
 		h1_hud_draw_overlays(&definition->absolute_placement, &overlays, overlay_flags, g_h1_unit_hud.last_grenade_flash_time, draw_flags);
+	}
+	return;
+}
+
+// halo 2's font for halo 1's single player font (the titles' halo 1 font isn't drawn)
+constexpr int32 k_h1_cinematic_title_font = _font_id_2;
+
+/* ---------- cinematic titles (cinematics.c cinematic_set_title_delayed and cinematic_render's titles) */
+
+enum
+{
+	k_h1_maximum_queued_cinematic_titles = 4,
+};
+
+struct s_h1_cinematic_title
+{
+	int16 title_index;
+	int16 time;			// ticks since it showed (negative while delayed)
+};
+
+static s_h1_cinematic_title g_h1_cinematic_titles[k_h1_maximum_queued_cinematic_titles] =
+{
+	{ NONE, NONE }, { NONE, NONE }, { NONE, NONE }, { NONE, NONE },
+};
+static int32 g_h1_cinematic_titles_last_game_time = NONE;
+
+void h1_cinematic_titles_reset(void)
+{
+	for (s_h1_cinematic_title& title : g_h1_cinematic_titles)
+	{
+		title = { NONE, NONE };
+	}
+	g_h1_cinematic_titles_last_game_time = NONE;
+	return;
+}
+
+void h1_cinematic_set_title_delayed(int16 title_index, real32 delay)
+{
+	for (s_h1_cinematic_title& title : g_h1_cinematic_titles)
+	{
+		if (title.title_index == NONE)
+		{
+			title.title_index = title_index;
+			title.time = (int16)-(int32)(delay * 30.f);
+			return;
+		}
+	}
+	h1_log("hud: no free chapter title slots to display title %d", title_index);
+	return;
+}
+
+// the scenario's help text strings
+static const wchar_t* h1_help_text_get(int16 index, size_t* out_length)
+{
+	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
+	const h1_tag_block<h1_tag_data>* strings = (const h1_tag_block<h1_tag_data>*)g_h1_cache_file->tag_get('ustr', scenario->ingame_help_text.index);
+	const h1_tag_data* data = strings && VALID_INDEX(index, strings->count) ? g_h1_cache_file->block_get(*strings, index) : NULL;
+	const wchar_t* text = data ? (const wchar_t*)g_h1_cache_file->data_get(*data) : NULL;
+	*out_length = text ? wcsnlen(text, data->size / sizeof(wchar_t)) : 0;
+	return text;
+}
+
+void h1_cinematic_titles_render(void)
+{
+	if (!h1_maps_active() || !g_h1_cache_file)
+	{
+		return;
+	}
+	const int32 game_time = (int32)game_time_get();
+	const int32 elapsed = g_h1_cinematic_titles_last_game_time != NONE && game_time >= g_h1_cinematic_titles_last_game_time ?
+		game_time - g_h1_cinematic_titles_last_game_time : 0;
+	g_h1_cinematic_titles_last_game_time = game_time;
+
+	D3DVIEWPORT9 viewport;
+	rasterizer_dx9_device_get_interface()->GetViewport(&viewport);
+	// halo 1's titles are placed on a screen 640 wide and 480 high: the window's height, its sides moved with a wider screen's
+	const real32 scale = (real32)viewport.Height / 480.f;
+	const real32 screen_width = (real32)viewport.Width / scale;
+
+	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
+	for (s_h1_cinematic_title& active_title : g_h1_cinematic_titles)
+	{
+		if (active_title.title_index == NONE)
+		{
+			continue;
+		}
+		const h1_scnr_cutscene_titles* title = g_h1_cache_file->block_get(scenario->cutscene_titles, active_title.title_index);
+		size_t length = 0;
+		const wchar_t* text = title ? h1_help_text_get(title->string_index, &length) : NULL;
+		if (text && active_title.time >= 0)
+		{
+			const real32 time = (real32)active_title.time;
+			real32 fade = 1.f;
+			if (time < title->fade_in_time)
+			{
+				fade = title->fade_in_time > 0.f ? time / title->fade_in_time : 1.f;
+			}
+			else if (time > title->up_time)
+			{
+				fade = title->fade_out_time > 0.f ? 1.f - (time - title->up_time) / title->fade_out_time : 0.f;
+			}
+			fade = PIN(fade, 0.f, 1.f);
+
+			real_argb_color color =
+			{
+				(real32)((title->text_color >> 24) & 0xFF) / 255.f * fade,
+				(real32)((title->text_color >> 16) & 0xFF) / 255.f,
+				(real32)((title->text_color >> 8) & 0xFF) / 255.f,
+				(real32)(title->text_color & 0xFF) / 255.f,
+			};
+			// pure white is drawn a little grey
+			if (color.red > 0.999f && color.green > 0.999f && color.blue > 0.999f)
+			{
+				color.red = color.green = color.blue = 0.8f;
+			}
+			const real32 shadow_alpha = (real32)((title->shadow_color >> 24) & 0xFF) / 255.f * fade;
+			const real_argb_color shadow =
+			{
+				shadow_alpha,
+				(real32)((title->shadow_color >> 16) & 0xFF) / 255.f,
+				(real32)((title->shadow_color >> 8) & 0xFF) / 255.f,
+				(real32)(title->shadow_color & 0xFF) / 255.f,
+			};
+
+			rectangle2d bounds = title->text_bounds_on_screen;
+			if (bounds.x0 == bounds.x1 || bounds.y0 == bounds.y1)
+			{
+				bounds = { 0, 0, 480, 640 };
+			}
+			const int16 shift = (int16)((bounds.x0 + bounds.x1) / 2 * (screen_width - 640.f) / 640.f);
+			rectangle2d screen_bounds;
+			screen_bounds.top = (int16)(viewport.Y + bounds.y0 * scale);
+			screen_bounds.bottom = (int16)(viewport.Y + bounds.y1 * scale);
+			screen_bounds.left = (int16)(viewport.X + (bounds.x0 + shift) * scale);
+			screen_bounds.right = (int16)(viewport.X + (bounds.x1 + shift) * scale);
+
+			std::wstring string(text, length);
+			draw_string_set_font(k_h1_cinematic_title_font);
+			draw_string_set_format(title->unknown - 1, title->justification, 0, true);
+			draw_string_set_color(&color);
+			draw_string_set_shadow_color(&shadow);
+			rasterizer_draw_unicode_string(&screen_bounds, string.c_str());
+		}
+
+		active_title.time = (int16)(active_title.time + elapsed);
+		if (title && (real32)active_title.time >= title->up_time + title->fade_out_time)
+		{
+			active_title = { NONE, NONE };
+		}
 	}
 	return;
 }

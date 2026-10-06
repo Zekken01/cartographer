@@ -15,3 +15,8 @@ bool h1_hud_hides_halo2_widget(string_id name);
 // halo 2's motion sensor (its sweep and blips): halo 1's draws instead, when halo 2 would draw its own (the game variant's
 // motion sensor setting)
 bool h1_hud_hides_halo2_motion_sensor(void);
+
+// cinematics.c: the scenario's cutscene titles the scripts show (cinematic_set_title), drawn over the interface
+void h1_cinematic_titles_reset(void);
+void h1_cinematic_set_title_delayed(int16 title_index, real32 delay);
+void h1_cinematic_titles_render(void);

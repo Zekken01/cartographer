@@ -881,6 +881,7 @@ static void render_view(
 				c_h1_render_state_guard h1_state_guard;
 				h1_hud_render();
 			}
+			h1_cinematic_titles_render();
 			rasterizer_dx9_render_screen_flash();
 			render_menu_user_interface(controller_index, (e_user_interface_render_window)NONE, &camera->viewport_bounds);
 			rasterizer_dx9_perf_event_end("interface");
