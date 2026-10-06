@@ -991,7 +991,9 @@ static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle
 	}
 
 	// vehicle
-	vehicle->type = h1_vehicle->type;
+	// halo 2's plane and fighter types fly by halo 2's own forces (on top of halo 1's physics, h1_vehicle_physics): those are
+	// halo 2 jeeps without friction points, which halo 2 doesn't push
+	vehicle->type = h1_vehicle->type == 3 || h1_vehicle->type == 5 ? (int16)1 : h1_vehicle->type;	// human plane, alien fighter: human jeep
 	vehicle->maximum_forward_speed = h1_vehicle->maximum_forward_speed;
 	vehicle->maximum_reverse_speed = h1_vehicle->maximum_reverse_speed;
 	vehicle->speed_acceleration = h1_vehicle->speed_acceleration;

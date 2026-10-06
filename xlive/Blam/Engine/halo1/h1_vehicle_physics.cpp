@@ -119,6 +119,12 @@ enum
 	k_havok_motion_type_fixed = 7,
 };
 constexpr real32 k_h1_global_gravity = 0.0035651792f;	// world units per tick per tick
+// halo 2's collision test flags for halo 1's: an object type's test is bit 4 + its type (scenery 10, machine 11, crate 15)
+// _collision_test_for_vehicles_flags (0xC0A0): the structure, scenery and machines, never a unit (its riders) or an item
+constexpr uint32 k_h1_collision_test_for_vehicles = FLAG(_collision_test_structure_bit) | FLAG(_collision_test_instanced_geometry_bit) |
+	FLAG(_collision_test_objects_bit) | FLAG(10) | FLAG(11) | FLAG(15);
+// the thrusters' effects (0x61): the structure and media
+constexpr uint32 k_h1_collision_test_for_effects = FLAG(_collision_test_structure_bit) | FLAG(_collision_test_media_bit) | FLAG(_collision_test_instanced_geometry_bit);
 
 /* ---------- structures */
 
@@ -415,17 +421,11 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 		return true;
 	}
 
-	// havok's velocities (per second, at the center of mass) as halo 1's (per tick, at the origin)
-	const real_matrix4x3* body_matrix = object_get_node_matrix(vehicle_index, 0);
+	// havok's velocities (per second, at the center of mass) as halo 1's (per tick): halo 1's vehicle is where its center of mass is
+	// (physics_instance_new), its velocity the center of mass's
 	real_vector3d havok_linear, havok_angular;
 	object_get_velocities(vehicle_index, &havok_linear, &havok_angular);
-	real_point3d center_of_mass;
-	matrix4x3_transform_point(body_matrix, &physics->center_of_mass, &center_of_mass);
-	real_vector3d origin_to_center;
-	vector_from_points3d(&object->object.position, &center_of_mass, &origin_to_center);
-	real_vector3d spin;
-	cross_product3d(&havok_angular, &origin_to_center, &spin);
-	state->linear_velocity = { (havok_linear.i - spin.i) / k_h1_ticks_per_second, (havok_linear.j - spin.j) / k_h1_ticks_per_second, (havok_linear.k - spin.k) / k_h1_ticks_per_second };
+	state->linear_velocity = { havok_linear.i / k_h1_ticks_per_second, havok_linear.j / k_h1_ticks_per_second, havok_linear.k / k_h1_ticks_per_second };
 	state->angular_velocity = { havok_angular.i / k_h1_ticks_per_second, havok_angular.j / k_h1_ticks_per_second, havok_angular.k / k_h1_ticks_per_second };
 
 	// create_crashing_effects: what havok's collisions took from the velocity halo 1 gave it, on the ground, without the suspension's
@@ -473,12 +473,11 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 
 	// halo 1's velocities as havok's; havok adds its gravity over the tick it steps
 	real_vector3d angular = { state->angular_velocity.i * k_h1_ticks_per_second, state->angular_velocity.j * k_h1_ticks_per_second, state->angular_velocity.k * k_h1_ticks_per_second };
-	cross_product3d(&angular, &origin_to_center, &spin);
 	real_vector3d linear =
 	{
-		state->linear_velocity.i * k_h1_ticks_per_second + spin.i,
-		state->linear_velocity.j * k_h1_ticks_per_second + spin.j,
-		state->linear_velocity.k * k_h1_ticks_per_second + spin.k + physics_constants_get()->gravity * game_tick_length(),
+		state->linear_velocity.i * k_h1_ticks_per_second,
+		state->linear_velocity.j * k_h1_ticks_per_second,
+		state->linear_velocity.k * k_h1_ticks_per_second + physics_constants_get()->gravity * game_tick_length(),
 	};
 	Memory::GetAddress<void(__cdecl*)(datum, const real_vector3d*, const real_vector3d*)>(0x135123)(vehicle_index, &linear, &angular);
 	state->commanded_velocity = state->linear_velocity;
@@ -489,22 +488,24 @@ bool h1_vehicle_physics_update(datum vehicle_index)
 
 bool h1_vehicle_base_animation_set(datum vehicle_index, bool open)
 {
-	auto found = g_h1_vehicle_states.find(vehicle_index);
-	if (found == g_h1_vehicle_states.end())
+	// a halo 1 vehicle (its state from now, before its first update when a script just created it)
+	const object_datum* object = (const object_datum*)object_try_and_get_and_verify_type(vehicle_index, _object_mask_vehicle);
+	if (!object || h1_objects_h1_definition_get(object->definition_index) == NONE)
 	{
 		return false;
 	}
+	auto found = g_h1_vehicle_states.emplace(vehicle_index, s_h1_vehicle_state{}).first;
 	found->second.base_animation = (int8)(open ? _h1_vehicle_base_opening : _h1_vehicle_base_closing);
 	found->second.base_frame = 0;
 	return true;
 }
 
+// vehicles.c vehicle_hover: in the vehicle (its state from now, before its first update when a script just created it)
 void h1_vehicle_hover_set(datum vehicle_index, bool hover)
 {
-	auto found = g_h1_vehicle_states.find(vehicle_index);
-	if (found != g_h1_vehicle_states.end())
+	if (object_try_and_get_and_verify_type(vehicle_index, _object_mask_vehicle))
 	{
-		found->second.hovering = hover;
+		g_h1_vehicle_states[vehicle_index].hovering = hover;
 	}
 	return;
 }
@@ -804,7 +805,7 @@ static bool h1_vehicle_suspension_update(datum vehicle_index, const h1_vehi* h1_
 		scale_vector3d(&normal, extent + extent, &vector);
 
 		collision_result collision;
-		const uint32 flags = FLAG(_collision_test_structure_bit) | FLAG(_collision_test_instanced_geometry_bit) | FLAG(_collision_test_objects_bit);
+		const uint32 flags = k_h1_collision_test_for_vehicles;
 		const real32 t = collision_test_vector(flags, &start, &vector, vehicle_index, NONE, &collision) ? collision.t : 1.f;
 		const real32 shift = PIN((1.f - t) + (1.f - t), 0.f, 1.f);
 		maximum_shift = MAX(maximum_shift, shift - current);
@@ -974,7 +975,7 @@ static void h1_vehicle_pelican_effect(datum vehicle_index, const h1_vehi* h1_veh
 		real_vector3d vector;
 		scale_vector3d(&direction, length, &vector);
 		collision_result collision;
-		const uint32 flags = FLAG(_collision_test_structure_bit) | FLAG(_collision_test_instanced_geometry_bit) | FLAG(_collision_test_objects_bit);
+		const uint32 flags = k_h1_collision_test_for_effects;
 		if (!collision_test_vector(flags, &markers[m].matrix.position, &vector, vehicle_index, NONE, &collision))
 		{
 			continue;
@@ -1532,7 +1533,7 @@ static void h1_mass_point_ground(datum vehicle_index, s_h1_mass_point* mass_poin
 	const real_point3d start = { mass_point->position.x, mass_point->position.y, mass_point->position.z + radius };
 	real_vector3d probe = { 0.f, 0.f, -2.f * radius };
 	collision_result collision;
-	const uint32 flags = FLAG(_collision_test_structure_bit) | FLAG(_collision_test_instanced_geometry_bit) | FLAG(_collision_test_objects_bit);
+	const uint32 flags = k_h1_collision_test_for_vehicles;
 	if (collision_test_vector(flags, &start, &probe, vehicle_index, NONE, &collision))
 	{
 		mass_point->ground_plane = collision.fog_plane;
@@ -1554,6 +1555,9 @@ static void h1_physics_update(datum vehicle_index, const h1_phys* physics, s_h1_
 
 	real_matrix4x3 world_matrix;
 	matrix4x3_from_point_and_vectors(&world_matrix, &object->object.position, &object->object.forward, &object->object.up);
+	// halo 1's vehicle position is its center of mass (physics_instance_new): the mass points' radii and velocities are from it
+	real_point3d center_of_mass;
+	matrix4x3_transform_point(&world_matrix, &physics->center_of_mass, &center_of_mass);
 
 	if (powered_mass_points)
 	{
@@ -1606,7 +1610,7 @@ static void h1_physics_update(datum vehicle_index, const h1_phys* physics, s_h1_
 		matrix4x3_transform_vector(&world_matrix, &local_forward, &mass_point->forward);
 		matrix4x3_transform_vector(&world_matrix, &local_up, &mass_point->up);
 
-		vector_from_points3d(&object->object.position, &mass_point->position, &mass_point->radius);
+		vector_from_points3d(&center_of_mass, &mass_point->position, &mass_point->radius);
 		cross_product3d(&state->angular_velocity, &mass_point->radius, &mass_point->velocity);
 		add_vectors3d(&state->linear_velocity, &mass_point->velocity, &mass_point->velocity);
 
@@ -1667,7 +1671,7 @@ static void h1_physics_update(datum vehicle_index, const h1_phys* physics, s_h1_
 				const real32 probe_length = definition->radius + powered_definition->antigrav_height;
 				real_vector3d probe = { 0.f, 0.f, -probe_length };
 				collision_result collision;
-				const uint32 flags = FLAG(_collision_test_structure_bit) | FLAG(_collision_test_instanced_geometry_bit) | FLAG(_collision_test_objects_bit);
+				const uint32 flags = k_h1_collision_test_for_vehicles;
 				if (collision_test_vector(flags, &mass_point->position, &probe, vehicle_index, NONE, &collision))
 				{
 					const real32 height = probe_length * collision.t - definition->radius;

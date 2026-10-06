@@ -7,7 +7,7 @@
 void h1_recordings_reset(void);
 
 // recorded_animation_play(_and_delete): the scenario's recorded animation drives the unit, false when it can't
-bool h1_recording_play(datum unit_index, int16 animation_index, bool delete_on_complete);
+bool h1_recording_play(datum unit_index, int16 animation_index, bool delete_on_complete, bool hover_on_complete = false);
 void h1_recording_kill(datum unit_index);
 // the ticks left of the unit's recording, 0 without one
 int16 h1_recording_time(datum unit_index);

@@ -3,6 +3,7 @@
 
 #include "h1_cache_file.h"
 #include "h1_log.h"
+#include "h1_vehicle_physics.h"
 
 #include "math/real_math.h"
 #include "objects/objects.h"
@@ -100,6 +101,7 @@ struct s_h1_recording_thread
 	bool finished;
 	bool killed;
 	bool delete_on_complete;
+	bool hover_on_complete;				// recording_play_and_hover: a vehicle hovers where the recording leaves it
 	datum unit_index;
 	int16 ticks_left;
 	int32 relative_ticks;
@@ -129,7 +131,7 @@ void h1_recordings_reset(void)
 	return;
 }
 
-bool h1_recording_play(datum unit_index, int16 animation_index, bool delete_on_complete)
+bool h1_recording_play(datum unit_index, int16 animation_index, bool delete_on_complete, bool hover_on_complete)
 {
 	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
 	const h1_scnr_recorded_animations* animation = g_h1_cache_file->block_get(scenario->recorded_animations, animation_index);
@@ -170,6 +172,10 @@ bool h1_recording_play(datum unit_index, int16 animation_index, bool delete_on_c
 	thread->ticks_left = animation->length_of_animation;
 	thread->animation_index = animation_index;
 	thread->delete_on_complete = delete_on_complete;
+	thread->hover_on_complete = hover_on_complete;
+	// unit_set_actively_controlled: halo 2 only takes the control of a unit it's told is actively controlled (and powers a vehicle's
+	// driver seat for it)
+	SET_BIT(((unit_datum*)object_get(unit_index))->unit.unit_flags, 1, true);
 	thread->event_stream = stream;
 	thread->event_stream_end = stream + animation->recorded_animation_event_stream.size;
 	// recorded_animation_initialize_event_stream: the unit control, then the playback state
@@ -231,9 +237,18 @@ void h1_recordings_update(void)
 			thread.control.control_flags = 0;
 			thread.control.primary_trigger = 0.f;
 			h1_recording_unit_control(&thread);
+			unit_datum* unit = (unit_datum*)object_get(thread.unit_index);
+			if (unit->unit.actor_index == NONE && unit->unit.player_index == NONE)
+			{
+				SET_BIT(unit->unit.unit_flags, 1, false);
+			}
 			if (thread.delete_on_complete)
 			{
 				object_delete(thread.unit_index);
+			}
+			else if (thread.hover_on_complete)
+			{
+				h1_vehicle_hover_set(thread.unit_index, true);
 			}
 			thread.active = false;
 		}

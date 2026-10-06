@@ -787,6 +787,7 @@ static int32 hs_scenery_get_animation_time(const int32* arguments) { return hs_a
 
 static int32 hs_recording_play(const int32* arguments) { return h1_recording_play(ARGUMENT_LONG(0), ARGUMENT_SHORT(1), false); }
 static int32 hs_recording_play_and_delete(const int32* arguments) { return h1_recording_play(ARGUMENT_LONG(0), ARGUMENT_SHORT(1), true); }
+static int32 hs_recording_play_and_hover(const int32* arguments) { return h1_recording_play(ARGUMENT_LONG(0), ARGUMENT_SHORT(1), false, true); }
 static int32 hs_recording_kill(const int32* arguments) { h1_recording_kill(ARGUMENT_LONG(0)); return 0; }
 static int32 hs_recording_time(const int32* arguments) { return h1_recording_time(ARGUMENT_LONG(0)); }
 
@@ -1511,7 +1512,7 @@ static const s_hs_procedure_binding k_hs_procedures[] =
 	{ "scenery_get_animation_time", hs_scenery_get_animation_time },
 	{ "recording_play", hs_recording_play },
 	{ "recording_play_and_delete", hs_recording_play_and_delete },
-	{ "recording_play_and_hover", hs_recording_play },
+	{ "recording_play_and_hover", hs_recording_play_and_hover },
 	{ "recording_kill", hs_recording_kill },
 	{ "recording_time", hs_recording_time },
 	{ "camera_control", hs_camera_control },
