@@ -652,7 +652,7 @@ static string_id hs_animation_name(const char* name)
 	strncpy_s(label, name ? name : "", _TRUNCATE);
 	for (char* c = label; *c; c++)
 	{
-		*c = (*c == '-' || *c == ' ') ? '_' : *c;
+		*c = (*c == '-' || *c == ' ') ? '_' : (char)tolower((uint8)*c);
 	}
 	return string_id_find_or_add(label);
 }

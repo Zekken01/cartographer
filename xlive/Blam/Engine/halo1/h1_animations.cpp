@@ -568,12 +568,13 @@ static void h1_animation_encode(const h1_antr_animations* animation, h2x_jmad_an
 	return;
 }
 
+// halo 1 matches animation names in any case, halo 2's string ids are lower case
 static std::string h1_animation_label(const char* h1_name)
 {
 	std::string label = h1_name;
 	for (char& c : label)
 	{
-		c = (c == '-' || c == ' ') ? '_' : c;
+		c = (c == '-' || c == ' ') ? '_' : (char)tolower((uint8)c);
 	}
 	return label;
 }
