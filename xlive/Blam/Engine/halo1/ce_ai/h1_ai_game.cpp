@@ -327,6 +327,18 @@ void h1_ai_object_damaged(datum object_index, datum owner_object_index, const re
 	return;
 }
 
+void h1_ai_unit_shooting(datum unit_index, int16 firing_noise)
+{
+	// ai.c's unit effect (shooting is the second)
+	constexpr int16 k_ai_unit_effect_shooting = 1;
+	if (h1_ai::g_ai_running && unit_index != NONE && h1_ai::ai_globals->ai_initialized_for_map &&
+		::object_try_and_get_and_verify_type(unit_index, ::_object_mask_unit))
+	{
+		h1_ai::ai_handle_unit_effect(unit_index, k_ai_unit_effect_shooting, firing_noise);
+	}
+	return;
+}
+
 bool h1_ai_running(void)
 {
 	return h1_ai::g_ai_running;

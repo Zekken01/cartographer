@@ -19,6 +19,8 @@ bool h1_ai_running(void);
 // the AI's hooks of halo 2's objects (its units' deletion)
 void h1_ai_apply_patches(void);
 // damage.c object_cause_damage's aftermath for halo 1's AI: a unit hurt or killed (its vitality before)
+// weapons.c weapon_trigger_fire's ai_handle_unit_effect: the AI hears a unit shoot (the trigger's firing noise)
+void h1_ai_unit_shooting(datum unit_index, int16 firing_noise);
 void h1_ai_object_damaged(datum object_index, datum owner_object_index, const real_vector3d* direction, real32 body_vitality_before,
 	real32 shield_vitality_before);
 

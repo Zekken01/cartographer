@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_weapon_logic.h"
+#include "ce_ai/h1_ai.h"
 
 #include "h1_cache_file.h"
 #include "h1_effects.h"
@@ -1770,6 +1771,7 @@ static void h1_weapon_trigger_fire(s_h1_weapon_logic_context* context, int16 tri
 			else
 			{
 				h1_weapon_trigger_create_projectiles(context, trigger_index);
+				h1_ai_unit_shooting(h1_weapon_owner_object_index(context), trigger_definition->firing_noise);
 			}
 		}
 
