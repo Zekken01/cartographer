@@ -23,3 +23,7 @@ datum h1_animation_graph_build(datum h1_animation_graph_index, const h1_mode* h1
 
 // the marker placed at a halo 1 mass point (vehicles' wheels and hover pads, their suspension)
 const char* h1_mass_point_marker_name(const char* mass_point_name, char(&buffer)[64]);
+
+// unit_get_seat_entrance_point: where a rider of the graph starts the seat's enter animation, in the seat marker's space (the
+// root of its first frame), false without one
+bool h1_animation_seat_enter_root_get(datum h1_animation_graph_index, const char* seat_label, real_point3d* out_position);

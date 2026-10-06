@@ -61,7 +61,7 @@ struct s_h1_vehicle_tags
 
 static const char* h1_name_last_component(const char* path);
 static string_id h1_string_id(const char* string);
-static datum h1_render_model_build(const h1_mode* h1_model, const char* name, const h1_phys* h1_physics);
+static datum h1_render_model_build(const h1_mode* h1_model, const char* name, const h1_phys* h1_physics, const h1_vehi* h1_vehicle);
 static datum h1_collision_model_build(const h1_coll* h1_collision, const h1_mode* h1_model, const char* name);
 static datum h1_physics_model_build(const h1_phys* h1_physics, const h1_mode* h1_model, const h1_coll* h1_collision, const char* name);
 static datum h1_model_build(const s_h1_vehicle_tags* tags, const h1_mode* h1_model, const h1_coll* h1_collision, const char* name);
@@ -97,7 +97,7 @@ datum h1_vehicle_build(datum h1_vehicle_index)
 	}
 
 	s_h1_vehicle_tags tags;
-	tags.render_model = h1_render_model_build(h1_model, name, h1_physics);
+	tags.render_model = h1_render_model_build(h1_model, name, h1_physics, h1_vehicle);
 	tags.collision_model = h1_collision_model_build(h1_collision, h1_model, name);
 	tags.physics_model = h1_physics_model_build(h1_physics, h1_model, h1_collision, name);
 	tags.animation_graph = h1_animation_graph_build(h1_vehicle->animation_graph.index, h1_model, name, h1_physics);
@@ -170,6 +170,12 @@ static bool h1_mass_point_is_wheel(const h1_phys* h1_physics, const h1_phys_mass
 	return mass_point->powered_mass_point_index != NONE && !h1_mass_point_is_antigrav(h1_physics, mass_point);
 }
 
+// the halo 2 entry marker of a halo 1 seat
+static std::string h1_seat_entry_marker_name(const char* seat_marker_name)
+{
+	return std::string(seat_marker_name) + " enter";
+}
+
 static std::string h1_mass_point_marker_name(const h1_phys_mass_points* mass_point)
 {
 	char buffer[64];
@@ -187,7 +193,7 @@ static std::string h1_seat_animation_name(const char* h1_label)
 	return label;
 }
 
-static datum h1_render_model_build(const h1_mode* h1_model, const char* name, const h1_phys* h1_physics)
+static datum h1_render_model_build(const h1_mode* h1_model, const char* name, const h1_phys* h1_physics, const h1_vehi* h1_vehicle)
 {
 	h2x_mode* model = NULL;
 	const datum model_index = h1_runtime_tag_new('mode', name, &model);
@@ -250,7 +256,7 @@ static datum h1_render_model_build(const h1_mode* h1_model, const char* name, co
 			powered_points.push_back(mass_point);
 		}
 	}
-	h2x_mode_marker_groups* groups = h1_runtime_block_new(&model->marker_groups, h1_model->markers.count + (int32)powered_points.size());
+	h2x_mode_marker_groups* groups = h1_runtime_block_new(&model->marker_groups, h1_model->markers.count + (int32)powered_points.size() + h1_vehicle->seats.count);
 	for (int32 i = 0; i < h1_model->markers.count; i++)
 	{
 		const h1_mode_markers* h1_marker = g_h1_cache_file->block_get(h1_model->markers, i);
@@ -282,6 +288,54 @@ static datum h1_render_model_build(const h1_mode* h1_model, const char* name, co
 		matrix4x3_transform_point((const real_matrix4x3*)&node->inverse_scale, &mass_point->position, &marker->translation);
 		marker->rotation = { 0.f, 0.f, 0.f, 1.f };
 		marker->scale = 1.f;
+	}
+
+	// unit_find_nearby_seat: a seat is entered within a world unit of where the player's biped starts its enter animation, or of the
+	// seat; each seat's entry markers ("<seat marker> enter") are those two points
+	const datum h1_globals_index = g_h1_cache_file->tag_find('matg', "globals\\globals");
+	const h1_matg* h1_globals = h1_globals_index != NONE ? (const h1_matg*)g_h1_cache_file->tag_get('matg', h1_globals_index) : NULL;
+	const h1_matg_player_information* player_information = h1_globals ? g_h1_cache_file->block_get(h1_globals->player_information, 0) : NULL;
+	const h1_scen* rider = player_information && player_information->unit.index != NONE ? (const h1_scen*)g_h1_cache_file->tag_get('obje', player_information->unit.index) : NULL;
+	for (int32 i = 0; i < h1_vehicle->seats.count; i++)
+	{
+		const h1_vehi_seats* seat = g_h1_cache_file->block_get(h1_vehicle->seats, i);
+		h2x_mode_marker_groups* group = &groups[h1_model->markers.count + (int32)powered_points.size() + i];
+		group->name = h1_string_id(h1_seat_entry_marker_name(seat->marker_name).c_str());
+
+		const h1_mode_markers_instances* seat_marker = NULL;
+		for (int32 m = 0; m < h1_model->markers.count && !seat_marker; m++)
+		{
+			const h1_mode_markers* h1_marker = g_h1_cache_file->block_get(h1_model->markers, m);
+			if (_stricmp(h1_marker->name, seat->marker_name) == 0 && h1_marker->instances.count > 0)
+			{
+				seat_marker = g_h1_cache_file->block_get(h1_marker->instances, 0);
+			}
+		}
+		if (!seat_marker)
+		{
+			continue;
+		}
+		real_point3d entrance;
+		const bool has_entrance = rider && h1_animation_seat_enter_root_get(rider->animation_graph.index, seat->label, &entrance);
+		h2x_mode_marker_groups_markers* markers = h1_runtime_block_new(&group->markers, has_entrance ? 2 : 1);
+		for (int32 m = 0; m < (has_entrance ? 2 : 1); m++)
+		{
+			markers[m].region_index = NONE;
+			markers[m].permutation_index = NONE;
+			markers[m].node_index = seat_marker->node_index;
+			markers[m].translation = seat_marker->translation;
+			markers[m].rotation = seat_marker->rotation;
+			markers[m].scale = 1.f;
+		}
+		if (has_entrance)
+		{
+			// the entrance in the seat marker's space, the marker in its node's
+			real_matrix4x3 rotation;
+			matrix4x3_rotation_from_quaternion(&rotation, &seat_marker->rotation);
+			real_vector3d offset;
+			matrix4x3_transform_vector(&rotation, (const real_vector3d*)&entrance, &offset);
+			markers[1].translation = { seat_marker->translation.x + offset.i, seat_marker->translation.y + offset.j, seat_marker->translation.z + offset.k };
+		}
 	}
 	return model_index;
 }
@@ -755,7 +809,7 @@ static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle
 		seat->flags = h1_seat->flags & 0x7FF;
 		seat->seat_animation = h1_string_id(h1_seat_animation_name(h1_seat->label).c_str());
 		seat->seat_marker_name = h1_string_id(h1_seat->marker_name);
-		seat->entry_marker_s_name = h1_string_id((std::string(h1_seat->marker_name) + " enter").c_str());
+		seat->entry_marker_s_name = h1_string_id(h1_seat_entry_marker_name(h1_seat->marker_name).c_str());
 		seat->ping_scale = 1.f;
 		seat->turnover_time = 0.65f;
 		// halo 1 scales the seat's acceleration per tick squared, halo 2 per second squared
@@ -777,9 +831,10 @@ static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle
 		seat->pitch_range = h1_seat->pitch_range;
 		seat->yaw = h1_seat->yaw;
 		h1_runtime_reference_set(&seat->built_in_gunner, (tag_group)NONE, NONE);
-		seat->entry_radius = 1.25f;
-		seat->entry_marker_cone_angle = 1.2217305f;
-		seat->entry_marker_facing_angle = 1.2217305f;
+		// halo 1 enters within a world unit, facing any way
+		seat->entry_radius = 1.f;
+		seat->entry_marker_cone_angle = _pi;
+		seat->entry_marker_facing_angle = _pi;
 		seat->maximum_relative_velocity = 3.f;
 		seat->invisible_seat_region_index = NONE;
 

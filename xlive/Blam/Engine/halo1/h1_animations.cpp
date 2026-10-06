@@ -525,6 +525,38 @@ static void h1_animation_frame_decode(const h1_antr_animations* animation, int32
 	return;
 }
 
+bool h1_animation_seat_enter_root_get(datum h1_animation_graph_index, const char* seat_label, real_point3d* out_position)
+{
+	const h1_antr* graph = h1_animation_graph_index != NONE ? (const h1_antr*)g_h1_cache_file->tag_get('antr', h1_animation_graph_index) : NULL;
+	if (!graph)
+	{
+		return false;
+	}
+	constexpr int32 k_seat_enter = 7;
+	for (int32 u = 0; u < graph->units.count; u++)
+	{
+		const h1_antr_units* unit = g_h1_cache_file->block_get(graph->units, u);
+		if (_stricmp(unit->label, seat_label) != 0 || unit->animations.count <= k_seat_enter)
+		{
+			continue;
+		}
+		const int16 animation_index = g_h1_cache_file->block_get(unit->animations, k_seat_enter)->animation_index;
+		if (!VALID_INDEX(animation_index, graph->animations.count))
+		{
+			return false;
+		}
+		s_h1_node_orientation nodes[k_h1_maximum_animation_nodes];
+		for (s_h1_node_orientation& node : nodes)
+		{
+			node = { { 0.f, 0.f, 0.f, 1.f }, { 0.f, 0.f, 0.f }, 1.f };
+		}
+		h1_animation_frame_decode(g_h1_cache_file->block_get(graph->animations, animation_index), 0, nodes);
+		*out_position = nodes[0].translation;
+		return true;
+	}
+	return false;
+}
+
 static void h1_animation_encode(const h1_antr_animations* animation, h2x_jmad_animations* destination, int32 model_node_count)
 {
 	const int32 node_count = MIN((int32)animation->node_count, (int32)k_h1_maximum_animation_nodes);
