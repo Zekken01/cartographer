@@ -86,7 +86,7 @@ byte *structure_bsp_get_cluster_encoded_sound_data(
 	match_assert("c:\\halo\\SOURCE\\structures\\structure_bsp_definitions.c", 1202, row_index<column_index);
 	match_assert("c:\\halo\\SOURCE\\structures\\structure_bsp_definitions.c", 1203, offset>=0 && offset<structure_bsp->sound_cluster_data.size);
 
-	return &((byte *)structure_bsp->sound_cluster_data.address)[offset];
+	return &((byte *)tag_data_address(&structure_bsp->sound_cluster_data))[offset];
 }
 
 } // namespace h1_ai
