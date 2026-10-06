@@ -3,6 +3,7 @@
 
 #include "h1_bitmaps.h"
 #include "h1_cache_file.h"
+#include "h1_camera.h"
 #include "h1_first_person_weapon.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
@@ -867,7 +868,8 @@ void h1_hud_dispose(void)
 // interface.c interface_draw_screen: the weapon hud's screen effect (the sniper rifle's scope mask and warp)
 void h1_hud_render_screen_effect(void)
 {
-	if (!h1_maps_active() || !g_h1_cache_file)
+	// hud.c hud_draw_screen: no weapon or unit interface while the director's perspective is scripted
+	if (!h1_maps_active() || !g_h1_cache_file || h1_camera_scripted())
 	{
 		return;
 	}
@@ -1012,7 +1014,8 @@ void h1_hud_render_screen_effect(void)
 
 void h1_hud_render(void)
 {
-	if (!h1_maps_active() || !g_h1_cache_file)
+	// hud.c hud_draw_screen: no weapon or unit interface while the director's perspective is scripted
+	if (!h1_maps_active() || !g_h1_cache_file || h1_camera_scripted())
 	{
 		return;
 	}

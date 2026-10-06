@@ -120,6 +120,13 @@ void unit_stop_running_blindly(long unit_index)
 // controlled_last, the tick it stops it gets halo 1's uncontrolled control once)
 void h1_ai_unit_control_update(long unit_index, unit_datum* unit, bool* controlled_last)
 {
+	// an actor's team (game teams are numbered alike)
+	::unit_datum* h2_unit = (::unit_datum*)::object_try_and_get_and_verify_type(unit_index, ::_object_mask_unit);
+	if (h2_unit && unit->unit.actor_index != NONE && unit->object.owner_team_index != NONE && (short)h2_unit->unit.unit_team != unit->object.owner_team_index)
+	{
+		h2_unit->unit.unit_team = (::e_game_team)unit->object.owner_team_index;
+	}
+
 	const bool running_blindly = TEST_FLAG(unit->unit.flags, _unit_running_blindly_bit);
 	const bool actively_controlled = TEST_FLAG(unit->unit.flags, _unit_actively_controlled_bit);
 	const bool controlled = unit->unit.player_index == NONE && !TEST_FLAG(unit->object.damage_flags, _object_dead_bit) &&
@@ -129,6 +136,11 @@ void h1_ai_unit_control_update(long unit_index, unit_datum* unit, bool* controll
 		return;
 	}
 	*controlled_last = controlled;
+	// halo 2's unit update only takes the control of a unit it's told is actively controlled
+	if (h2_unit)
+	{
+		SET_FLAG(h2_unit->unit.unit_flags, 1, controlled);
+	}
 
 	if (running_blindly)
 	{

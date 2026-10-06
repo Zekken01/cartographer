@@ -151,21 +151,6 @@ void object_compute_node_matrices_recursive(long object_index)
 }
 
 
-boolean object_mark_function(long object_index)
-{
-	return FALSE;
-}
-
-void object_marker_begin(void)
-{
-	return;
-}
-
-void object_marker_end(void)
-{
-	return;
-}
-
 void object_reset(long object_index)
 {
 	return;

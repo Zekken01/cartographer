@@ -70,6 +70,7 @@ static void object_header_mirror_set(datum object_index, const ::object_header_d
 static s_object_mirror* object_mirror_get(datum object_index);
 static int16 h1_object_type_get(datum h1_definition_index, int8 h2_type);
 static void location_from_point(const real_point3d* point, struct location* location);
+static void biped_ground_sync(datum biped_index, s_object_mirror* mirror, const real_point3d* previous_position);
 
 /* ---------- public code */
 
@@ -129,7 +130,7 @@ void h1_ai_objects_update(void)
 			continue;
 		}
 		s_object_mirror* mirror = object_mirror_get(object_index);
-		if (!mirror)
+		if (!mirror || mirror->data.object.definition_index == NONE)
 		{
 			continue;
 		}
@@ -393,14 +394,24 @@ short object_get_next_cluster(struct object_cluster_iterator* iterator, long obj
 short objects_in_sphere(unsigned long class_flags, unsigned long type_flags, struct location const* location, real_point3d const* center,
 	real radius, long* object_indices, short maximum_count)
 {
+	// objects_in_clusters_by_indices' class flags: bit 0 the collideable objects (with collision models), bit 1 the others
+	if (!class_flags)
+	{
+		class_flags = NONE;
+	}
 	short count = 0;
 	object_iterator iterator;
-	object_iterator_new(&iterator, type_flags, 0);
+	object_iterator_new(&iterator, type_flags ? type_flags : NONE, 0);
 	while (const object_datum* object = (const object_datum*)object_iterator_next(&iterator))
 	{
 		if (count >= maximum_count)
 		{
 			break;
+		}
+		const bool collideable = TEST_FLAG(object->object.flags, _object_has_collision_model_bit);
+		if (object->definition_index == NONE || !TEST_FLAG(class_flags, collideable ? 0 : 1))
+		{
+			continue;
 		}
 		const real_point3d* object_center = &object->object.bounding_sphere_center;
 		const real reach = radius + object->object.bounding_sphere_radius;
@@ -535,6 +546,43 @@ void object_initialize_vitality(long object_index, real* custom_body_vitality, r
 	return;
 }
 
+/* ---------- objects.c: the objects a search has visited (the mirrors' magic numbers) */
+
+static uint32 g_object_marker = 0;
+static bool g_object_marker_initialized = false;
+
+void object_marker_begin(void)
+{
+	ASSERT(!g_object_marker_initialized);
+	++g_object_marker;
+	g_object_marker_initialized = true;
+	return;
+}
+
+void object_marker_end(void)
+{
+	ASSERT(g_object_marker_initialized);
+	g_object_marker_initialized = false;
+	return;
+}
+
+boolean object_unmarked_function(long object_index)
+{
+	const object_datum* object = (const object_datum*)object_get_and_verify_type(object_index, _object_mask_all);
+	return (boolean)(object->object.magic_number != g_object_marker);
+}
+
+boolean object_mark_function(long object_index)
+{
+	object_datum* object = (object_datum*)object_get_and_verify_type(object_index, _object_mask_all);
+	if (object->object.magic_number != g_object_marker)
+	{
+		object->object.magic_number = g_object_marker;
+		return TRUE;
+	}
+	return FALSE;
+}
+
 /* ---------- scenario locations */
 
 void scenario_location_from_point(struct location* location, const real_point3d* point)
@@ -598,6 +646,9 @@ static s_object_mirror* object_mirror_get(datum object_index)
 		created.data.unit.unit.fake_encounter_index = NONE;
 		created.data.unit.unit.fake_squad_index = NONE;
 		created.data.unit.unit.dialogue_index = NONE;
+		created.data.biped.biped.support_surface_index = NONE;
+		created.data.biped.biped.pathfinding_surface_index = NONE;
+		created.data.biped.biped.last_pathfinding_surface_index = NONE;
 		found = g_object_mirrors.emplace(object_index, created).first;
 	}
 	s_object_mirror* mirror = &found->second;
@@ -607,7 +658,8 @@ static s_object_mirror* object_mirror_get(datum object_index)
 		object_mirror_sync(object_index, mirror);
 		mirror->sync_time = g_object_mirror_time;
 		const ::object_header_datum* h2_header = (const ::object_header_datum*)::datum_try_and_get(::object_header_data_get(), object_index);
-		if (h2_header)
+		// objects that aren't halo 1's (the host's) aren't the AI's
+		if (h2_header && mirror->data.object.definition_index != NONE)
 		{
 			object_header_mirror_set(object_index, h2_header, mirror);
 		}
@@ -664,6 +716,7 @@ static void object_mirror_sync(datum object_index, s_object_mirror* mirror)
 	SET_FLAG(flags, _object_has_collision_model_bit, definition && definition->object.collision_model.index != NONE);
 	data->flags = flags;
 
+	const real_point3d previous_position = data->position;
 	data->position = *(const real_point3d*)&h2_object->object.position;
 	data->forward = *(const real_vector3d*)&h2_object->object.forward;
 	data->up = *(const real_vector3d*)&h2_object->object.up;
@@ -693,13 +746,15 @@ static void object_mirror_sync(datum object_index, s_object_mirror* mirror)
 	data->next_object_index = h2_object->object.next_object_index;
 	data->first_child_object_index = h2_object->object.first_child_object_index;
 	data->parent_object_index = h2_object->object.parent_object_index;
+	const short ai_team_index = data->owner_team_index;
 	data->owner_team_index = NONE;
 
 	if (TEST_FLAG(_object_mask_unit, data->type))
 	{
 		const ::unit_datum* h2_unit = (const ::unit_datum*)h2_object;
 		_unit_datum* unit = &mirror->data.unit.unit;
-		data->owner_team_index = (short)h2_unit->unit.unit_team;
+		// an actor's unit is on its encounter's team (actor_set_team), which goes to halo 2 (h1_ai_unit_control_update)
+		data->owner_team_index = unit->actor_index != NONE ? ai_team_index : (short)h2_unit->unit.unit_team;
 		unit->player_index = h2_unit->unit.player_index;
 		unit->desired_facing_vector = *(const real_vector3d*)&h2_unit->unit.desired_facing_vector;
 		unit->desired_aiming_vector = *(const real_vector3d*)&h2_unit->unit.desired_aiming_vector;
@@ -740,8 +795,8 @@ static void object_mirror_sync(datum object_index, s_object_mirror* mirror)
 		{
 			const ::biped_datum* h2_biped = (const ::biped_datum*)h2_object;
 			_biped_datum* biped = &mirror->data.biped.biped;
-			biped->airborne_ticks = (char)MIN(h2_biped->biped.airborne_ticks, 127);
 			biped->crouch = h2_unit->unit.crouch;
+			biped_ground_sync(object_index, mirror, &previous_position);
 		}
 
 		// a vehicle's driver and gunner: the riders in its driver and gunner seats
@@ -769,6 +824,41 @@ static void object_mirror_sync(datum object_index, s_object_mirror* mirror)
 				child_index = child ? child->object.next_object_index : NONE;
 			}
 		}
+	}
+	return;
+}
+
+// bipeds.c's support: halo 1's biped physics keeps the surface a biped stands on (none in the air, airborne_ticks counting), and
+// forgets its pathfinding surface when it moves; halo 2's physics moves it, so its support is the structure under its feet
+static void biped_ground_sync(datum biped_index, s_object_mirror* mirror, const real_point3d* previous_position)
+{
+	_biped_datum* biped = &mirror->data.biped.biped;
+	const real_point3d* position = &mirror->data.object.object.position;
+	struct collision_bsp* collision_bsp = global_collision_bsp_get();
+	long surface_index = NONE;
+	real_point3d ground_point = *position;
+	if (collision_bsp)
+	{
+		// from bipeds.c biped_find_ground_surface's origin (0.4 up) to a quarter unit below the feet
+		const real_point3d origin = { position->x, position->y, position->z + 0.4f };
+		const real_vector3d vector = { 0.f, 0.f, -0.65f };
+		struct collision_bsp_test_vector_result result;
+		global_current_collision_users[global_current_collision_user_depth++] = _collision_user_bipeds;
+		if (collision_bsp_test_vector(FLAG(_collision_test_front_facing_surfaces_bit), collision_bsp, 0, NULL, &origin, &vector, REAL_MAX, &result))
+		{
+			surface_index = result.surface_index;
+			ground_point = { origin.x, origin.y, origin.z + vector.k * result.t };
+		}
+		--global_current_collision_user_depth;
+	}
+	biped->support_surface_index = surface_index;
+	biped->airborne_ticks = surface_index != NONE ? 0 : (char)MIN(biped->airborne_ticks + 1, 127);
+	real_vector3d moved;
+	vector_from_points3d(previous_position, position, &moved);
+	if (mirror->sync_time == NONE || magnitude_squared3d(&moved) > 0.0001f)
+	{
+		biped->pathfinding_surface_index = NONE;
+		biped->pathfinding_point = ground_point;
 	}
 	return;
 }

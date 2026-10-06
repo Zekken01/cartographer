@@ -134,6 +134,11 @@ void h1_camera_set_first_person(datum unit_index)
 	return;
 }
 
+bool h1_camera_scripted(void)
+{
+	return h1_maps_active() && g_h1_camera.enabled;
+}
+
 int16 h1_camera_time(void)
 {
 	return (int16)(g_h1_camera.timer * 30.f);
