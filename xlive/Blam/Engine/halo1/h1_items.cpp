@@ -12,6 +12,9 @@
 
 #include "objects/objects.h"
 
+#include <string>
+#include <unordered_map>
+
 /* constants */
 
 enum
@@ -19,7 +22,94 @@ enum
 	k_h2_object_type_equipment = 3,
 };
 
+/* globals */
+
+// the halo 1 strings halo 2's hud reads (h1_item_messages_get)
+static std::unordered_map<string_id, std::wstring> g_h1_hud_strings;
+
+/* private code */
+
+// a unicode string list's string, empty when it has none
+static std::wstring h1_unicode_string_get(const char* tag_name, int16 index)
+{
+	const datum list_index = g_h1_cache_file->tag_find('ustr', tag_name);
+	const h1_tag_block<h1_tag_data>* strings = list_index != NONE ? (const h1_tag_block<h1_tag_data>*)g_h1_cache_file->tag_get('ustr', list_index) : NULL;
+	if (!strings || !VALID_INDEX(index, strings->count))
+	{
+		return std::wstring();
+	}
+	const h1_tag_data* data = g_h1_cache_file->block_get(*strings, index);
+	const wchar_t* text = data ? (const wchar_t*)g_h1_cache_file->data_get(*data) : NULL;
+	return text ? std::wstring(text, wcsnlen(text, data->size / sizeof(wchar_t))) : std::wstring();
+}
+
+static string_id h1_hud_string_add(const char* name, const std::wstring& text)
+{
+	const string_id id = string_id_find_or_add(name);
+	g_h1_hud_strings[id] = text;
+	return id;
+}
+
+// the hud's string lookup (its globals' unicode strings): halo 1's item strings first
+static void __cdecl h1_hud_string_get(string_id id, wchar_t* out_text)
+{
+	out_text[0] = L'\0';
+	if (h1_maps_active())
+	{
+		auto found = g_h1_hud_strings.find(id);
+		if (found != g_h1_hud_strings.end())
+		{
+			wcsncpy_s(out_text, 256, found->second.c_str(), _TRUNCATE);
+			return;
+		}
+	}
+	const uint8* hud_globals = *Memory::GetAddress<uint8**>(0x9765C8);
+	const datum strings_index = hud_globals ? *(const datum*)(hud_globals + 0x3FC) : NONE;
+	if (strings_index != NONE)
+	{
+		Memory::GetAddress<void(__cdecl*)(datum, string_id, wchar_t*)>(0x3E3AC)(strings_index, id, out_text);
+	}
+	return;
+}
+
 /* public code */
+
+void h1_item_messages_get(datum h1_item_index, int16 h1_message_index, s_h1_item_messages* out_messages)
+{
+	// the item's name: its hud item message without the "Picked up" and the article
+	const std::wstring picked_up = h1_unicode_string_get("ui\\hud\\hud_item_messages", h1_message_index);
+	std::wstring item = picked_up;
+	for (const wchar_t* prefix : { L"Picked up ", L"a ", L"an ", L"the " })
+	{
+		if (item.compare(0, wcslen(prefix), prefix) == 0)
+		{
+			item.erase(0, wcslen(prefix));
+		}
+	}
+	if (item.empty() || item.find(L'%') != std::wstring::npos)
+	{
+		const char* name = g_h1_cache_file->tag_name_get(h1_item_index);
+		const char* last = strrchr(name, '\\');
+		const std::string short_name = last ? last + 1 : name;
+		item.assign(short_name.begin(), short_name.end());
+	}
+
+	// halo 2's hold and action button glyphs
+	const std::wstring hold_action = L"\xE47C \xE45A";
+	char name[64];
+	sprintf_s(name, "h1_pickup_%04X", DATUM_INDEX_TO_ABSOLUTE_INDEX(h1_item_index));
+	out_messages->pickup = h1_hud_string_add(name, hold_action + L" to pick up " + item);
+	sprintf_s(name, "h1_swap_%04X", DATUM_INDEX_TO_ABSOLUTE_INDEX(h1_item_index));
+	out_messages->swap = h1_hud_string_add(name, hold_action + L" to swap for " + item);
+	out_messages->picked_up = _string_id_empty_string;
+	if (!picked_up.empty() && picked_up.find(L'%') == std::wstring::npos)
+	{
+		sprintf_s(name, "h1_picked_up_%04X", DATUM_INDEX_TO_ABSOLUTE_INDEX(h1_item_index));
+		out_messages->picked_up = h1_hud_string_add(name, picked_up);
+	}
+	return;
+}
+
 
 datum h1_equipment_definition_build(datum h1_equipment_index)
 {
@@ -147,5 +237,6 @@ void h1_items_apply_patches(void)
 	PatchCall(Memory::GetAddress(0x1F97C9), h1_equipment_definition_handle_pickup);
 	PatchCall(Memory::GetAddress(0x1F9824), h1_equipment_definition_handle_pickup);
 	PatchCall(Memory::GetAddress(0x1F98B3), h1_equipment_definition_handle_pickup);
+	WriteJmpTo(Memory::GetAddress(0x224B26), h1_hud_string_get);
 	return;
 }

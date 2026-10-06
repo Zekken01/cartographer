@@ -217,6 +217,11 @@ datum h1_weapon_definition_build(datum h1_weapon_index)
 	// item
 	weapon->flags_2 = h1_weapon->flags_2;
 	weapon->old_message_index = h1_weapon->message_index;
+	s_h1_item_messages messages;
+	h1_item_messages_get(h1_weapon_index, h1_weapon->message_index, &messages);
+	weapon->pickup_message = messages.pickup;
+	weapon->swap_message = messages.swap;
+	weapon->picked_up_message = messages.picked_up;
 	weapon->sort_order = h1_weapon->sort_order;
 	weapon->multiplayer_on_ground_scale = h1_weapon->scale > 0.f ? h1_weapon->scale : 1.f;
 	weapon->campaign_on_ground_scale = weapon->multiplayer_on_ground_scale;
