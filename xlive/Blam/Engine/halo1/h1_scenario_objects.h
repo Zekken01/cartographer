@@ -7,6 +7,9 @@
 // at scenario build: the object definitions of the scenario's placements
 void h1_scenario_objects_build(void);
 
+// a scenery placement the scripts name: an object (objects_attach, object_destroy), not one of the structure's instances
+bool h1_scenery_placement_is_object(int32 placement_index);
+
 // at the start of a campaign game: every placement that's created automatically
 void h1_scenario_objects_place(void);
 

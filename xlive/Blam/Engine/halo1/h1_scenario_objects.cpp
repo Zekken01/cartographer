@@ -350,11 +350,17 @@ static datum h1_placement_definition_get(const s_h1_placement_type* type, const 
 	return reference ? reference->index : NONE;
 }
 
-// the structure carries the scenery that's always there as instances (h1_structure_bsp), the scripts create the rest
+// the structure carries the unnamed scenery as instances (h1_structure_bsp), named scenery is the scripts' objects
 static bool h1_placement_wanted(const s_h1_placement_type* type, const s_h1_placement* placement)
 {
-	return type->h1_object_type != _h1_object_type_scenery ||
-		(placement->name_index != NONE && TEST_BIT(placement->placement_flags, _h1_placement_not_automatic_bit));
+	return type->h1_object_type != _h1_object_type_scenery || placement->name_index != NONE;
+}
+
+bool h1_scenery_placement_is_object(int32 placement_index)
+{
+	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
+	const h1_scnr_scenery* placement = scenario && scenario->type == 0 ? g_h1_cache_file->block_get(scenario->scenery, placement_index) : NULL;
+	return placement && placement->name_index != NONE;
 }
 
 // a halo 2 scenery object definition carrying the halo 1 object's model nodes, markers and collision, bound to the halo 1

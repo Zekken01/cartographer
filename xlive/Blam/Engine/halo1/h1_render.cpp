@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_render.h"
+#include "h1_scenario_objects.h"
 
 #include "h1_bitmaps.h"
 #include "h1_cache_file.h"
@@ -664,7 +665,7 @@ static void h1_render_scenery_initialize(void)
 	{
 		const h1_scnr_scenery* placement = g_h1_cache_file->block_get(scenario->scenery, i);
 		const h1_scnr_scenery_palette* palette = g_h1_cache_file->block_get(scenario->scenery_palette, placement->palette_index);
-		if (!palette)
+		if (!palette || h1_scenery_placement_is_object(i))
 		{
 			continue;
 		}

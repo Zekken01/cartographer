@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_structure_bsp.h"
+#include "h1_scenario_objects.h"
 
 #include "h1_cache_file.h"
 #include "h1_log.h"
@@ -617,7 +618,7 @@ static int32 h1_instanced_geometry_build(structure_bsp* bsp, const structure_bsp
 		const h1_scnr_scenery_palette* palette = g_h1_cache_file->block_get(scenario->scenery_palette, placement->palette_index);
 		const h1_scen* scenery = palette ? (const h1_scen*)g_h1_cache_file->tag_get(palette->name) : NULL;
 		const h1_coll* model = scenery ? (const h1_coll*)g_h1_cache_file->tag_get(scenery->collision_model) : NULL;
-		if (!model || !h1_collision_model_bsp_get(model))
+		if (!model || !h1_collision_model_bsp_get(model) || h1_scenery_placement_is_object(i))
 		{
 			continue;
 		}
