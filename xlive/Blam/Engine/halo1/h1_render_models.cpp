@@ -330,8 +330,10 @@ void h1_render_model_draw(datum model_tag_index, int16 permutation, const real_m
 }
 
 void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, const real_matrix4x3* node_matrices, int32 node_count, const s_h1_render_lighting* lighting, e_h1_render_pass pass, real32 game_time,
-	const real_rgb_color* change_colors, const real32* function_values)
+	const real_rgb_color* change_colors, const real32* function_values, real32 camouflage, real32 hyper_stealth)
 {
+	camouflage = PIN(camouflage, 0.f, 1.f);
+	const bool cloaked = camouflage >= 1.f;
 	auto found = g_h1_models.find(model_tag_index);
 	if (found == g_h1_models.end() || !g_h1_skinned_vertex_buffer || node_count <= 0)
 	{
@@ -355,8 +357,10 @@ void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, cons
 		const s_h1_model_part* part;
 		const h1_mode_shaders* shader_reference;
 		real32 distance;
+		bool own_pass;		// drawn in this pass with its shader (else only the camouflage's)
 	};
 	std::vector<s_h1_part_draw> draws;
+	const bool camouflage_pass = pass == _h1_render_pass_transparent && camouflage > 0.f;
 	const render_camera* camera = &global_window_parameters_get()->camera;
 
 	const s_h1_model* entry = &found->second;
@@ -380,7 +384,13 @@ void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, cons
 		{
 			const s_h1_model_part* part = &g_h1_model_parts[geometry->first_part + p];
 			const h1_mode_shaders* shader_reference = g_h1_cache_file->block_get(model->shaders, part->shader_index);
-			if (!shader_reference || h1_render_shader_pass(shader_reference->shader.group_tag) != pass || part->vertex_count > k_h1_skinned_vertex_capacity)
+			if (!shader_reference || part->vertex_count > k_h1_skinned_vertex_capacity)
+			{
+				continue;
+			}
+			// fully camouflaged, the transparent parts are only the camouflage
+			const bool own_pass = h1_render_shader_pass(shader_reference->shader.group_tag) == pass && !(cloaked && pass == _h1_render_pass_transparent);
+			if (!own_pass && !camouflage_pass)
 			{
 				continue;
 			}
@@ -400,7 +410,7 @@ void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, cons
 			}
 			const real_vector3d camera_to_centroid = { part_centroid.x - camera->point.x, part_centroid.y - camera->point.y, part_centroid.z - camera->point.z };
 			draws.push_back({ part, shader_reference,
-				camera->forward.i * camera_to_centroid.i + camera->forward.j * camera_to_centroid.j + camera->forward.k * camera_to_centroid.k });
+				camera->forward.i * camera_to_centroid.i + camera->forward.j * camera_to_centroid.j + camera->forward.k * camera_to_centroid.k, own_pass });
 		}
 	}
 	// the transparent parts back to front
@@ -409,11 +419,22 @@ void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, cons
 		std::stable_sort(draws.begin(), draws.end(), [](const s_h1_part_draw& a, const s_h1_part_draw& b) { return a.distance > b.distance; });
 	}
 
+	// fully camouflaged, the opaque parts only lay down their depth
+	if (cloaked && pass == _h1_render_pass_opaque)
+	{
+		device->SetRenderState(D3DRS_COLORWRITEENABLE, 0);
+	}
+	// what's behind a camouflaged model is what's drawn so far
+	const bool camouflage_ready = camouflage_pass && h1_render_scene_copy();
 	{
 		for (const s_h1_part_draw& draw : draws)
 		{
 			const s_h1_model_part* part = draw.part;
 			const h1_mode_shaders* shader_reference = draw.shader_reference;
+			if (!draw.own_pass && !camouflage_ready)
+			{
+				continue;
+			}
 
 			// append to the dynamic buffer, starting over when it is full
 			DWORD lock_flags = D3DLOCK_NOOVERWRITE;
@@ -461,19 +482,31 @@ void h1_render_model_draw_skinned(datum model_tag_index, int16 permutation, cons
 			g_h1_skinned_vertex_buffer->Unlock();
 
 			device->SetStreamSource(0, g_h1_skinned_vertex_buffer, 0, sizeof(s_h1_model_vertex));
-			h1_render_shader_object_animation_set(function_values ? function_values : k_h1_object_function_values, change_colors ? change_colors : k_h1_object_change_colors);
-			h1_render_shader_permutation_set(shader_reference->permutation);
-			for (int32 subpass = 0; subpass < h1_render_shader_subpass_count(shader_reference->shader.group_tag); subpass++)
+			if (draw.own_pass)
 			{
-				if (h1_render_shader_bind(shader_reference->shader.group_tag, shader_reference->shader.index, lighting, NULL, game_time, subpass))
+				h1_render_shader_object_animation_set(function_values ? function_values : k_h1_object_function_values, change_colors ? change_colors : k_h1_object_change_colors);
+				h1_render_shader_permutation_set(shader_reference->permutation);
+				for (int32 subpass = 0; subpass < h1_render_shader_subpass_count(shader_reference->shader.group_tag); subpass++)
 				{
-					device->DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP, g_h1_skinned_vertex_cursor, 0, part->vertex_count, part->first_index, part->index_count - 2);
-					h1_render_shader_unbind();
+					if (h1_render_shader_bind(shader_reference->shader.group_tag, shader_reference->shader.index, lighting, NULL, game_time, subpass))
+					{
+						device->DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP, g_h1_skinned_vertex_cursor, 0, part->vertex_count, part->first_index, part->index_count - 2);
+						h1_render_shader_unbind();
+					}
 				}
+				h1_render_shader_object_animation_set(NULL, NULL);
 			}
-			h1_render_shader_object_animation_set(NULL, NULL);
+			if (camouflage_ready && h1_render_shader_camouflage_bind(camouflage, hyper_stealth))
+			{
+				device->DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP, g_h1_skinned_vertex_cursor, 0, part->vertex_count, part->first_index, part->index_count - 2);
+				h1_render_shader_unbind();
+			}
 			g_h1_skinned_vertex_cursor += part->vertex_count;
 		}
+	}
+	if (cloaked && pass == _h1_render_pass_opaque)
+	{
+		device->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
 	}
 	return;
 }

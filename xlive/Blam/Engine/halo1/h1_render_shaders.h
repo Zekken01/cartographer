@@ -72,6 +72,12 @@ bool h1_render_environment_fog_bind(void);
 // restores the default opaque render state after a bound shader
 void h1_render_shader_unbind(void);
 
+// a copy of the render target as it is, for the active camouflage to see through
+bool h1_render_scene_copy(void);
+// rasterizer_active_camouflage_draw: the next draws show the scene copy behind them displaced by their normals and tinted,
+// as opaque as the camouflage is weak (unbound by h1_render_shader_unbind)
+bool h1_render_shader_camouflage_bind(real32 intensity, real32 hyper_stealth);
+
 // periodic_functions.c periodic_function_evaluate over x (in periods)
 real32 h1_periodic_function_evaluate(int16 function, real32 x);
 

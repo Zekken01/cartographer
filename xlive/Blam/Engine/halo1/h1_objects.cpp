@@ -220,7 +220,15 @@ void h1_objects_render(e_h1_render_pass pass, real32 game_time)
 		{
 			continue;
 		}
-		h1_render_model_draw_skinned(binding->h1_model_index, 0, skinning_matrices, node_count, &lighting, pass, game_time, functions->colors, functions->outgoing);
+		// a camouflaged unit's camouflage covers it and what it holds
+		const unit_datum* camouflaged = (const unit_datum*)object_try_and_get_and_verify_type(object_index, _object_mask_unit);
+		if (!camouflaged && object->object.parent_object_index != NONE)
+		{
+			camouflaged = (const unit_datum*)object_try_and_get_and_verify_type(object->object.parent_object_index, _object_mask_unit);
+		}
+		const real32 camouflage = camouflaged ? camouflaged->unit.active_camouflage : 0.f;
+		h1_render_model_draw_skinned(binding->h1_model_index, 0, skinning_matrices, node_count, &lighting, pass, game_time, functions->colors, functions->outgoing,
+			camouflage);
 	}
 	return;
 }

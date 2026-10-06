@@ -252,6 +252,28 @@ PS_OUTPUT main(PS_INPUT input)
 
 // halo 1 particles (shader_effect, rasterizer_xbox_transparent_geometry.c): the sprite texture tinted by the particle color,
 // then the stage appended for the framebuffer blend function faded by fog (transparent effect vertex shader) and the fade
+// rasterizer_xbox_active_camouflage.c: the scene behind, displaced across the screen by the surface's normal (the refraction, a
+// fraction of the screen width, less with distance past the falloff) and tinted, as opaque as the camouflage is weak
+static const char k_h1_camouflage_pixel_shader[] = H1_PIXEL_SHADER_COMMON R"(
+sampler2D scene : register(s0);
+float4 camouflage : register(c0);			// x: refraction times the intensity, a fraction of the screen width, y: distance falloff, zw: one over the screen size
+float4 camouflage_tint : register(c1);		// rgb: tint, w: opacity
+float4 camouflage_right : register(c2);		// the view's right and up in world space
+float4 camouflage_up : register(c3);
+
+PS_OUTPUT main(PS_INPUT input, float2 screen : VPOS)
+{
+	float3 n = normalize(input.world_normal);
+	float falloff = saturate(camouflage.y / max(length(input.view), 0.001f));
+	float2 offset = float2(dot(n, camouflage_right.xyz), -dot(n, camouflage_up.xyz) * camouflage.w / camouflage.z) * camouflage.x * falloff;
+	float2 uv = (screen + 0.5f) * camouflage.zw + offset;
+	PS_OUTPUT output;
+	output.color = float4(tex2D(scene, uv).rgb * camouflage_tint.rgb, camouflage_tint.w);
+	output.depth = float4(0.0f, 0.0f, 0.0f, 0.0f);
+	return output;
+}
+)";
+
 static const char k_h1_particle_pixel_shader[] = H1_PIXEL_SHADER_COMMON R"(
 sampler2D map0 : register(s0);
 sampler2D map1 : register(s1);
@@ -783,6 +805,8 @@ static IDirect3DPixelShader9* g_h1_meter_shader = NULL;
 static IDirect3DPixelShader9* g_h1_glass_shader = NULL;
 static IDirect3DPixelShader9* g_h1_environment_fog_shader = NULL;
 static IDirect3DPixelShader9* g_h1_particle_shader = NULL;
+static IDirect3DPixelShader9* g_h1_camouflage_shader = NULL;
+static IDirect3DTexture9* g_h1_scene_copy = NULL;
 static IDirect3DTexture9* g_h1_default_textures[4] = {};
 static bool g_h1_fog_context_fogged = false;
 static bool g_h1_fog_context_has_centroid = false;
@@ -836,6 +860,7 @@ bool h1_render_shaders_initialize(void)
 	g_h1_glass_shader = h1_compile_pixel_shader(k_h1_glass_pixel_shader, "transparent glass");
 	g_h1_environment_fog_shader = h1_compile_pixel_shader(k_h1_environment_fog_pixel_shader, "environment fog");
 	g_h1_particle_shader = h1_compile_pixel_shader(k_h1_particle_pixel_shader, "particle");
+	g_h1_camouflage_shader = h1_compile_pixel_shader(k_h1_camouflage_pixel_shader, "active camouflage");
 
 	g_h1_default_textures[0] = h1_solid_texture(0xFFFFFFFF);
 	g_h1_default_textures[1] = h1_solid_texture(0xFF808080);
@@ -850,6 +875,7 @@ void h1_render_shaders_dispose(void)
 	IUnknown* resources[] =
 	{
 		g_h1_vertex_declaration, g_h1_vertex_shader, g_h1_environment_shader, g_h1_model_shader, g_h1_chicago_shader, g_h1_water_shader, g_h1_glass_shader, g_h1_meter_shader,
+		g_h1_camouflage_shader, g_h1_scene_copy,
 		g_h1_default_textures[0], g_h1_default_textures[1], g_h1_default_textures[2], g_h1_default_textures[3],
 	};
 	for (int32 i = 0; i < NUMBEROF(resources); i++)
@@ -861,6 +887,8 @@ void h1_render_shaders_dispose(void)
 	}
 	g_h1_vertex_declaration = NULL;
 	g_h1_vertex_shader = NULL;
+	g_h1_camouflage_shader = NULL;
+	g_h1_scene_copy = NULL;
 	g_h1_environment_shader = NULL;
 	g_h1_model_shader = NULL;
 	for (auto& entry : g_h1_generic_shaders)
@@ -1759,6 +1787,96 @@ bool h1_render_shader_bind(uint32 shader_group, datum shader_index, const s_h1_r
 	default:
 		return false;
 	}
+}
+
+bool h1_render_scene_copy(void)
+{
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+	IDirect3DSurface9* target = NULL;
+	if (FAILED(device->GetRenderTarget(0, &target)))
+	{
+		return false;
+	}
+	D3DSURFACE_DESC target_description;
+	target->GetDesc(&target_description);
+	if (g_h1_scene_copy)
+	{
+		D3DSURFACE_DESC copy_description;
+		g_h1_scene_copy->GetLevelDesc(0, &copy_description);
+		if (copy_description.Width != target_description.Width || copy_description.Height != target_description.Height ||
+			copy_description.Format != target_description.Format)
+		{
+			g_h1_scene_copy->Release();
+			g_h1_scene_copy = NULL;
+		}
+	}
+	if (!g_h1_scene_copy && FAILED(device->CreateTexture(target_description.Width, target_description.Height, 1, D3DUSAGE_RENDERTARGET,
+		target_description.Format, D3DPOOL_DEFAULT, &g_h1_scene_copy, NULL)))
+	{
+		g_h1_scene_copy = NULL;
+		target->Release();
+		return false;
+	}
+	IDirect3DSurface9* copy = NULL;
+	g_h1_scene_copy->GetSurfaceLevel(0, &copy);
+	const HRESULT copied = device->StretchRect(target, NULL, copy, NULL, D3DTEXF_NONE);
+	copy->Release();
+	target->Release();
+	return SUCCEEDED(copied);
+}
+
+bool h1_render_shader_camouflage_bind(real32 intensity, real32 hyper_stealth)
+{
+	if (!g_h1_camouflage_shader || !g_h1_scene_copy)
+	{
+		return false;
+	}
+	IDirect3DDevice9Ex* device = rasterizer_dx9_device_get_interface();
+
+	// the globals' rasterizer data, the hyper stealth amount blending to its own
+	real32 refraction = 11.f, falloff = 22.f;
+	real_rgb_color tint = { 0.843f, 0.839f, 0.914f };
+	const datum globals_index = g_h1_cache_file->tag_find('matg', "globals\\globals");
+	const h1_matg* globals = globals_index != NONE ? (const h1_matg*)g_h1_cache_file->tag_get('matg', globals_index) : NULL;
+	const h1_matg_rasterizer_data* data = globals ? g_h1_cache_file->block_get(globals->rasterizer_data, 0) : NULL;
+	if (data)
+	{
+		refraction = (1.f - hyper_stealth) * data->refraction_amount + hyper_stealth * data->hyper_stealth_refraction;
+		falloff = (1.f - hyper_stealth) * data->distance_falloff + hyper_stealth * data->hyper_stealth_distance_falloff;
+		tint.red = (1.f - hyper_stealth) * data->tint_color.red + hyper_stealth * data->hyper_stealth_tint_color.red;
+		tint.green = (1.f - hyper_stealth) * data->tint_color.green + hyper_stealth * data->hyper_stealth_tint_color.green;
+		tint.blue = (1.f - hyper_stealth) * data->tint_color.blue + hyper_stealth * data->hyper_stealth_tint_color.blue;
+	}
+
+	D3DSURFACE_DESC description;
+	g_h1_scene_copy->GetLevelDesc(0, &description);
+	const render_camera* camera = &global_window_parameters_get()->camera;
+	real_vector3d left;
+	cross_product3d(&camera->up, &camera->forward, &left);
+	// the refraction is in pixels of halo 1's 640 wide screen
+	const real32 constants[4][4] =
+	{
+		{ refraction * intensity / 640.f, falloff, 1.f / (real32)description.Width, 1.f / (real32)description.Height },
+		{ tint.red, tint.green, tint.blue, intensity },
+		{ -left.i, -left.j, -left.k, 0.f },
+		{ camera->up.i, camera->up.j, camera->up.k, 0.f },
+	};
+	device->SetPixelShader(g_h1_camouflage_shader);
+	device->SetPixelShaderConstantF(0, &constants[0][0], 4);
+	device->SetTexture(0, g_h1_scene_copy);
+	device->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+	device->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+	device->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+	device->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+	device->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+	// partly cloaked over the model drawn beneath, fully cloaked replacing it
+	device->SetRenderState(D3DRS_ALPHABLENDENABLE, intensity < 1.f ? TRUE : FALSE);
+	device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+	device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+	device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+	device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+	device->SetRenderState(D3DRS_COLORWRITEENABLE1, 0);
+	return true;
 }
 
 void h1_render_shader_unbind(void)
