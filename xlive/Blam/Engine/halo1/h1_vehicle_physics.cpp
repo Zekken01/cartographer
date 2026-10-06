@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "h1_vehicle_physics.h"
 
+#include "h1_animations.h"
 #include "h1_cache_file.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
@@ -605,7 +606,10 @@ static void h1_vehicle_animation_state_set(datum vehicle_index, const s_h1_vehic
 	if (manager_offset != NONE)
 	{
 		uint8* manager = (uint8*)vehicle + manager_offset;
-		*(string_id*)(manager + 0x74) = string_id_find_or_add("any");
+		const object_datum* object = object_get(vehicle_index);
+		const datum h1_definition_index = h1_objects_h1_definition_get(object->definition_index);
+		const h1_vehi* h1_vehicle = h1_definition_index != NONE ? (const h1_vehi*)g_h1_cache_file->tag_get('vehi', h1_definition_index) : NULL;
+		*(string_id*)(manager + 0x74) = h1_vehicle ? h1_animation_vehicle_weapon_class(h1_vehicle->animation_graph.index) : string_id_find_or_add("any");
 		*(string_id*)(manager + 0x78) = string_id_find_or_add("any");
 	}
 	return;

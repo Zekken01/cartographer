@@ -363,8 +363,13 @@ datum h1_animation_graph_build(datum h1_animation_graph_index, const h1_mode* h1
 				continue;
 			}
 			slots.push_back({ "any", "any", "any", k_h1_vehicle_animation_names[i], animation_index });
-			// the vehicle unit's own mode
+			// the vehicle unit's own mode, in any weapon class and its weapons' (h1_animation_vehicle_weapon_class)
 			slots.push_back({ "combat", "any", "any", k_h1_vehicle_animation_names[i], animation_index });
+			const string_id weapon_class = h1_animation_vehicle_weapon_class(h1_animation_graph_index);
+			if (weapon_class != string_id_find_or_add("any"))
+			{
+				slots.push_back({ "combat", string_id_get_string_const(weapon_class), "any", k_h1_vehicle_animation_names[i], animation_index });
+			}
 			// steering is an aiming screen over the turn
 			if (i == 0)
 			{
@@ -523,6 +528,14 @@ static void h1_animation_frame_decode(const h1_antr_animations* animation, int32
 		}
 	}
 	return;
+}
+
+string_id h1_animation_vehicle_weapon_class(datum h1_animation_graph_index)
+{
+	const h1_antr* graph = h1_animation_graph_index != NONE ? (const h1_antr*)g_h1_cache_file->tag_get('antr', h1_animation_graph_index) : NULL;
+	const h1_antr_units* unit = graph && graph->units.count > 0 ? g_h1_cache_file->block_get(graph->units, 0) : NULL;
+	const h1_antr_units_weapons* weapon = unit && unit->weapons.count > 0 ? g_h1_cache_file->block_get(unit->weapons, 0) : NULL;
+	return string_id_find_or_add(weapon && weapon->name[0] ? h1_animation_label(weapon->name).c_str() : "any");
 }
 
 bool h1_animation_seat_enter_root_get(datum h1_animation_graph_index, const char* seat_label, real_point3d* out_position)
