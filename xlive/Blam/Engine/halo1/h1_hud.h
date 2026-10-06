@@ -29,6 +29,9 @@ void h1_hud_set_help_text(int16 message_index);
 bool h1_hud_show_help_text(bool show);
 void h1_hud_enable_help_flash(bool flash);
 void h1_hud_set_objective_text(int16 message_index);
+// hud.c's player action state message (hud_set_state_message of the hud globals' hud messages, its first custom icon the text),
+// shown while it's set each tick in the messaging lines (help text replaces it, as in halo 1)
+void h1_hud_set_state_message(int16 message_index, const wchar_t* custom_text);
 
 // hud_nav_points.c: the scripts' nav points at cutscene flags and objects, drawn with the hud's waypoint arrows
 void h1_hud_nav_points_reset(void);

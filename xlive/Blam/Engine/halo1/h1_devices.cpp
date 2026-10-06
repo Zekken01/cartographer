@@ -4,15 +4,20 @@
 #include "h1_animations.h"
 #include "h1_cache_file.h"
 #include "h1_effects.h"
+#include "h1_hud.h"
 #include "h1_log.h"
 #include "h1_map_loader.h"
 #include "h1_objects.h"
 #include "h1_sound.h"
 
 #include "game/game_time.h"
+#include "game/players.h"
+#include "input/input_abstraction.h"
+#include "units/units.h"
 #include "math/real_math.h"
 #include "objects/object_types.h"
 #include "objects/objects.h"
+#include "physics/collisions.h"
 
 #include <unordered_map>
 #include <vector>
@@ -45,6 +50,9 @@ enum
 	_h1_machine_one_sided_bit,
 	_h1_machine_never_appears_locked_bit,
 	_h1_machine_opened_by_melee_attack_bit,
+
+	// machine definition flags
+	_h1_machine_definition_is_elevator_bit = 2,
 
 	// device definition flags
 	_h1_device_position_loops_bit = 0,
@@ -124,6 +132,30 @@ struct s_h1_machine_definition
 };
 static_assert(sizeof(s_h1_machine_definition) == 0x94);
 
+// the control part of a halo 1 control definition (after the device part)
+constexpr uint32 k_h1_control_definition_offset = 0x290;
+
+struct s_h1_control_definition
+{
+	int16 type;				// toggle switch, on button, off button, call button
+	int16 triggers_when;	// touched by player, destroyed
+	real32 call_value;
+	uint8 unused[0x50];
+	h1_tag_reference on_effect;
+	h1_tag_reference off_effect;
+	h1_tag_reference denied_effect;
+};
+
+enum
+{
+	// control datum flags (control_place: the scenario control's)
+	_h1_control_usable_from_both_sides_bit = 0,
+
+	// hud.c's state messages
+	_h1_hud_message_touch_device = 2,
+	_h1_hud_message_custom_device,
+};
+
 // the device part shared by the scenario's machines, controls and light fixtures
 struct s_h1_scenario_device
 {
@@ -152,6 +184,10 @@ struct s_h1_device
 	int16 delay_ticks;
 	uint32 machine_flags;
 	int32 door_open_ticks;
+	uint32 control_flags;
+	int16 custom_name_index;
+	bool elevator_position_valid;
+	real_point3d elevator_position;		// the elevator node's position the update before
 };
 
 struct s_h1_devices_globals
@@ -160,6 +196,8 @@ struct s_h1_devices_globals
 	std::unordered_map<datum, s_h1_device> devices;
 	real32 leftover_ticks;
 	int32 last_game_time;
+	int32 tick;				// halo 1 ticks run (machine_update's every fourth tick door test)
+	bool action_held;		// the local player's action button the tick before
 };
 
 /* globals */
@@ -171,11 +209,15 @@ static object_preprocess_node_orientations_t g_h2_device_preprocess_node_orienta
 /* prototypes */
 
 static const s_h1_device_definition* h1_device_definition_get(const s_h1_device* device);
+static bool h1_device_can_change_position(const s_h1_device* device);
+static bool h1_device_frontfacing(datum object_index, const s_h1_device* device, const real_vector3d* facing);
+static void h1_control_toggle(datum object_index, s_h1_device* device);
 static const s_h1_machine_definition* h1_machine_definition_get(const s_h1_device* device);
 static s_h1_device* h1_device_get(datum object_index);
 static int16 h1_device_group_new(real32 initial_value, uint16 flags);
 static void h1_device_tick(datum object_index, s_h1_device* device);
 static void h1_machine_tick(datum object_index, s_h1_device* device);
+static void h1_machine_elevator_update(datum object_index, s_h1_device* device);
 static void h1_device_effect_new(datum object_index, datum effect_index);
 static bool h1_accelerate_to_position(real32* position, real32* velocity, real32 target_position, real32 maximum_velocity, real32 acceleration,
 	real32 minimum_position, real32 maximum_position, bool periodic);
@@ -187,6 +229,7 @@ static void h1_device_machine_preprocess_node_orientations_hook(datum object_ind
 
 void h1_devices_reset(void)
 {
+	g_h1_devices.action_held = false;
 	g_h1_devices.groups.clear();
 	g_h1_devices.devices.clear();
 	g_h1_devices.leftover_ticks = 0.f;
@@ -233,6 +276,13 @@ void h1_device_place(datum object_index, int16 h1_object_type, const void* place
 		// machine_place: the scenario machine's flags follow its device part
 		device.machine_flags = *(const uint32*)((const uint8*)placement + 0x30) & 0xF;
 	}
+	if (h1_object_type == _h1_object_type_control)
+	{
+		// control_place: usable from both sides, its custom name (the scenario's custom object names, from 1)
+		const h1_scnr_controls* control = (const h1_scnr_controls*)placement;
+		SET_BIT(device.control_flags, _h1_control_usable_from_both_sides_bit, TEST_BIT(control->control_flags, 0));
+		device.custom_name_index = control->custom_object_name_index - 1;
+	}
 	g_h1_devices.devices[object_index] = device;
 	return;
 }
@@ -253,6 +303,7 @@ void h1_devices_update(void)
 	while (g_h1_devices.leftover_ticks >= 1.f)
 	{
 		g_h1_devices.leftover_ticks -= 1.f;
+		g_h1_devices.tick++;
 		for (auto it = g_h1_devices.devices.begin(); it != g_h1_devices.devices.end();)
 		{
 			if (!object_try_and_get(it->first))
@@ -288,7 +339,12 @@ void h1_devices_update(void)
 				Memory::GetAddress<void(__cdecl*)(datum)>(0xA150D)(entry.first);
 			}
 		}
+		if (entry.second.h1_object_type == _h1_object_type_machine)
+		{
+			h1_machine_elevator_update(entry.first, &entry.second);
+		}
 	}
+	h1_controls_player_update();
 	return;
 }
 
@@ -348,6 +404,76 @@ void h1_device_functions_export(datum object_index, real32* incoming)
 			break;
 		}
 		incoming[i] = value;
+	}
+	return;
+}
+
+void h1_controls_player_update(void)
+{
+	const datum player_index = player_index_from_user_index(0);
+	const datum unit_index = player_index != NONE ? player_get(player_index)->unit_index : NONE;
+	const unit_datum* unit = unit_index != NONE ? (const unit_datum*)object_try_and_get_and_verify_type(unit_index, _object_mask_unit) : NULL;
+	const bool action = input_abstraction_controller_button_test(_controller0, _button_touch_device);
+	const bool pressed = action && !g_h1_devices.action_held;
+	g_h1_devices.action_held = action;
+	if (!unit || unit->object.parent_object_index != NONE)
+	{
+		return;
+	}
+
+	// player_examine_nearby_objects: the controls whose bounding spheres meet the unit's, player_examine_nearby_device: the one its
+	// aim meets from its front that can change
+	real_point3d camera;
+	unit_get_camera_position(unit_index, &camera);
+	for (auto& entry : g_h1_devices.devices)
+	{
+		s_h1_device* device = &entry.second;
+		const object_datum* control = device->h1_object_type == _h1_object_type_control ? object_try_and_get(entry.first) : NULL;
+		if (!control || distance3d(&control->object.center, &unit->object.center) > control->object.radius + unit->object.radius)
+		{
+			continue;
+		}
+		real_vector3d to_center;
+		vector_from_points3d(&camera, &control->object.center, &to_center);
+		const real32 c = magnitude_squared3d(&to_center) - control->object.radius * control->object.radius;
+		const real32 b = -dot_product3d(&unit->unit.aiming_vector, &to_center);
+		const bool aimed = c < 0.f || (b < 0.f && b * b - magnitude_squared3d(&unit->unit.aiming_vector) * c > 0.f);
+		if (!aimed || !h1_device_frontfacing(entry.first, device, &unit->unit.aiming_vector) || !h1_device_can_change_position(device))
+		{
+			continue;
+		}
+
+		// hud.c's touch device message: the control's custom name, or its definition's icon text
+		const uint8* definition = (const uint8*)g_h1_cache_file->tag_get('ctrl', device->h1_definition_index);
+		std::wstring name;
+		const uint8* hud_globals = NULL;
+		const h1_scnr* scenario = g_h1_cache_file->scenario_get();
+		const datum names_index = device->custom_name_index != NONE ? scenario->custom_object_names.index : NONE;
+		int16 string_index = device->custom_name_index;
+		if (names_index == NONE && definition)
+		{
+			// the hud globals' alternate icon text
+			const h1_matg* globals = (const h1_matg*)g_h1_cache_file->tag_get('matg', g_h1_cache_file->tag_find('matg', "globals\\globals"));
+			const h1_matg_interface_bitmaps* interface_bitmaps = globals ? g_h1_cache_file->block_get(globals->interface_bitmaps, 0) : NULL;
+			hud_globals = interface_bitmaps ? (const uint8*)g_h1_cache_file->tag_get('hudg', interface_bitmaps->hud_globals.index) : NULL;
+			string_index = *(const int16*)(definition + 0x13C);
+		}
+		const datum list_index = names_index != NONE ? names_index : hud_globals ? ((const h1_tag_reference*)(hud_globals + 0xB4))->index : NONE;
+		const h1_tag_block<h1_tag_data>* strings = list_index != NONE ? (const h1_tag_block<h1_tag_data>*)g_h1_cache_file->tag_get('ustr', list_index) : NULL;
+		const h1_tag_data* string = strings && VALID_INDEX(string_index, strings->count) ? g_h1_cache_file->block_get(*strings, string_index) : NULL;
+		const wchar_t* text = string ? (const wchar_t*)g_h1_cache_file->data_get(*string) : NULL;
+		if (text)
+		{
+			name.assign(text, wcsnlen(text, string->size / sizeof(wchar_t)));
+		}
+		h1_hud_set_state_message((int16)(device->custom_name_index != NONE ? _h1_hud_message_custom_device : _h1_hud_message_touch_device), name.c_str());
+
+		// player_handle_action: device_touched, control_touched (a control that triggers when touched)
+		if (pressed && definition && ((const s_h1_control_definition*)(definition + k_h1_control_definition_offset))->triggers_when == 0)
+		{
+			h1_control_toggle(entry.first, device);
+		}
+		break;
 	}
 	return;
 }
@@ -521,6 +647,68 @@ void h1_devices_apply_patches(void)
 
 /* private code */
 
+// devices.c device_can_change_position: its position group may change (once if only once), it's usable, it's powered
+static bool h1_device_can_change_position(const s_h1_device* device)
+{
+	if (!VALID_INDEX(device->position_group_index, (int16)g_h1_devices.groups.size()))
+	{
+		return false;
+	}
+	const s_h1_device_group* position_group = &g_h1_devices.groups[device->position_group_index];
+	if (TEST_BIT(position_group->flags, _h1_device_group_can_change_only_once_bit) && TEST_BIT(position_group->flags, _h1_device_group_changed_once_bit))
+	{
+		return false;
+	}
+	if (TEST_BIT(device->flags, _h1_device_not_usable_bit))
+	{
+		return false;
+	}
+	return h1_device_group_get(device->power_group_index) == 1.f;
+}
+
+// devices.c device_frontfacing: a control usable from one side faces the one aiming at it when its front marker doesn't face away
+static bool h1_device_frontfacing(datum object_index, const s_h1_device* device, const real_vector3d* facing)
+{
+	if (TEST_BIT(device->control_flags, _h1_control_usable_from_both_sides_bit))
+	{
+		return true;
+	}
+	object_marker marker;
+	if (object_get_markers_by_string_id(object_index, string_id_find_or_add("front"), &marker, 1) != 1)
+	{
+		return true;
+	}
+	return !(dot_product3d(facing, &marker.matrix.forward) > 0.f);
+}
+
+// device_controls.c control_toggle: the control's type sets its position group, its effect the on, off or denied one
+static void h1_control_toggle(datum object_index, s_h1_device* device)
+{
+	const uint8* definition = (const uint8*)g_h1_cache_file->tag_get('ctrl', device->h1_definition_index);
+	if (!definition || !VALID_INDEX(device->position_group_index, (int16)g_h1_devices.groups.size()))
+	{
+		return;
+	}
+	const s_h1_control_definition* control = (const s_h1_control_definition*)(definition + k_h1_control_definition_offset);
+	real32 desired_value;
+	switch (control->type)
+	{
+	case 0: desired_value = g_h1_devices.groups[device->position_group_index].actual_value > 0.5f ? 0.f : 1.f; break;
+	case 1: desired_value = 1.f; break;
+	case 2: desired_value = 0.f; break;
+	default: desired_value = control->call_value; break;
+	}
+	if (h1_device_group_set(device->position_group_index, desired_value))
+	{
+		h1_device_effect_new(object_index, desired_value > 0.5f ? control->on_effect.index : control->off_effect.index);
+	}
+	else
+	{
+		h1_device_effect_new(object_index, control->denied_effect.index);
+	}
+	return;
+}
+
 static const s_h1_device_definition* h1_device_definition_get(const s_h1_device* device)
 {
 	const uint8* definition = device->h1_definition_index != NONE ? (const uint8*)g_h1_cache_file->tag_get('obje', device->h1_definition_index) : NULL;
@@ -638,10 +826,8 @@ static void h1_machine_tick(datum object_index, s_h1_device* device)
 		}
 	}
 
-	static int32 s_tick = 0;
-	s_tick++;
 	if (!TEST_BIT(device->machine_flags, _h1_machine_does_not_operate_automatically_bit) && machine->type == _h1_machine_type_door &&
-		((s_tick + DATUM_INDEX_TO_ABSOLUTE_INDEX(object_index)) & 3) == 0)
+		((g_h1_devices.tick + DATUM_INDEX_TO_ABSOLUTE_INDEX(object_index)) & 3) == 0)
 	{
 		const real32 radius = definition->automatic_activation_radius < k_real_epsilon ? object->object.radius : definition->automatic_activation_radius;
 		bool activate = false;
@@ -649,20 +835,30 @@ static void h1_machine_tick(datum object_index, s_h1_device* device)
 		iterator.begin(FLAG(_object_type_biped), 0);
 		while (iterator.next())
 		{
+			// objects_in_sphere: the bipeds whose bounding spheres meet the activation sphere
 			const object_datum* biped = iterator.get_datum();
-			if (distance_squared3d(&biped->object.center, &object->object.center) > radius * radius)
+			if (distance3d(&biped->object.center, &object->object.center) > radius + biped->object.radius)
 			{
 				continue;
 			}
-			// one sided doors stay shut from behind while closed
+			// a unit that can't open doors automatically (its unit definition's flag)
+			const datum h1_biped_index = h1_objects_h1_definition_get(biped->definition_index);
+			const uint8* h1_biped = h1_biped_index != NONE ? (const uint8*)g_h1_cache_file->tag_get('unit', h1_biped_index) : NULL;
+			if (h1_biped && TEST_BIT(*(const uint32*)(h1_biped + 0x17C), 14))
+			{
+				continue;
+			}
+			// one sided doors stay shut from behind while closed, for the player's friends
 			real_vector3d offset;
 			vector_from_points3d(&object->object.center, &biped->object.center, &offset);
-			if (TEST_BIT(device->machine_flags, _h1_machine_one_sided_bit) && device->position == 0.f && dot_product3d(&offset, &object->object.forward) > 0.f)
+			const unit_datum* unit = (const unit_datum*)biped;
+			const bool friend_of_player = unit->unit.unit_team == _game_team_player || unit->unit.unit_team == _game_team_human;
+			if (TEST_BIT(device->machine_flags, _h1_machine_one_sided_bit) && device->position == 0.f && friend_of_player &&
+				dot_product3d(&offset, &object->object.forward) > 0.f)
 			{
 				continue;
 			}
 			activate = true;
-			break;
 		}
 		if (activate)
 		{
@@ -686,6 +882,59 @@ static void h1_machine_tick(datum object_index, s_h1_device* device)
 		{
 			device->door_open_ticks = 0;
 		}
+	}
+	return;
+}
+
+// machine_update's elevator: the bipeds standing on an elevator (their ground below is it, bipeds.c's elevator object) move with its
+// elevator node
+static void h1_machine_elevator_update(datum object_index, s_h1_device* device)
+{
+	const s_h1_machine_definition* machine = h1_machine_definition_get(device);
+	const object_datum* object = object_try_and_get(object_index);
+	if (!machine || !object || !TEST_BIT(machine->flags, _h1_machine_definition_is_elevator_bit) || machine->elevator_node_index == NONE)
+	{
+		return;
+	}
+	const real_matrix4x3* node_matrix = object_get_node_matrix(object_index, machine->elevator_node_index);
+	if (!node_matrix)
+	{
+		return;
+	}
+	real_vector3d offset = *global_zero_vector3d;
+	if (device->elevator_position_valid)
+	{
+		vector_from_points3d(&device->elevator_position, &node_matrix->position, &offset);
+	}
+	device->elevator_position = node_matrix->position;
+	device->elevator_position_valid = true;
+	if (offset.i == 0.f && offset.j == 0.f && offset.k == 0.f)
+	{
+		return;
+	}
+	c_object_iterator<object_datum> iterator;
+	iterator.begin(FLAG(_object_type_biped), 0);
+	while (iterator.next())
+	{
+		const object_datum* biped = iterator.get_datum();
+		if (biped->object.parent_object_index != NONE ||
+			distance3d(&biped->object.center, &object->object.center) > object->object.radius + biped->object.radius)
+		{
+			continue;
+		}
+		// standing on it: the ground just below the biped (where it was) is the elevator (where it is now)
+		const real_point3d start = { biped->object.position.x, biped->object.position.y, biped->object.position.z + 0.25f + MAX(offset.k, 0.f) };
+		const real_vector3d probe = { 0.f, 0.f, -0.75f - MAX(offset.k, 0.f) + MIN(offset.k, 0.f) };
+		collision_result collision;
+		const uint32 flags = FLAG(_collision_test_objects_bit) | FLAG(4 + _object_type_machine);
+		if (!collision_test_vector(flags, &start, &probe, iterator.get_index(), NONE, &collision) || collision.object_index != object_index)
+		{
+			continue;
+		}
+		real_point3d position;
+		point_from_line3d(&biped->object.position, &offset, 1.f, &position);
+		Memory::GetAddress<void(__cdecl*)(datum, const real_point3d*, const real_vector3d*, const real_vector3d*, int32)>(0x136B7F)(
+			iterator.get_index(), &position, NULL, NULL, 0);
 	}
 	return;
 }

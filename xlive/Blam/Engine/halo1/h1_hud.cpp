@@ -2982,8 +2982,14 @@ struct s_h1_hud_message_text
 constexpr uint32 k_h1_hud_globals_messaging_color_offset = 0xD0;
 constexpr uint32 k_h1_hud_globals_objective_color_offset = 0x100;
 
+// hud_messaging_parameters_definition's hud messages (the player's state messages: pickup, touch device, ...)
+constexpr uint32 k_h1_hud_globals_hud_messages_offset = 0xF0;
+
 struct s_h1_hud_text_globals
 {
+	int16 state_message_index;
+	int32 state_message_time;
+	std::wstring state_message_text;
 	int16 help_message_index;
 	bool show_help_text;
 	bool use_flash;
@@ -2992,7 +2998,7 @@ struct s_h1_hud_text_globals
 	int16 objective_uptime;
 };
 
-static s_h1_hud_text_globals g_h1_hud_text = { NONE, true, false, 0, NONE, 0 };
+static s_h1_hud_text_globals g_h1_hud_text = { NONE, NONE, std::wstring(), NONE, true, false, 0, NONE, 0 };
 
 static const h1_matg_interface_bitmaps* h1_hud_interface_bitmaps_get(void);
 
@@ -3010,7 +3016,15 @@ static const uint8* h1_hud_globals_get(void)
 
 void h1_hud_text_reset(void)
 {
-	g_h1_hud_text = { NONE, true, false, 0, NONE, 0 };
+	g_h1_hud_text = { NONE, NONE, std::wstring(), NONE, true, false, 0, NONE, 0 };
+	return;
+}
+
+void h1_hud_set_state_message(int16 message_index, const wchar_t* custom_text)
+{
+	g_h1_hud_text.state_message_index = message_index;
+	g_h1_hud_text.state_message_time = (int32)game_time_get();
+	g_h1_hud_text.state_message_text = custom_text ? custom_text : L"";
 	return;
 }
 
@@ -3053,8 +3067,8 @@ void h1_hud_set_objective_text(int16 message_index)
 	return;
 }
 
-// the message's text runs, its icons as their names (halo 1 draws the controller's buttons)
-static std::wstring h1_hud_message_string(const s_h1_hud_message_text* messages, const s_h1_hud_state_message* message)
+// the message's text runs, its icons as their names (halo 1 draws the controller's buttons), its first custom icon the custom text
+static std::wstring h1_hud_message_string(const s_h1_hud_message_text* messages, const s_h1_hud_state_message* message, const wchar_t* custom_text = NULL)
 {
 	static const wchar_t* const k_icon_names[] =
 	{
@@ -3090,6 +3104,10 @@ static std::wstring h1_hud_message_string(const s_h1_hud_message_text* messages,
 			result += L"[";
 			result += k_icon_names[element->data];
 			result += L"]";
+		}
+		else if (element->data == NUMBEROF(k_icon_names) && custom_text)
+		{
+			result += custom_text;
 		}
 	}
 	return result;
@@ -3136,13 +3154,29 @@ static void h1_hud_help_text_render(int32 elapsed, const D3DVIEWPORT9* viewport,
 	}
 	const bool objective_active = g_h1_hud_text.objective_message_index != NONE && g_h1_hud_text.objective_uptime > 0;
 	const bool help_active = g_h1_hud_text.show_help_text && g_h1_hud_text.help_message_index != NONE;
-	if (!objective_active && !help_active)
+	// the player's state message, set this tick or the one before
+	const int32 state_age = (int32)game_time_get() - g_h1_hud_text.state_message_time;
+	const bool state_active = g_h1_hud_text.state_message_index != NONE && state_age >= 0 && state_age <= 1;
+	if (!objective_active && !help_active && !state_active)
 	{
 		return;
 	}
 	real_argb_color color;
 	int16 message_index;
-	if (objective_active)
+	const wchar_t* custom_text = NULL;
+	if (!objective_active && !help_active)
+	{
+		const h1_tag_reference* state_messages = (const h1_tag_reference*)(hud_globals + k_h1_hud_globals_hud_messages_offset);
+		messages = (const s_h1_hud_message_text*)g_h1_cache_file->tag_get('hmt ', state_messages->index);
+		if (!messages)
+		{
+			return;
+		}
+		color = h1_hud_flash_color(hud_globals + k_h1_hud_globals_messaging_color_offset, 0, false);
+		message_index = g_h1_hud_text.state_message_index;
+		custom_text = g_h1_hud_text.state_message_text.c_str();
+	}
+	else if (objective_active)
 	{
 		const uint8* objective_color = hud_globals + k_h1_hud_globals_objective_color_offset;
 		const int16 up_ticks = *(const int16*)(objective_color + 0x1C);
@@ -3163,7 +3197,7 @@ static void h1_hud_help_text_render(int32 elapsed, const D3DVIEWPORT9* viewport,
 	{
 		return;
 	}
-	const std::wstring string = h1_hud_message_string(messages, message);
+	const std::wstring string = h1_hud_message_string(messages, message, custom_text);
 
 	// the hud messages' place: the title safe frame's top left (48 by 36 of 640 by 480) and 60 down, five lines high
 	const real32 frame_x0 = (real32)(int32)(48.f * screen_width / 640.f);

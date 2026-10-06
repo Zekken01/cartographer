@@ -35,5 +35,9 @@ void h1_device_one_sided_set(datum object_index, bool one_sided);
 void h1_device_operates_automatically_set(datum object_index, bool operates_automatically);
 void h1_device_group_change_only_once_more_set(int16 group_index, bool change_only_once_more);
 
+// players.c player_examine_nearby_device and player_handle_action's touch device, device_controls.c control_touched: the local
+// player's control it aims at shows hud.c's touch device message, the action button toggles it
+void h1_controls_player_update(void);
+
 // the scenery object type's node orientations: a device's position and power animations
 void h1_devices_apply_patches(void);
