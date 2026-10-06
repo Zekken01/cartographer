@@ -751,7 +751,14 @@ static void h1_vehicle_fields_build(h2x_vehi* vehicle, const h1_vehi* h1_vehicle
 		seat->entry_marker_s_name = h1_string_id((std::string(h1_seat->marker_name) + " enter").c_str());
 		seat->ping_scale = 1.f;
 		seat->turnover_time = 0.65f;
-		seat->acceleration_range = h1_seat->acceleration_scale;
+		// halo 1 scales the seat's acceleration per tick squared, halo 2 per second squared
+		constexpr real32 k_ticks_per_second_squared = 30.f * 30.f;
+		seat->acceleration_range =
+		{
+			h1_seat->acceleration_scale.i / k_ticks_per_second_squared,
+			h1_seat->acceleration_scale.j / k_ticks_per_second_squared,
+			h1_seat->acceleration_scale.k / k_ticks_per_second_squared,
+		};
 		seat->acceleration_action_scale = 1.f;
 		seat->boarding_seat_index = NONE;
 		seat->listener_interpolation_factor = 0.6f;

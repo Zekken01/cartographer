@@ -363,6 +363,8 @@ datum h1_animation_graph_build(datum h1_animation_graph_index, const h1_mode* h1
 				continue;
 			}
 			slots.push_back({ "any", "any", "any", k_h1_vehicle_animation_names[i], animation_index });
+			// the vehicle unit's own mode
+			slots.push_back({ "combat", "any", "any", k_h1_vehicle_animation_names[i], animation_index });
 			// steering is an aiming screen over the turn
 			if (i == 0)
 			{
@@ -371,6 +373,11 @@ datum h1_animation_graph_build(datum h1_animation_graph_index, const h1_mode* h1
 					h1_vehicle->down_pitch_per_frame, h1_vehicle->up_pitch_per_frame, h1_vehicle->down_pitch_frame_count, h1_vehicle->up_pitch_frame_count);
 			}
 		}
+
+		// halo 2's vehicles resolve their (weaponless) weapon class through the weapon list
+		h2x_jmad_weapon_list* weapon_list = h1_runtime_block_new(&graph->weapon_list, 1);
+		weapon_list->weapon_name = string_id_find_or_add("any");
+		weapon_list->weapon_class = string_id_find_or_add("any");
 
 		// suspension at the wheel mass point markers, halo 1 ground depths are negative
 		h2x_jmad_vehicle_suspension* suspension = h1_runtime_block_new(&graph->vehicle_suspension, h1_vehicle->suspension_animations.count);

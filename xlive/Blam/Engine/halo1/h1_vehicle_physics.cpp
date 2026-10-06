@@ -373,6 +373,15 @@ static void h1_vehicle_animation_state_set(datum vehicle_index, const s_h1_vehic
 	vehicle->vehicle.left_tread = state->left_tread;
 	vehicle->vehicle.right_tread = state->right_tread;
 	csmemcpy(vehicle->vehicle.suspension, state->suspension, sizeof(state->suspension));
+	// halo 2's vehicle overlays need the animation's weapon class and type, from the weapon a halo 2 vehicle holds: halo 1's vehicles
+	// hold none, their overlays are any class and type
+	const int16 manager_offset = *(int16*)((uint8*)vehicle + 0x12A);
+	if (manager_offset != NONE)
+	{
+		uint8* manager = (uint8*)vehicle + manager_offset;
+		*(string_id*)(manager + 0x74) = string_id_find_or_add("any");
+		*(string_id*)(manager + 0x78) = string_id_find_or_add("any");
+	}
 	return;
 }
 
