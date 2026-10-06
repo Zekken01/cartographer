@@ -7,6 +7,7 @@
 #include "h1_projectile_logic.h"
 #include "h1_weapon_logic.h"
 #include "h1_hs.h"
+#include "h1_items.h"
 #include "h1_log.h"
 #include "h1_render.h"
 #include "h1_runtime.h"
@@ -98,6 +99,7 @@ void h1_maps_apply_patches(void)
 	PatchCall(Memory::GetAddress(0x64B44), h1_custom_map_hash_verify);
 	h1_effects_apply_patches();
 	h1_scenery_apply_patches();
+	h1_items_apply_patches();
 	h1_weapon_logic_apply_patches();
 	h1_projectile_logic_apply_patches();
 	return;

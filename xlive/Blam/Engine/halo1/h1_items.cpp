@@ -3,10 +3,14 @@
 
 #include "h1_cache_file.h"
 #include "h1_log.h"
+#include "h1_map_loader.h"
+#include "h1_sound.h"
 #include "h1_object_tags.h"
 #include "h1_objects.h"
 #include "h1_runtime.h"
 #include "h2_tag_definitions_generated.h"
+
+#include "objects/objects.h"
 
 /* constants */
 
@@ -91,9 +95,57 @@ datum h1_equipment_definition_build(datum h1_equipment_index)
 	equipment->powerup_type = h1_equipment->powerup_type;
 	equipment->grenade_type = h1_equipment->grenade_type;
 	equipment->powerup_time = h1_equipment->powerup_time;
+	// halo 2 can't play the halo 1 sound: h1_equipment_pickup_sound plays it
 	h1_runtime_reference_set(&equipment->pickup_sound, (tag_group)NONE, NONE);
 
 	h1_objects_bind(equipment_index, h1_equipment_index);
 	h1_log("items: built %s (powerup %d, grenade %d, %.1f seconds)", name, equipment->powerup_type, equipment->grenade_type, equipment->powerup_time);
 	return equipment_index;
+}
+
+// equipment.c equipment_definition_handle_pickup: halo 1 equipment's pickup sound, unspatialized
+static bool h1_equipment_definition_pickup_sound(datum definition_index)
+{
+	const datum h1_definition_index = h1_maps_active() ? h1_objects_h1_definition_get(definition_index) : NONE;
+	const h1_eqip* h1_equipment = h1_definition_index != NONE ? (const h1_eqip*)g_h1_cache_file->tag_get('eqip', h1_definition_index) : NULL;
+	if (!h1_equipment)
+	{
+		return false;
+	}
+	if (h1_equipment->pickup_sound.index != NONE)
+	{
+		h1_sound_scripted_start(h1_equipment->pickup_sound.index, NULL, 1.f);
+	}
+	return true;
+}
+
+static void __cdecl h1_equipment_definition_handle_pickup(datum definition_index)
+{
+	if (!h1_equipment_definition_pickup_sound(definition_index))
+	{
+		INVOKE(0x17580B, 0x0, h1_equipment_definition_handle_pickup, definition_index);
+	}
+	return;
+}
+
+// equipment.c equipment_handle_pickup
+static void __cdecl h1_equipment_handle_pickup(datum equipment_index)
+{
+	const object_datum* equipment = (const object_datum*)object_try_and_get(equipment_index);
+	if (!equipment || !h1_equipment_definition_pickup_sound(equipment->definition_index))
+	{
+		INVOKE(0x1757BC, 0x0, h1_equipment_handle_pickup, equipment_index);
+	}
+	return;
+}
+
+void h1_items_apply_patches(void)
+{
+	PatchCall(Memory::GetAddress(0x56116), h1_equipment_handle_pickup);
+	PatchCall(Memory::GetAddress(0x13E348), h1_equipment_handle_pickup);
+	PatchCall(Memory::GetAddress(0x15EE1D), h1_equipment_definition_handle_pickup);
+	PatchCall(Memory::GetAddress(0x1F97C9), h1_equipment_definition_handle_pickup);
+	PatchCall(Memory::GetAddress(0x1F9824), h1_equipment_definition_handle_pickup);
+	PatchCall(Memory::GetAddress(0x1F98B3), h1_equipment_definition_handle_pickup);
+	return;
 }

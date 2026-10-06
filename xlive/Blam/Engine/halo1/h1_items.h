@@ -9,3 +9,6 @@
 
 // the halo 2 equipment built from a halo 1 equipment tag, NONE on failure
 datum h1_equipment_definition_build(datum h1_equipment_index);
+
+// the items' pickup sounds play the halo 1 sounds their tags carry
+void h1_items_apply_patches(void);
