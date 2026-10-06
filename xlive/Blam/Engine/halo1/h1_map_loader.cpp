@@ -10,6 +10,7 @@
 #include "h1_items.h"
 #include "h1_vehicle_physics.h"
 #include "h1_devices.h"
+#include "ce_ai/h1_ai.h"
 #include "h1_log.h"
 #include "h1_render.h"
 #include "h1_runtime.h"
@@ -275,6 +276,13 @@ int16 h1_maps_structure_bsp_index(void)
 // the cluster of a halo 1 structure bsp a point is in (its collision bsp's leaf), NONE outside its open space
 static int32 h1_maps_structure_bsp_cluster_get(int32 bsp_index, const real_point3d* point)
 {
+	int32 leaf_index;
+	return h1_maps_structure_bsp_leaf_get(bsp_index, point, &leaf_index);
+}
+
+int32 h1_maps_structure_bsp_leaf_get(int32 bsp_index, const real_point3d* point, int32* out_leaf_index)
+{
+	*out_leaf_index = NONE;
 	const h1_sbsp* bsp = (const h1_sbsp*)g_h1_cache_file->tag_get('sbsp', g_h1_cache_file->structure_bsp_tag_get(bsp_index));
 	const h1_sbsp_collision_bsp* collision = bsp ? g_h1_cache_file->block_get(bsp->collision_bsp, 0) : NULL;
 	if (!collision || collision->bsp3d_nodes.count <= 0 ||
@@ -301,6 +309,7 @@ static int32 h1_maps_structure_bsp_cluster_get(int32 bsp_index, const real_point
 		return NONE;
 	}
 	const h1_sbsp_leaves* leaf = g_h1_cache_file->block_get(bsp->leaves, node_index & 0x7FFFFFFF);
+	*out_leaf_index = node_index & 0x7FFFFFFF;
 	return leaf ? leaf->cluster : NONE;
 }
 
@@ -404,18 +413,23 @@ void h1_maps_update(void)
 		if (s_campaign_started)
 		{
 			h1_hs_dispose_from_old_map();
+			h1_ai_dispose_from_old_map();
 		}
 		s_campaign_started = false;
 	}
 	else if (!s_campaign_started && game_time_get() > 0)
 	{
 		s_campaign_started = true;
+		// game_initialize_for_new_map: the AI, the scripts and the objects they place, then the encounters made at the start
+		h1_ai_initialize_for_new_map();
 		h1_hs_initialize_for_new_map();
+		h1_ai_place();
 		if (!h1_hs_running())
 		{
 			scripted_player_effect_screen_fade_in(0.f, 0.f, 0.f, 30);
 		}
 	}
+	h1_ai_update();
 	h1_hs_update();
 	h1_devices_update();
 

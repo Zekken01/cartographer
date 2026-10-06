@@ -6,7 +6,6 @@ namespace h1_ai
 
 // placeholders: tools/gen_ai_stubs.py (the port implements these over carto)
 
-struct actor_debug_info *actor_debug_array;
 struct ai_debug_state ai_debug;
 void ai_debug_actor_deleted(long actor_index)
 {
@@ -151,25 +150,6 @@ byte * breakable_surface_flags_get(void)
 }
 
 cheat_globals cheat;
-long cluster_get_first_collideable_object(long *reference_index, short cluster_index)
-{
-	return 0;
-}
-
-long cluster_get_first_noncollideable_object(long *reference_index, short cluster_index)
-{
-	return 0;
-}
-
-long cluster_get_next_collideable_object(long *reference_index)
-{
-	return 0;
-}
-
-long cluster_get_next_noncollideable_object(long *reference_index)
-{
-	return 0;
-}
 
 boolean collision_bsp_test_vector(unsigned long flags, struct collision_bsp const *bsp, short breakable_surface_count, byte const *breakable_surface_flags, real_point3d const *point, real_vector3d const *vector, real maximum_t, struct collision_bsp_test_vector_result *result)
 {
@@ -209,91 +189,12 @@ long debug_obstacle_path_goal_surface_index;
 real debug_obstacle_path_radius;
 real_point3d debug_obstacle_path_start_point;
 long debug_obstacle_path_start_surface_index;
-void game_allegiance_create(short team1_index, boolean team1_suspicious, short team2_index, boolean team2_suspicious, short incident_threshold, short incident_decay_time, boolean requires_communication)
-{
-	return;
-}
-
-short game_allegiance_get_incidents(short our_team_index, short other_team_index, short *incident_threshold)
-{
-	return 0;
-}
-
-boolean game_allegiance_incident(short aggressor_team_index, short victim_team_index, short incident_type, boolean *notify_immediately)
-{
-	return FALSE;
-}
-
-void game_allegiance_notify_change(short team1_index, short team2_index)
-{
-	return;
-}
-
-void game_allegiance_provoke(short team_index0, short team_index1)
-{
-	return;
-}
-
-boolean game_allegiance_remove(short team1_index, short team2_index)
-{
-	return FALSE;
-}
-
-short game_connection(void)
-{
-	return 0;
-}
-
-real game_difficulty_get_team_value(short value_type, short team_index)
-{
-	return 0.f;
-}
-
-real game_difficulty_get_value(short value_type)
-{
-	return 0.f;
-}
-
-short game_difficulty_level_get(void)
-{
-	return 0;
-}
-
-boolean game_team_ally_status_changed(short team_index0, short team_index1)
-{
-	return FALSE;
-}
-
-boolean game_team_is_ally(short our_team_index, short other_team_index)
-{
-	return FALSE;
-}
-
-boolean game_team_is_enemy(short team_index0, short team_index1)
-{
-	return FALSE;
-}
-
-long game_time_get(void)
-{
-	return 0;
-}
-
 short global_current_collision_user_depth;
 short global_current_collision_users[MAXIMUM_COLLISION_USER_STACK_DEPTH];
-// game_allegiance.c
-char const *global_game_team_names[] =
-{
-	"default", "player", "human", "covenant", "flood", "sentinel", "unused6", "unused7", "unused8", "unused9"
-};
+
 boolean hs_wake_by_name(char const* name)
 {
 	return FALSE;
-}
-
-void object_activate(long object_index)
-{
-	return;
 }
 
 void object_compute_node_matrices_recursive(long object_index)
@@ -301,101 +202,6 @@ void object_compute_node_matrices_recursive(long object_index)
 	return;
 }
 
-void object_deactivate(long object_index)
-{
-	return;
-}
-
-void object_delete(long object_index)
-{
-	return;
-}
-
-void object_delete_immediately(long object_index)
-{
-	return;
-}
-
-void * object_get_and_verify_type(long object_index, unsigned long valid_type_flags)
-{
-	return NULL;
-}
-
-short object_get_first_cluster(struct object_cluster_iterator *iterator, long object_index)
-{
-	return 0;
-}
-
-short object_get_next_cluster(struct object_cluster_iterator *iterator, long object_index)
-{
-	return 0;
-}
-
-real_matrix4x3 * object_get_node_matrix(long object_index, short node_index)
-{
-	return NULL;
-}
-
-real_point3d * object_get_origin(long object_index, real_point3d *origin)
-{
-	return NULL;
-}
-
-long object_get_ultimate_parent(long object_index)
-{
-	return 0;
-}
-
-void object_get_velocities(long object_index, real_vector3d *translational_velocity, real_vector3d *angular_velocity)
-{
-	return;
-}
-
-real_matrix4x3 * object_get_world_matrix(long object_index, real_matrix4x3 *matrix)
-{
-	return NULL;
-}
-
-struct data_array *object_header_data;
-long object_index_from_name_index(short name_index)
-{
-	return NONE;
-}
-
-void object_initialize_vitality(long object_index, real* custom_body_vitality, real* custom_shield_vitality)
-{
-	return;
-}
-
-void object_iterator_new(struct object_iterator *iterator, unsigned long type_flags, byte flags)
-{
-	return;
-}
-
-void * object_iterator_next(struct object_iterator *iterator)
-{
-	return NULL;
-}
-
-void object_list_add(long object_list_index, long object_index)
-{
-	return;
-}
-
-long object_list_get_first(long object_list_index, long *reference_index)
-{
-	return 0;
-}
-
-long object_list_get_next(long object_list_index, long *reference_index)
-{
-	return 0;
-}
-
-long object_list_new(void)
-{
-	return NONE;
-}
 
 boolean object_mark_function(long object_index)
 {
@@ -412,60 +218,9 @@ void object_marker_end(void)
 	return;
 }
 
-long object_new(struct object_placement_data *data)
-{
-	return NONE;
-}
-
-void object_placement_data_new(struct object_placement_data *data, long definition_index, long owner_object_index)
-{
-	return;
-}
-
 void object_reset(long object_index)
 {
 	return;
-}
-
-void object_set_automatic_deactivation(long object_index, boolean automatic_deactivation)
-{
-	return;
-}
-
-void object_set_object_index_for_name_index(short name_index, long object_index)
-{
-	return;
-}
-
-void object_set_position(long object_index, real_point3d const *position, real_vector3d const *forward, real_vector3d const *up)
-{
-	return;
-}
-
-void * object_try_and_get_and_verify_type(long object_index, unsigned long valid_type_flags)
-{
-	return NULL;
-}
-
-void objects_garbage_collection(void)
-{
-	return;
-}
-
-short objects_in_sphere(unsigned long class_flags, unsigned long type_flags, struct location const *location, real_point3d const *center, real radius, long *object_indices, short maximum_count)
-{
-	return 0;
-}
-
-data_array* player_data;
-boolean player_input_enabled(void)
-{
-	return FALSE;
-}
-
-const uint32* players_get_combined_pvs(void)
-{
-	return NULL;
 }
 
 boolean projectile_aim(struct projectile_definition const *definition, real_point3d const *origin, real_point3d const *target_point, real const *override_velocity_max, real *target_velocity_min, real *target_ballistic_fraction_min, real *forced_velocity, boolean lob, real_vector3d *result_aim_vector, real *result_velocity, real *result_ticks, real *result_distance, boolean *result_linear)
@@ -499,11 +254,6 @@ boolean recorded_animation_play(long unit_index, short animation_index)
 	return FALSE;
 }
 
-union real_rgb_color* rgb_colors_interpolate(union real_rgb_color* rgb_result, unsigned long flags, union real_rgb_color const* rgb_lower_bound, union real_rgb_color const* rgb_upper_bound, real u)
-{
-	return NULL;
-}
-
 real scenario_fog_at_point(const struct location* viewer_location, const real_point3d* viewer_point, const real_point3d* point)
 {
 	return 0.f;
@@ -514,19 +264,9 @@ short scenario_get_animation_by_name(struct scenario const* scenario, char const
 	return 0;
 }
 
-struct game_globals* scenario_get_game_globals(void)
-{
-	return NULL;
-}
-
 boolean scenario_location_deafening(const struct location* location)
 {
 	return FALSE;
-}
-
-void scenario_location_from_point(struct location* location, const real_point3d* point)
-{
-	return;
 }
 
 boolean scenario_location_underwater(const struct location* location, const real_point3d* position, short* optional_weather_palette_index)
@@ -557,31 +297,6 @@ byte structure_bsp_get_cluster_encoded_sound_distance(struct structure_bsp* stru
 unsigned long* structure_bsp_get_cluster_pvs(struct structure_bsp* structure_bsp, short cluster_index)
 {
 	return NULL;
-}
-
-c_void_pointer tag_block_address(const tag_block* block)
-{
-	return {};
-}
-
-tag tag_get_group_tag(datum tag_index)
-{
-	return {};
-}
-
-boolean unit_add_equipment_to_inventory(long unit_index, long equipment_index, short replace)
-{
-	return FALSE;
-}
-
-short unit_add_grenade_type_to_inventory(long unit_index, short grenade_type, short grenade_count)
-{
-	return 0;
-}
-
-boolean unit_add_weapon_to_inventory(long unit_index, long weapon_index, long is_starting_weapon)
-{
-	return FALSE;
 }
 
 boolean unit_can_see_point(long unit_index, real_point3d const *point, real field_of_view)
@@ -737,11 +452,6 @@ boolean unit_seat_is_driver(long unit_index, short seat_index)
 boolean unit_seat_is_gunner(long unit_index, short seat_index)
 {
 	return FALSE;
-}
-
-void unit_set_actively_controlled(long unit_index, boolean actively_controlled)
-{
-	return;
 }
 
 void unit_speak(long unit_index, short play_type, struct unit_speech_item const *speech_item)

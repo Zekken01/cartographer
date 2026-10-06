@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "ce_ai/h1_ai.h"
 #include "h1_hs.h"
 #include "h1_hs_internal.h"
 
@@ -1362,6 +1363,8 @@ static int32 hs_deactivate_team_nav_point_object(const int32* arguments) { h1_hu
 static int32 hs_cinematic_set_title(const int32* arguments) { h1_cinematic_set_title_delayed(ARGUMENT_SHORT(0), 0.f); return 0; }
 static int32 hs_cinematic_set_title_delayed(const int32* arguments) { h1_cinematic_set_title_delayed(ARGUMENT_SHORT(0), ARGUMENT_REAL(1)); return 0; }
 
+static int32 hs_ai_place(const int32* arguments) { h1_ai_script_place(ARGUMENT_LONG(0)); return 0; }
+
 // functions that do nothing in halo 1's release builds, or nothing visible here, and are done
 static int32 hs_nothing(const int32* arguments) { return 0; }
 
@@ -1374,6 +1377,7 @@ struct s_hs_procedure_binding
 static const s_hs_procedure_binding k_hs_procedures[] =
 {
 	{ "not", hs_not },
+	{ "ai_place", hs_ai_place },
 	{ "print", hs_print },
 	{ "players", hs_players_procedure },
 	{ "volume_teleport_players_not_inside", hs_volume_teleport_players_not_inside },

@@ -62,4 +62,8 @@ const real_rgb_color* global_real_rgb_darkgreen = &global_real_argb_color_table[
 const real_rgb_color* global_real_rgb_salmon = &global_real_argb_color_table[15].rgb;
 const real_rgb_color* global_real_rgb_violet = &global_real_argb_color_table[16].rgb;
 
+// ai_debug.c: the actors' debug information (the AI writes it whether or not it is shown)
+static struct actor_debug_info g_actor_debug_infos[MAXIMUM_ACTORS];
+struct actor_debug_info *actor_debug_array = g_actor_debug_infos;
+
 } // namespace h1_ai

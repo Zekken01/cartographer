@@ -4,6 +4,7 @@
 * The halo 1 AI port's own headers, in the order halo 1's sources included them.
 */
 
+#include "h1_ai_declarations.h"
 #include "h1_ai_engine.h"
 #include "h1_ai_cseries.h"
 

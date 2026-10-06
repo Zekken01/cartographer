@@ -40,6 +40,8 @@ void h1_maps_update(void);
 
 // the halo 1 structure bsp of halo 2's current structure bsp (they're built in the same order), 0 without one
 int16 h1_maps_structure_bsp_index(void);
+// the cluster of a structure bsp a point is in (NONE outside its open space), the leaf of its collision bsp in out_leaf_index
+int32 h1_maps_structure_bsp_leaf_get(int32 bsp_index, const real_point3d* point, int32* out_leaf_index);
 
 // whether a point is inside one of the halo 1 scenario's trigger volumes
 bool h1_maps_trigger_volume_test_point(int16 trigger_volume_index, const real_point3d* point);

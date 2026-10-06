@@ -334,6 +334,8 @@ struct player_datum
 };
 
 extern data_array* player_data;
+#undef player_get
+#undef player_try_and_get
 #define player_get(index) ((struct player_datum*)datum_get(player_data, (index)))
 #define player_try_and_get(index) ((struct player_datum*)datum_try_and_get(player_data, (index)))
 const uint32* players_get_combined_pvs(void);

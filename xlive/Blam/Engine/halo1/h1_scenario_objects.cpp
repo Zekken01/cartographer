@@ -211,6 +211,50 @@ void h1_scenario_objects_place(void)
 	return;
 }
 
+datum h1_scenario_object_definition_get(datum h1_definition_index)
+{
+	auto found = g_h1_scenario_objects.definitions.find(h1_definition_index);
+	if (found != g_h1_scenario_objects.definitions.end())
+	{
+		return found->second;
+	}
+	const h1_cache_file_tag_instance* instance = h1_definition_index != NONE ? g_h1_cache_file->tag_instance_get(h1_definition_index) : NULL;
+	if (!instance)
+	{
+		return NONE;
+	}
+	datum definition_index;
+	switch (instance->group_tag)
+	{
+	case 'weap': definition_index = h1_weapon_definition_build(h1_definition_index); break;
+	case 'bipd': definition_index = h1_biped_definition_build(h1_definition_index); break;
+	case 'eqip': definition_index = h1_equipment_definition_build(h1_definition_index); break;
+	case 'vehi': definition_index = h1_vehicle_build(h1_definition_index); break;
+	default: definition_index = h1_object_shell_definition_build(h1_definition_index); break;
+	}
+	g_h1_scenario_objects.definitions[h1_definition_index] = definition_index;
+	return definition_index;
+}
+
+void h1_scenario_object_type_set(datum object_index, datum h1_definition_index)
+{
+	const h1_cache_file_tag_instance* instance = h1_definition_index != NONE ? g_h1_cache_file->tag_instance_get(h1_definition_index) : NULL;
+	if (!instance)
+	{
+		return;
+	}
+	static const uint32 k_groups[] = { 'bipd', 'vehi', 'weap', 'eqip', 'garb', 'proj', 'scen', 'mach', 'ctrl', 'lifi', 'plac', 'ssce' };
+	for (int16 type = 0; type < NUMBEROF(k_groups); type++)
+	{
+		if (instance->group_tag == k_groups[type])
+		{
+			g_h1_scenario_objects.object_types[object_index] = type;
+			break;
+		}
+	}
+	return;
+}
+
 datum h1_scenario_object_new_by_name(int16 name_index)
 {
 	const h1_scnr* scenario = g_h1_cache_file->scenario_get();
