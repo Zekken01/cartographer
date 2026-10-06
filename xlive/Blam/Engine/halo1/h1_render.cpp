@@ -19,6 +19,7 @@
 #include "h1_sound.h"
 
 #include "game/game_time.h"
+#include "math/matrix_math.h"
 #include "rasterizer/rasterizer_globals.h"
 #include "rasterizer/dx9/rasterizer_dx9.h"
 #include "rasterizer/dx9/rasterizer_dx9_main.h"
@@ -679,7 +680,10 @@ static void h1_render_scenery_initialize(void)
 		instance.model_index = scenery->model.index;
 		instance.permutation = MAX(placement->desired_permutation, (int16)0);
 		h1_matrix_from_euler(&placement->rotation, &placement->position, &instance.matrix);
-		h1_render_lighting_at(&placement->position, &instance.lighting);
+		// lights_prepare_for_object_static: from its bounding sphere (its offset in its own frame) and around it
+		real_point3d center;
+		matrix4x3_transform_point(&instance.matrix, &scenery->bounding_offset, &center);
+		h1_render_lighting_for_object(&center, scenery->bounding_radius, true, TEST_BIT(scenery->flags, 2), &instance.lighting);
 		h1_object_change_colors_choose(palette->name.index, &placement->position, instance.change_colors);
 		instance.placement_index = i;
 		g_h1_render.scenery.push_back(instance);
@@ -844,7 +848,92 @@ void h1_render_light_particle(const real_point3d* point, real_rgb_color* out_lig
 // lighting from the lightmapped structure surface below a point: the material's radiosity lights scaled by the lightmap
 // object_lights.c lights_distant_lighting_at_point: the structure under the point (10 units down) lights it from its lightmap, its
 // incident radiosity and its diffuse color (build_distant_lights), the bsp's default lighting without one
-void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_lighting)
+// object_lights.c brighten_real_rgb_color: its largest component scaled up by the fraction (to at least the fraction, at most 1)
+static void h1_brighten_color(real_rgb_color* color, real32 fraction)
+{
+	const real32 maximum = MAX(color->red, MAX(color->green, color->blue));
+	if (maximum <= 0.f)
+	{
+		return;
+	}
+	real32 scale = fraction + 1.f;
+	if (scale * maximum > 1.f)
+	{
+		scale = 1.f / maximum;
+	}
+	else if (scale * maximum < fraction)
+	{
+		scale = fraction / maximum;
+	}
+	color->red *= scale;
+	color->green *= scale;
+	color->blue *= scale;
+	return;
+}
+
+void h1_render_lighting_for_object(const real_point3d* center, real32 radius, bool corners, bool brighten, s_h1_render_lighting* out_lighting)
+{
+	const bool sampled = h1_render_lighting_at(center, out_lighting, brighten);
+	if (!corners)
+	{
+		return;
+	}
+	s_h1_render_lighting sum = {};
+	int32 sample_count = 0;
+	if (sampled)
+	{
+		sum = *out_lighting;
+		sample_count = 1;
+	}
+	s_h1_render_lighting sample = {};
+	for (int32 corner = 0; corner < 4; corner++)
+	{
+		const real_point3d point =
+		{
+			(TEST_BIT(corner, 0) ? 0.70710678f : -0.70710678f) * radius + center->x,
+			(TEST_BIT(corner, 1) ? 0.70710678f : -0.70710678f) * radius + center->y,
+			center->z
+		};
+		if (!h1_render_lighting_at(&point, &sample, brighten))
+		{
+			continue;
+		}
+		sample_count++;
+		sum.ambient.red += sample.ambient.red;
+		sum.ambient.green += sample.ambient.green;
+		sum.ambient.blue += sample.ambient.blue;
+		sum.reflection_tint.alpha += sample.reflection_tint.alpha;
+		sum.reflection_tint.red += sample.reflection_tint.red;
+		sum.reflection_tint.green += sample.reflection_tint.green;
+		sum.reflection_tint.blue += sample.reflection_tint.blue;
+		sum.light0_color.red += sample.light0_color.red;
+		sum.light0_color.green += sample.light0_color.green;
+		sum.light0_color.blue += sample.light0_color.blue;
+		add_vectors3d(&sum.light0_direction, &sample.light0_direction, &sum.light0_direction);
+		sum.light1_color.red += sample.light1_color.red;
+		sum.light1_color.green += sample.light1_color.green;
+		sum.light1_color.blue += sample.light1_color.blue;
+		add_vectors3d(&sum.light1_direction, &sample.light1_direction, &sum.light1_direction);
+	}
+	if (sample_count == 0)
+	{
+		// nothing below any of them: the default lighting the last sample left
+		*out_lighting = sample;
+		return;
+	}
+	const real32 scale = 1.f / sample_count;
+	out_lighting->ambient = { sum.ambient.red * scale, sum.ambient.green * scale, sum.ambient.blue * scale };
+	out_lighting->reflection_tint = { sum.reflection_tint.alpha * scale, sum.reflection_tint.red * scale, sum.reflection_tint.green * scale, sum.reflection_tint.blue * scale };
+	out_lighting->light0_color = { sum.light0_color.red * scale, sum.light0_color.green * scale, sum.light0_color.blue * scale };
+	out_lighting->light0_direction = sum.light0_direction;
+	normalize3d(&out_lighting->light0_direction);
+	out_lighting->light1_color = { sum.light1_color.red * scale, sum.light1_color.green * scale, sum.light1_color.blue * scale };
+	out_lighting->light1_direction = sum.light1_direction;
+	normalize3d(&out_lighting->light1_direction);
+	return;
+}
+
+bool h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_lighting, bool brighten)
 {
 	if (g_h1_render.lighting.ambient.red != 0.f)
 	{
@@ -865,7 +954,7 @@ void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_
 	const s_h1_lighting_triangle* best = h1_render_lighting_triangle_below(point, weights);
 	if (!best || best->diffuse_bitmap_tag_index == NONE)
 	{
-		return;
+		return false;
 	}
 
 	auto shade2 = [&](const real_point2d* values) -> real_point2d
@@ -888,7 +977,7 @@ void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_
 	if (!h1_bitmap_sample_lod(best->diffuse_bitmap_tag_index, best->diffuse_bitmap_index, texcoord.x, texcoord.y, 0.3f, &diffuse_color) ||
 		!h1_bitmap_sample_lod(g_h1_render.lightmap_bitmap_tag, best->lightmap_bitmap_index, lightmap_texcoord.x, lightmap_texcoord.y, 1.f, &lightmap_color))
 	{
-		return;
+		return false;
 	}
 	real_vector3d surface_normal = shade3(best->normals);
 	normalize3d(&surface_normal);
@@ -914,7 +1003,17 @@ void h1_render_lighting_at(const real_point3d* point, s_h1_render_lighting* out_
 	out_lighting->reflection_tint.red = PIN(diffuse_color.red * 3.f + 0.5f, 0.f, 1.f) * PIN(lightmap_color.red * 2.f + 0.25f, 0.f, 1.f);
 	out_lighting->reflection_tint.green = PIN(diffuse_color.green * 3.f + 0.5f, 0.f, 1.f) * PIN(lightmap_color.green * 2.f + 0.25f, 0.f, 1.f);
 	out_lighting->reflection_tint.blue = PIN(diffuse_color.blue * 3.f + 0.5f, 0.f, 1.f) * PIN(lightmap_color.blue * 2.f + 0.25f, 0.f, 1.f);
-	return;
+	// an artificially bright object's
+	if (brighten)
+	{
+		h1_brighten_color(&out_lighting->ambient, 0.2f);
+		h1_brighten_color(&out_lighting->light0_color, 0.3f);
+		h1_brighten_color(&out_lighting->light1_color, 0.2f);
+		real_rgb_color tint = { out_lighting->reflection_tint.red, out_lighting->reflection_tint.green, out_lighting->reflection_tint.blue };
+		h1_brighten_color(&tint, 0.5f);
+		out_lighting->reflection_tint = { 1.f, tint.red, tint.green, tint.blue };
+	}
+	return true;
 }
 
 // halo 2 keeps a bit per breakable surface of the structure of each bsp, set while the surface is intact (breakable_surfaces.cpp)

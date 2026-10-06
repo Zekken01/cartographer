@@ -220,7 +220,10 @@ void h1_objects_render(e_h1_render_pass pass, real32 game_time)
 		}
 
 		s_h1_render_lighting lighting;
-		h1_render_lighting_at(&node_matrices[0].position, &lighting);
+		// lights_prepare_for_object_static: from its bounding sphere's center (moving, sampled there alone)
+		const datum h1_definition_index = h1_objects_h1_definition_get(object->definition_index);
+		const uint16 h1_object_flags = h1_definition_index != NONE ? *(const uint16*)((const uint8*)g_h1_cache_file->tag_get('obje', h1_definition_index) + 2) : 0;
+		h1_render_lighting_for_object(&object->object.center, object->object.radius, false, TEST_BIT(h1_object_flags, 2), &lighting);
 		const s_h1_object_functions* functions = h1_object_functions_get(object_index);
 		if (!functions)
 		{
