@@ -19,6 +19,7 @@
 #include "cache/cache_files.h"
 #include "effects/player_effects.h"
 #include "game/game.h"
+#include "game/game_globals.h"
 #include "game/game_time.h"
 #include "game/game_options.h"
 #include "game/players.h"
@@ -254,6 +255,13 @@ bool h1_maps_scenario_tags_loaded(bool custom_map)
 	if (result)
 	{
 		h1_sound_begin();
+		// halo 1's crosshair is at the middle of the screen: halo 2's vehicle cameras and aim assist use the player control's
+		// crosshair location (the first person camera centers its own)
+		s_game_globals_player_control* player_control = TAG_BLOCK_GET_ELEMENT(&scenario_get_game_globals()->player_control, 0, s_game_globals_player_control);
+		if (player_control)
+		{
+			player_control->crosshair_location = { 0.f, 0.f };
+		}
 	}
 	return result;
 }

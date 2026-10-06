@@ -10,16 +10,22 @@
 #include "h1_projectiles.h"
 #include "h1_sound.h"
 #include "h1_weapons.h"
+#include "h1_objects.h"
 
+#include "camera/observer.h"
 #include "game/game_time.h"
+#include "game/player_constants.h"
+#include "game/players.h"
 #include "items/weapons.h"
 #include "math/real_math.h"
 #include "objects/object_placement.h"
 #include "objects/damage.h"
 #include "objects/object_types.h"
 #include "objects/objects.h"
+#include "physics/collisions.h"
 #include "tag_files/tag_groups.h"
 #include "units/units.h"
+#include "h2_tag_definitions_generated.h"
 
 #include <unordered_map>
 #include <vector>
@@ -262,6 +268,10 @@ struct s_h1_weapon_logic_context
 
 typedef bool(__cdecl* t_h2_magazine_update)(datum weapon_index, int32 magazine_index);
 
+// halo 1's unit definition flags (unit_definition.flags, after the object's 0x17C bytes)
+constexpr int32 k_h1_unit_flags_offset = 0x17C;
+constexpr int32 k_h1_unit_fires_from_camera_bit = 3;
+
 /* globals */
 
 static std::unordered_map<datum, s_h1_weapon_logic_state> g_h1_weapon_logic;
@@ -294,6 +304,9 @@ static const h1_weap_triggers* h1_trigger_definition_get(const s_h1_weapon_logic
 static const h1_weap_magazines* h1_magazine_definition_get(const s_h1_weapon_logic_context* context, int16 magazine_index);
 static bool h1_weapon_belongs_to_player(const s_h1_weapon_logic_context* context);
 static datum h1_weapon_owner_object_index(const s_h1_weapon_logic_context* context);
+static const unit_datum* h1_unit_gunner_get(datum unit_index);
+static const uint8* h1_unit_definition_get(datum h2_definition_index);
+static datum h1_player_aim_projectile(datum player_index, datum aiming_unit_index, const h1_weap* definition, const real_point3d* origin, real_vector3d* direction);
 static datum h1_weapon_effect_object_index(const s_h1_weapon_logic_context* context);
 static void h1_first_person_weapon_message(s_h1_weapon_logic_context* context, e_h1_first_person_weapon_message message);
 static int32 h1_weapon_effect_new(s_h1_weapon_logic_context* context, const h1_tag_reference* effect, real32 scale, real32 error, bool looping);
@@ -1850,10 +1863,24 @@ static void h1_weapon_trigger_create_projectiles(s_h1_weapon_logic_context* cont
 
 		if (!TEST_BIT(trigger_definition->flags, _h1_trigger_definition_projectiles_cannot_be_aimed_bit) && unit)
 		{
-			// units.c unit_adjust_projectile_ray: the aiming vector, the origin moved onto the camera's line (players fire from the camera)
-			const bool player = unit->unit.player_index != NONE;
-			forward = unit->unit.aiming_vector;
-			if (player)
+			// the gunner's player aims a vehicle's weapon, along the weapon's marker
+			datum player_index = unit->unit.player_index;
+			bool use_aiming_vector = true;
+			const unit_datum* gunner = h1_unit_gunner_get(owner_object_index);
+			if (gunner)
+			{
+				player_index = gunner->unit.player_index;
+				use_aiming_vector = false;
+			}
+			const uint8* h1_unit = h1_unit_definition_get(unit->definition_index);
+			const bool adjust_origin = h1_unit && TEST_BIT(*(const uint32*)(h1_unit + k_h1_unit_flags_offset), k_h1_unit_fires_from_camera_bit);
+
+			// units.c unit_adjust_projectile_ray: the origin moved onto the camera's line
+			if (use_aiming_vector)
+			{
+				forward = unit->unit.aiming_vector;
+			}
+			if (adjust_origin)
 			{
 				real_point3d camera_position;
 				unit_get_camera_position(owner_object_index, &camera_position);
@@ -1865,7 +1892,7 @@ static void h1_weapon_trigger_create_projectiles(s_h1_weapon_logic_context* cont
 			object_get_velocities(owner_object_index, &object_velocity, NULL);
 			velocity = forward.i * object_velocity.i + forward.j * object_velocity.j + forward.k * object_velocity.k;
 
-			if (player)
+			if (player_index != NONE)
 			{
 				real_vector3d right;
 				real_vector3d up;
@@ -1882,16 +1909,7 @@ static void h1_weapon_trigger_create_projectiles(s_h1_weapon_logic_context* cont
 				origin.y += forward.j * offset->x + right.j * offset->y + up.j * offset->z;
 				origin.z += forward.k * offset->x + right.k * offset->y + up.k * offset->z;
 
-				// aim_assist.c player_aim_projectile: halo 2's aim assist found the target this tick
-				target_object_index = unit->unit.target_info.target_object;
-				if (target_object_index != NONE)
-				{
-					const object_datum* target = (const object_datum*)object_try_and_get(target_object_index);
-					if (!target)
-					{
-						target_object_index = NONE;
-					}
-				}
+				target_object_index = h1_player_aim_projectile(player_index, owner_object_index, context->definition, &origin, &forward);
 			}
 		}
 
@@ -2078,4 +2096,120 @@ static void h1_weapon_damage_owner(datum owner_object_index, datum h1_damage_eff
 	damage.origin = damage.epicenter;
 	object_cause_damage(&damage, owner_object_index, NONE, NONE, NONE, NULL);
 	return;
+}
+
+// the unit in one of a vehicle's gunner seats (halo 1's unit gunner_object_index)
+static const unit_datum* h1_unit_gunner_get(datum unit_index)
+{
+	const unit_datum* unit = (const unit_datum*)object_try_and_get_and_verify_type(unit_index, _object_mask_vehicle);
+	const h2x_vehi* definition = unit ? (const h2x_vehi*)tag_get('vehi', unit->definition_index) : NULL;
+	if (!definition)
+	{
+		return NULL;
+	}
+	for (datum child_index = unit->object.first_child_object_index; child_index != NONE; child_index = object_get(child_index)->object.next_object_index)
+	{
+		const unit_datum* rider = (const unit_datum*)object_try_and_get_and_verify_type(child_index, _object_mask_unit);
+		if (rider && VALID_INDEX(rider->unit.parent_seat_index, definition->seats.count) && TEST_BIT(definition->seats[rider->unit.parent_seat_index]->flags, 3))
+		{
+			return rider;
+		}
+	}
+	return NULL;
+}
+
+// the halo 1 unit tag a halo 2 unit was built from
+static const uint8* h1_unit_definition_get(datum h2_definition_index)
+{
+	const datum h1_definition_index = h1_objects_h1_definition_get(h2_definition_index);
+	return h1_definition_index != NONE ? (const uint8*)g_h1_cache_file->tag_get('unit', h1_definition_index) : NULL;
+}
+
+// aim_assist.c player_aim_projectile: the projectile turns toward what is under the player's crosshair (a trace along the camera
+// from the aiming unit's distance), as far as the weapon's deviation angle lets it. halo 2's aim assist found the target this tick
+static datum h1_player_aim_projectile(datum player_index, datum aiming_unit_index, const h1_weap* definition, const real_point3d* origin, real_vector3d* direction)
+{
+	const player_datum* player = player_index != NONE ? player_get(player_index) : NULL;
+	const unit_datum* aiming_unit = (const unit_datum*)object_try_and_get_and_verify_type(aiming_unit_index, _object_mask_unit);
+	if (!player || !definition || !aiming_unit)
+	{
+		return NONE;
+	}
+
+	// director.c director_camera_deterministic: the player's camera (a local player's view)
+	real_point3d camera_position;
+	real_vector3d camera_direction;
+	const s_observer_result* camera = NULL;
+	for (int32 user_index = 0; user_index < k_number_of_users; user_index++)
+	{
+		if (players_user_is_active(user_index) && player_index_from_user_index(user_index) == player_index)
+		{
+			camera = observer_try_and_get_camera(user_index);
+			break;
+		}
+	}
+	if (camera)
+	{
+		camera_position = camera->position;
+		camera_direction = camera->forward;
+	}
+	else if (player->unit_index != NONE)
+	{
+		unit_get_camera_position(player->unit_index, &camera_position);
+		camera_direction = ((const unit_datum*)object_get(player->unit_index))->unit.aiming_vector;
+	}
+	else
+	{
+		return NONE;
+	}
+
+	// from the camera at the aiming unit's distance along the camera's direction
+	const real32 camera_to_unit_distance = distance3d(&aiming_unit->object.position, &camera_position);
+	normalize3d(&camera_direction);
+	const real_point3d start =
+	{
+		camera_position.x + camera_direction.i * camera_to_unit_distance,
+		camera_position.y + camera_direction.j * camera_to_unit_distance,
+		camera_position.z + camera_direction.k * camera_to_unit_distance
+	};
+	const real_vector3d vector = { camera_direction.i * 128.f, camera_direction.j * 128.f, camera_direction.k * 128.f };
+	collision_result collision;
+	const uint32 flags = FLAG(_collision_test_structure_bit) | FLAG(_collision_test_instanced_geometry_bit) | FLAG(_collision_test_objects_bit);
+	real_point3d point = { start.x + vector.i, start.y + vector.j, start.z + vector.k };
+	if (collision_test_vector(flags, &start, &vector, player->unit_index, aiming_unit_index, &collision))
+	{
+		point = collision.point;
+	}
+	real_vector3d collision_direction = { point.x - origin->x, point.y - origin->y, point.z - origin->z };
+	if (normalize3d(&collision_direction) == 0.f)
+	{
+		collision_direction = *direction;
+	}
+
+	// pinned inside the deviation cone around the weapon's aim
+	const real32 cosine_deviation = cosf(definition->deviation_angle);
+	const real32 dot = dot_product3d(&collision_direction, direction);
+	if (dot < cosine_deviation)
+	{
+		real_vector3d perpendicular = { collision_direction.i - direction->i * dot, collision_direction.j - direction->j * dot, collision_direction.k - direction->k * dot };
+		if (normalize3d(&perpendicular) != 0.f)
+		{
+			const real32 sine_deviation = sinf(definition->deviation_angle);
+			collision_direction =
+			{
+				direction->i * cosine_deviation + perpendicular.i * sine_deviation,
+				direction->j * cosine_deviation + perpendicular.j * sine_deviation,
+				direction->k * cosine_deviation + perpendicular.k * sine_deviation
+			};
+		}
+		else
+		{
+			collision_direction = *direction;
+		}
+	}
+	*direction = collision_direction;
+
+	const unit_datum* player_unit = player->unit_index != NONE ? (const unit_datum*)object_try_and_get_and_verify_type(player->unit_index, _object_mask_unit) : NULL;
+	const datum target_object_index = player_unit ? player_unit->unit.target_info.target_object : NONE;
+	return target_object_index != NONE && object_try_and_get(target_object_index) ? target_object_index : NONE;
 }
