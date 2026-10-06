@@ -172,16 +172,6 @@ short scenario_get_animation_by_name(struct scenario const* scenario, char const
 	return 0;
 }
 
-void scripted_sound_new(long definition_index, long source_object_index, real scale)
-{
-	return;
-}
-
-long scripted_sound_time(long sound_index)
-{
-	return 0;
-}
-
 void unit_detach_from_parent(long unit_index)
 {
 	return;
@@ -197,11 +187,6 @@ short unit_get_animation_frames_remaining(long unit_index, short *animation_stat
 	return 0;
 }
 
-boolean unit_is_speaking(long unit_index)
-{
-	return FALSE;
-}
-
 boolean unit_leap_begin(long unit_index, real_vector2d const *alignment_vector)
 {
 	return FALSE;
@@ -210,16 +195,6 @@ boolean unit_leap_begin(long unit_index, real_vector2d const *alignment_vector)
 boolean unit_melee_attack_begin(long unit_index, boolean continuous, real_vector2d const *alignment_vector)
 {
 	return FALSE;
-}
-
-boolean unit_scream(long unit_index, short scream_type)
-{
-	return FALSE;
-}
-
-void unit_speak(long unit_index, short play_type, struct unit_speech_item const *speech_item)
-{
-	return;
 }
 
 boolean unit_start_animation_impulse(long unit_index, short animation_impulse, real_vector2d *alignment_vector)
@@ -235,11 +210,6 @@ boolean unit_start_user_animation(long unit_index, long animation_graph_index, c
 boolean unit_test_animation_impulse(long unit_index, short animation_impulse)
 {
 	return FALSE;
-}
-
-short unit_test_speech(long unit_index, short priority, boolean allow_recursive_lookup, boolean allow_queue, long *unit_last_speech_time, short *vocalization_type_reference, long *sound_definition_index_reference)
-{
-	return 0;
 }
 
 boolean unit_try_and_exit_seat(long unit_index)
@@ -260,11 +230,6 @@ void weapon_set_current_amount(long weapon_index, real current_amount)
 void weapon_set_total_rounds(long weapon_index, short *rounds_array)
 {
 	return;
-}
-
-boolean sound_scripted_dialog_is_playing(void)
-{
-	return FALSE;
 }
 
 } // namespace h1_ai

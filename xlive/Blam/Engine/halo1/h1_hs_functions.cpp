@@ -326,12 +326,34 @@ static void hs_object_orient(datum object_index, int16 cutscene_flag_index, bool
 
 /* ---------- sounds */
 
+// sound_classes.h: the scripted dialog classes
+enum
+{
+	_h1_sound_class_scripted_dialog_to_player = 44,
+	_h1_sound_class_scripted_dialog_to_other = 46,
+	_h1_sound_class_scripted_dialog_force_unspatialized = 47,
+};
+
+static int32 g_scripted_dialog_end_time = 0;
+
+static void hs_sound_dialog_note(datum sound_index)
+{
+	const h1_snd* definition = sound_index != NONE ? (const h1_snd*)g_h1_cache_file->tag_get('snd!', sound_index) : NULL;
+	if (definition && (definition->f_class == _h1_sound_class_scripted_dialog_to_player || definition->f_class == _h1_sound_class_scripted_dialog_to_other ||
+		definition->f_class == _h1_sound_class_scripted_dialog_force_unspatialized))
+	{
+		g_scripted_dialog_end_time = MAX(g_scripted_dialog_end_time, (int32)game_time_get() + (int32)(h1_sound_duration(sound_index) * 30.f) + 10);
+	}
+	return;
+}
+
 static void hs_sound_impulse_start(datum sound_index, datum object_index, real32 scale)
 {
 	if (sound_index == NONE)
 	{
 		return;
 	}
+	hs_sound_dialog_note(sound_index);
 	real_point3d position;
 	const bool positional = object_index != NONE && hs_object_exists(object_index);
 	if (positional)
@@ -1582,6 +1604,15 @@ void hs_functions_initialize(void)
 		}
 		hs_function_get(function_index)->procedure = binding.procedure;
 	}
+	// halo 1's ai script functions
+	for (int32 i = 0; i < g_h1_ai_hs_function_count; i++)
+	{
+		const int16 function_index = hs_find_function_by_name(g_h1_ai_hs_functions[i].name);
+		if (function_index != NONE)
+		{
+			hs_function_get(function_index)->procedure = g_h1_ai_hs_functions[i].procedure;
+		}
+	}
 	return;
 }
 
@@ -1601,6 +1632,7 @@ void hs_functions_initialize_for_new_map(void)
 	}
 	g_hs_library.looping_sounds.clear();
 	g_hs_library.scripted_sound_end_times.clear();
+	g_scripted_dialog_end_time = 0;
 	h1_camera_reset();
 	h1_recordings_reset();
 	return;
@@ -1640,4 +1672,26 @@ void h1_hs_object_name_set(int16 name_index, datum object_index)
 datum h1_hs_object_index_from_name_index(int16 name_index)
 {
 	return h1_hs::object_index_from_name_index(name_index);
+}
+
+void h1_hs_sound_impulse_start(datum sound_index, datum object_index, real32 scale)
+{
+	h1_hs::hs_sound_impulse_start(sound_index, object_index, scale);
+	return;
+}
+
+int32 h1_hs_sound_impulse_time(datum sound_index)
+{
+	return h1_hs::hs_sound_impulse_time(sound_index);
+}
+
+void h1_hs_sound_dialog_note(datum sound_index)
+{
+	h1_hs::hs_sound_dialog_note(sound_index);
+	return;
+}
+
+bool h1_hs_scripted_dialog_is_playing(void)
+{
+	return (int32)game_time_get() < h1_hs::g_scripted_dialog_end_time;
 }

@@ -18,3 +18,12 @@ bool h1_ai_running(void);
 
 // the scripts' ai_* functions (h1_hs_functions)
 void h1_ai_script_place(int32 ai_index);
+
+// hs.c's ai script functions (h1_ai_hs_functions.cpp, tools/gen_ai_hs.py): h1_hs procedures by name
+struct s_h1_ai_hs_function
+{
+	const char* name;
+	int32 (*procedure)(const int32* arguments);
+};
+extern const s_h1_ai_hs_function g_h1_ai_hs_functions[];
+extern const int32 g_h1_ai_hs_function_count;

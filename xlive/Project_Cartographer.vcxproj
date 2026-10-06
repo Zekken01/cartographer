@@ -1195,6 +1195,7 @@
     <ClCompile Include="Blam\Engine\halo1\h1_hs_compile.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_hs_functions.cpp" />
     <ClCompile Include="Blam\Engine\halo1\h1_hs_runtime.cpp" />
+    <ClCompile Include="Blam\Engine\halo1\ce_ai\h1_ai_hs_functions.cpp" />
     <ClCompile Include="Blam\Engine\halo1\ce_ai\h1_ai_units.cpp" />
     <ClCompile Include="Blam\Engine\halo1\ce_ai\ce_models.cpp" />
     <ClCompile Include="Blam\Engine\halo1\ce_ai\ce_model_animations.cpp" />

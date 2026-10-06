@@ -8,6 +8,9 @@
 namespace h1_ai
 {
 
+// game_sound.c: an impulse sound from an object's node (its handle, NONE when it doesn't play)
+long object_impulse_sound_new(long object_index, long sound_definition_index, short node_index, real_point3d const* position, real_vector3d const* forward, real scale);
+
 // structures.c, scenario.c
 unsigned long* structure_bsp_get_cluster_pvs(struct structure_bsp* structure_bsp, short cluster_index);
 byte structure_bsp_get_cluster_encoded_sound_distance(struct structure_bsp* structure_bsp, short from_cluster_index, short to_cluster_index);

@@ -235,7 +235,7 @@ char const *dialogue_vocalization_type_name[NUMBER_OF_DIALOGUE_VOCALIZATION_TYPE
 	{ "unused", "unused" },
 };
 
-short const dialogue_vocalization_lookup[NUMBER_OF_DIALOGUE_VOCALIZATION_TYPES] =
+extern short const dialogue_vocalization_lookup[NUMBER_OF_DIALOGUE_VOCALIZATION_TYPES] =
 {
 	1, NONE, NONE, NONE, NONE, NONE, NONE, 6, 6, 6, NONE, 10,
 	NONE, 12, 15, NONE, 14, 15, 14, 15, NONE, NONE, 21, NONE,

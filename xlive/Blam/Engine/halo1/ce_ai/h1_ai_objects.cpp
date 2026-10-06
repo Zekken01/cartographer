@@ -655,7 +655,13 @@ static s_object_mirror* object_mirror_get(datum object_index)
 	mirror->seen = true;
 	if (mirror->sync_time != g_object_mirror_time || g_object_mirror_time == NONE)
 	{
+		const bool first_sync = mirror->sync_time == NONE;
 		object_mirror_sync(object_index, mirror);
+		// units.c unit_new: a new unit picks its dialogue on its first update
+		if (first_sync && TEST_FLAG(_object_mask_unit, mirror->data.object.object.type))
+		{
+			SET_FLAG(mirror->data.unit.unit.flags, _unit_must_set_up_dialogue_bit, TRUE);
+		}
 		mirror->sync_time = g_object_mirror_time;
 		const ::object_header_datum* h2_header = (const ::object_header_datum*)::datum_try_and_get(::object_header_data_get(), object_index);
 		// objects that aren't halo 1's (the host's) aren't the AI's

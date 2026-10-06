@@ -2,6 +2,8 @@
 
 #include "units/unit_control.h"
 #include "units/units.h"
+#include "../h1_sound.h"
+#include "../h1_hs.h"
 
 #include "h1_ai_internal.h"
 #include "h1_ai_objects.h"
@@ -120,6 +122,9 @@ void unit_stop_running_blindly(long unit_index)
 // controlled_last, the tick it stops it gets halo 1's uncontrolled control once)
 void h1_ai_unit_control_update(long unit_index, unit_datum* unit, bool* controlled_last)
 {
+	// unit_update's speech
+	unit_dialogue_update(unit_index);
+
 	// an actor's team (game teams are numbered alike)
 	::unit_datum* h2_unit = (::unit_datum*)::object_try_and_get_and_verify_type(unit_index, ::_object_mask_unit);
 	if (h2_unit && unit->unit.actor_index != NONE && unit->object.owner_team_index != NONE && (short)h2_unit->unit.unit_team != unit->object.owner_team_index)
@@ -207,6 +212,39 @@ void h1_ai_unit_control_update(long unit_index, unit_datum* unit, bool* controll
 	normalized(&unit->unit.desired_looking_vector, &data.looking_vector);
 	::unit_control(unit_index, &data);
 	return;
+}
+
+// game_sound.c object_impulse_sound_new: the unit's speech, played at its head
+long object_impulse_sound_new(long object_index, long sound_definition_index, short node_index, real_point3d const* position,
+	real_vector3d const* forward, real scale)
+{
+	real_point3d world_position;
+	object_get_origin(object_index, &world_position);
+	const real_matrix4x3* node_matrix = object_get_node_matrix(object_index, node_index);
+	if (node_matrix)
+	{
+		world_position = node_matrix->position;
+	}
+	h1_sound_impulse(sound_definition_index, (const ::real_point3d*)&world_position, scale);
+	h1_hs_sound_dialog_note(sound_definition_index);
+	return sound_definition_index;
+}
+
+// game_sound.c scripted_sound_new, scripted_sound_time and sound_manager.c's scripted dialog: the scripts' (h1_hs)
+void scripted_sound_new(long definition_index, long source_object_index, real scale)
+{
+	h1_hs_sound_impulse_start(definition_index, source_object_index, scale);
+	return;
+}
+
+long scripted_sound_time(long sound_index)
+{
+	return h1_hs_sound_impulse_time(sound_index);
+}
+
+boolean sound_scripted_dialog_is_playing(void)
+{
+	return h1_hs_scripted_dialog_is_playing();
 }
 
 /* ---------- private code */
