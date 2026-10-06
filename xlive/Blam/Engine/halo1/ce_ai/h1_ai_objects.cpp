@@ -15,6 +15,7 @@
 #include "units/units.h"
 #include "../h2_tag_definitions_generated.h"
 
+#include "h1_ai.h"
 #include "h1_ai_internal.h"
 #include "h1_ai_objects.h"
 
@@ -64,6 +65,9 @@ data_array* object_header_data = NULL;
 static std::unordered_map<datum, s_object_mirror> g_object_mirrors;
 static std::unordered_map<datum, int16> g_object_name_indices;
 static int32 g_object_mirror_time = NONE;
+// while the AI hears of an object halo 2 deleted, its mirror stands in for it
+static datum g_deleted_object_index = NONE;
+
 
 /* ---------- private prototypes */
 
@@ -139,10 +143,24 @@ void h1_ai_objects_update(void)
 		object_header_mirror_set(object_index, h2_header, mirror);
 	}
 
-	// mirrors of objects that are gone go with them
-	for (auto it = g_object_mirrors.begin(); it != g_object_mirrors.end();)
+	// mirrors of objects that are gone go with them, the AI told first (units.c unit_delete's ai_handle_deleted_object)
+	std::vector<datum> deleted;
+	for (const auto& entry : g_object_mirrors)
 	{
-		it = it->second.seen ? std::next(it) : g_object_mirrors.erase(it);
+		if (!entry.second.seen)
+		{
+			deleted.push_back(entry.first);
+		}
+	}
+	for (datum object_index : deleted)
+	{
+		if (h1_ai_running() && ai_globals->ai_initialized_for_map)
+		{
+			g_deleted_object_index = object_index;
+			ai_handle_deleted_object(object_index);
+			g_deleted_object_index = NONE;
+		}
+		g_object_mirrors.erase(object_index);
 	}
 	return;
 }
@@ -548,6 +566,7 @@ void object_set_position(long object_index, real_point3d const* position, real_v
 	return;
 }
 
+// damage.c object_initialize_vitality: the custom maximums (hit points) replace the definition's, the vitality full
 void object_initialize_vitality(long object_index, real* custom_body_vitality, real* custom_shield_vitality)
 {
 	::object_datum* object = (::object_datum*)::object_try_and_get_and_verify_type(object_index, -1);
@@ -557,11 +576,13 @@ void object_initialize_vitality(long object_index, real* custom_body_vitality, r
 	}
 	if (custom_body_vitality)
 	{
-		object->object.body_vitality = *custom_body_vitality;
+		object->object.maximum_body_vitality = *custom_body_vitality;
+		object->object.body_vitality = *custom_body_vitality > 0.f ? 1.f : 0.f;
 	}
 	if (custom_shield_vitality)
 	{
-		object->object.shield_vitality = *custom_shield_vitality;
+		object->object.maximum_shield_vitality = *custom_shield_vitality;
+		object->object.shield_vitality = *custom_shield_vitality > 0.f ? 1.f : 0.f;
 	}
 	return;
 }
@@ -650,7 +671,8 @@ static s_object_mirror* object_mirror_get(datum object_index)
 	const ::object_datum* object = (const ::object_datum*)::object_try_and_get_and_verify_type(object_index, -1);
 	if (!object)
 	{
-		return NULL;
+		auto deleted = object_index == g_deleted_object_index ? g_object_mirrors.find(object_index) : g_object_mirrors.end();
+		return deleted != g_object_mirrors.end() ? &deleted->second : NULL;
 	}
 	auto found = g_object_mirrors.find(object_index);
 	if (found == g_object_mirrors.end())

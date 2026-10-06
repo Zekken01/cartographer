@@ -305,6 +305,7 @@ void h1_ai_apply_patches(void)
 			break;
 		}
 	}
+	h1_log("ai: unit delete %s", g_h2_unit_delete ? "hooked" : "not hooked");
 	return;
 }
 
