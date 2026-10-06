@@ -80,6 +80,15 @@ void h1_camera_reset(void)
 
 void h1_camera_control(bool enabled)
 {
+	if (!enabled)
+	{
+		// halo 1's scripted camera ends with its control (a first person camera_set_first_person left on the cutscene's unit,
+		// destroyed by then, would hold the view where it was): halo 2's scripted camera mode back to none
+		uint8* scripted_camera = *Memory::GetAddress<uint8**>(0x4CDFA0);
+		*(int16*)(scripted_camera + 2) = 0;
+		*(datum*)(scripted_camera + 0x3C) = NONE;
+		g_h1_camera.mode = _h1_camera_mode_none;
+	}
 	// halo 2's camera_control: the director leaves first person for its scripted camera
 	Memory::GetAddress<void(__cdecl*)(bool)>(0x5A181)(enabled);
 	h1_log("camera: camera_control %d", enabled);

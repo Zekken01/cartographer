@@ -89,6 +89,7 @@ static bool __cdecl h1_custom_map_cache_file_open(const wchar_t* path, cache_fil
 static bool __cdecl h1_custom_map_hash_verify(const uint8* expected_hash, const uint8* file_hash);
 static const s_h1_map_description* h1_map_description_get(const char* file_name);
 static bool h1_file_hash(const wchar_t* path, uint8* out_hash);
+static bool __cdecl h1_player_starting_location_clear(datum player_index, datum unit_definition_index, const void* starting_location);
 
 /* public code */
 
@@ -99,6 +100,9 @@ void h1_maps_apply_patches(void)
 	PatchCall(Memory::GetAddress(0x64B68), h1_custom_map_cache_file_open);
 	// the custom map load compares a hash of the file against the map id, Halo 1 entries carry our own hash
 	PatchCall(Memory::GetAddress(0x64B44), h1_custom_map_hash_verify);
+	// the starting location choice (FUN_0045373f) skips locations a player's pill would collide at: halo 1 has no such test, its
+	// players start where the scenario says (a30's start is inside the crashed lifepod)
+	PatchCall(Memory::GetAddress(0x53820), h1_player_starting_location_clear);
 	h1_effects_apply_patches();
 	h1_scenery_apply_patches();
 	h1_items_apply_patches();
@@ -106,6 +110,15 @@ void h1_maps_apply_patches(void)
 	h1_weapon_logic_apply_patches();
 	h1_projectile_logic_apply_patches();
 	return;
+}
+
+static bool __cdecl h1_player_starting_location_clear(datum player_index, datum unit_definition_index, const void* starting_location)
+{
+	if (h1_maps_active())
+	{
+		return true;
+	}
+	return Memory::GetAddress<bool(__cdecl*)(datum, datum, const void*)>(0xC7529)(player_index, unit_definition_index, starting_location);
 }
 
 bool h1_maps_file_is_halo1(const wchar_t* path)

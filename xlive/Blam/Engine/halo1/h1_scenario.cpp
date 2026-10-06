@@ -85,8 +85,8 @@ static void h1_scenario_build_player_starting_locations(scenario* h2_scenario, c
 		scenario_player* player = &players[i];
 
 		player->position = source->position;
-		// Halo 1 stores facing in radians, Halo 2 in degrees
-		player->facing_degrees = RADIANS_TO_DEGREES(source->facing);
+		// radians in both games (halo 2's spawn takes the cosine and sine of it, FUN_00435774; the field's name is wrong)
+		player->facing_degrees = source->facing;
 		player->team_designator = (e_game_team)source->team_index;
 		player->bsp_index = source->bsp_index;
 		player->game_type_1 = h1_game_type_convert(source->type_0);
