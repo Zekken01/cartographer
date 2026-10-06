@@ -113,6 +113,7 @@ void h1_maps_apply_patches(void)
 	h1_devices_apply_patches();
 	h1_weapon_logic_apply_patches();
 	h1_projectile_logic_apply_patches();
+	h1_ai_apply_patches();
 	return;
 }
 

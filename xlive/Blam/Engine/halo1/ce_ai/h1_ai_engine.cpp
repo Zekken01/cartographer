@@ -1,4 +1,6 @@
 #include "stdafx.h"
+
+#include <unordered_map>
 #include "h1_ai_internal.h"
 
 #include "../h1_log.h"
@@ -36,6 +38,12 @@ void ai_assert_failed(const char* file, int32 line, const char* expression, cons
 
 void error(int32 level, const char* format, ...)
 {
+	// each message's first few times (halo 1's debug checks repeat every tick)
+	static std::unordered_map<const char*, int32> s_counts;
+	if (++s_counts[format] > 3)
+	{
+		return;
+	}
 	char buffer[1024];
 	va_list arguments;
 	va_start(arguments, format);

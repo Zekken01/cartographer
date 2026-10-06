@@ -7,6 +7,8 @@
 #include "units/units.h"
 
 #include "shell/shell.h"
+#include "halo1/h1_map_loader.h"
+#include "halo1/ce_ai/h1_ai.h"
 
 /* typedef */
 typedef void(__cdecl* t_object_apply_damage_aftermath)(datum object_index, s_damage_aftermath_data* damage_data);
@@ -54,7 +56,15 @@ void __cdecl object_cause_damage(s_damage_data* damage_data, datum object_index,
 
 	if (!prevent_guardian_glitch)
 	{
+		// halo 1 maps: the AI hears of its units' damage (vitality before and after)
+		const object_datum* object = h1_maps_active() ? (const object_datum*)object_try_and_get_and_verify_type(object_index, _object_mask_unit) : NULL;
+		const real32 body_vitality = object ? object->object.body_vitality : 0.f;
+		const real32 shield_vitality = object ? object->object.shield_vitality : 0.f;
 		INVOKE(0x17AD81, 0x1525E1, object_cause_damage, damage_data, object_index, node_index, region_index, material_index, object_normal);
+		if (object)
+		{
+			h1_ai_object_damaged(object_index, damage_data->owner.owner_object_index, &damage_data->direction, body_vitality, shield_vitality);
+		}
 	}
 	return;
 }

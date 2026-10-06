@@ -16,6 +16,12 @@ void h1_ai_update(void);
 
 bool h1_ai_running(void);
 
+// the AI's hooks of halo 2's objects (its units' deletion)
+void h1_ai_apply_patches(void);
+// damage.c object_cause_damage's aftermath for halo 1's AI: a unit hurt or killed (its vitality before)
+void h1_ai_object_damaged(datum object_index, datum owner_object_index, const real_vector3d* direction, real32 body_vitality_before,
+	real32 shield_vitality_before);
+
 // the scripts' ai_* functions (h1_hs_functions)
 void h1_ai_script_place(int32 ai_index);
 

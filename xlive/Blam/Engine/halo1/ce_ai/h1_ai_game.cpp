@@ -10,6 +10,8 @@
 #include "game/game_options.h"
 #include "game/players.h"
 #include "memory/data.h"
+#include "objects/object_types.h"
+#include "objects/objects.h"
 #include "units/units.h"
 
 #include "h1_ai_internal.h"
@@ -273,6 +275,64 @@ void h1_ai_update(void)
 	}
 	h1_ai::g_last_ai_time = time;
 	h1_ai::ai_tick();
+	return;
+}
+
+// units.c unit_delete's ai_handle_deleted_object: the unit part's delete of halo 2's units
+static object_delete_t g_h2_unit_delete = NULL;
+
+static void h1_ai_unit_delete_hook(datum object_index)
+{
+	if (h1_ai::g_ai_running && h1_maps_active())
+	{
+		h1_ai::ai_handle_deleted_object(object_index);
+		h1_ai::h1_ai_object_mirror_forget(object_index);
+	}
+	g_h2_unit_delete(object_index);
+	return;
+}
+
+void h1_ai_apply_patches(void)
+{
+	object_type_definition* biped_type = object_type_definition_get(_object_type_biped);
+	for (int32 i = 0; i < k_max_object_type_inheritence; i++)
+	{
+		object_type_definition* part = biped_type->part_definitions[i];
+		if (part && part->group_tag == 'unit' && part->object_delete)
+		{
+			g_h2_unit_delete = part->object_delete;
+			part->object_delete = h1_ai_unit_delete_hook;
+			break;
+		}
+	}
+	return;
+}
+
+// units.c unit_damage_aftermath: bipeds' deaths and damage to the AI (damage categories aren't halo 2's: none)
+void h1_ai_object_damaged(datum object_index, datum owner_object_index, const real_vector3d* direction, real32 body_vitality_before,
+	real32 shield_vitality_before)
+{
+	const ::unit_datum* unit = h1_ai::g_ai_running ? (const ::unit_datum*)::object_try_and_get_and_verify_type(object_index, FLAG(::_object_type_biped)) : NULL;
+	if (!unit || !h1_ai::ai_globals->ai_initialized_for_map)
+	{
+		return;
+	}
+	const bool dead = unit->object.object_damage_flags.test(::_object_is_dead_bit);
+	const real32 total_damage = MAX(body_vitality_before - unit->object.body_vitality, 0.f) + MAX(shield_vitality_before - unit->object.shield_vitality, 0.f);
+	// the mirror sees the damage now
+	h1_ai::h1_ai_objects_update();
+	if (dead)
+	{
+		if (body_vitality_before > 0.f)
+		{
+			h1_ai::ai_handle_death(object_index, owner_object_index, 0);
+		}
+	}
+	else if (total_damage > 0.f)
+	{
+		h1_ai::real_vector3d velocity = *(const h1_ai::real_vector3d*)direction;
+		h1_ai::ai_handle_damage(object_index, owner_object_index, 0, total_damage, &velocity, FALSE);
+	}
 	return;
 }
 
