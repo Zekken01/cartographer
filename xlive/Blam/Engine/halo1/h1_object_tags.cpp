@@ -219,6 +219,9 @@ datum h1_object_model_build(const s_h1_object_tags* tags, const h1_mode* h1_mode
 	const int32 region_count = h1_model ? MIN(h1_model->regions.count, 16) : 0;
 	h2x_hlmt_variants* variant = h1_runtime_block_new(&model->variants, 1);
 	variant->name = _string_id_default;
+	// no halo 2 dialogue (units speak from their variant's dialogue)
+	variant->dialogue_sound_effect = _string_id_empty_string;
+	h1_runtime_reference_set(&variant->dialogue, (tag_group)NONE, NONE);
 	int8* runtime_region_indices = &variant->runtime_model_region_0_index;
 	for (int32 r = 0; r < 16; r++)
 	{
