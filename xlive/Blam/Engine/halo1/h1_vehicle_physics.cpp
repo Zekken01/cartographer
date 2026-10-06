@@ -633,8 +633,9 @@ static void h1_vehicle_suspension_update(datum vehicle_index, const h1_vehi* h1_
 		matrix4x3_transform_point(&matrix, &mass_point->position, &point);
 		matrix4x3_transform_vector(&matrix, &mass_point->up, &normal);
 		const real32 extent = suspension->full_extension_ground_depth - suspension->full_compression_ground_depth;
-		// from the ground depth of full compression (a mass point's ground depth is its radius less its distance to the ground)
-		const real32 offset = (suspension->full_compression_ground_depth - mass_point->radius) - extent;
+		// the ground depths are the ground's below the mass point's center (negative): the probe runs from twice the travel above
+		// full extension's to full extension's, compressed for the first half
+		const real32 offset = suspension->full_compression_ground_depth - extent;
 		const real_point3d start = { point.x + normal.i * offset, point.y + normal.j * offset, point.z + normal.k * offset };
 		real_vector3d vector;
 		scale_vector3d(&normal, extent + extent, &vector);
@@ -1115,6 +1116,20 @@ static object_update_t g_h2_vehicle_update = NULL;
 
 // the vehicle part's update: halo 2's (seats, animations, its own physics for halo 2 vehicles), then halo 1's physics for halo 1
 // vehicles
+static object_preprocess_node_orientations_t g_h2_vehicle_preprocess_node_orientations = NULL;
+
+// halo 2's vehicle update measures its own suspension between halo 1's updates: halo 1's state again just before the vehicle animates
+static void h1_vehicle_preprocess_node_orientations_hook(datum vehicle_index, uint8* node_flags, int32 node_count, real_orientation* orientations)
+{
+	auto found = h1_maps_active() ? g_h1_vehicle_states.find(vehicle_index) : g_h1_vehicle_states.end();
+	if (found != g_h1_vehicle_states.end())
+	{
+		h1_vehicle_animation_state_set(vehicle_index, &found->second);
+	}
+	g_h2_vehicle_preprocess_node_orientations(vehicle_index, node_flags, node_count, orientations);
+	return;
+}
+
 static bool h1_vehicle_update_hook(datum vehicle_index)
 {
 	const bool result = g_h2_vehicle_update(vehicle_index);
@@ -1132,6 +1147,11 @@ void h1_vehicle_physics_apply_patches(void)
 		{
 			g_h2_vehicle_update = part->object_update;
 			part->object_update = h1_vehicle_update_hook;
+			if (part->object_preprocess_node_orientations)
+			{
+				g_h2_vehicle_preprocess_node_orientations = part->object_preprocess_node_orientations;
+				part->object_preprocess_node_orientations = h1_vehicle_preprocess_node_orientations_hook;
+			}
 			break;
 		}
 	}
