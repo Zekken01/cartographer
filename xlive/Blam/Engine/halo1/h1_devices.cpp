@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_devices.h"
+#include "h1_game_state.h"
 
 #include "h1_animations.h"
 #include "h1_cache_file.h"
@@ -203,6 +204,18 @@ struct s_h1_devices_globals
 /* globals */
 
 static s_h1_devices_globals g_h1_devices;
+H1_GAME_STATE_VARIABLE(g_h1_devices);
+static void h1_devices_game_state_save(int32 slot) { return; }
+static void h1_devices_game_state_restored(void)
+{
+	for (auto& entry : g_h1_devices.devices)
+	{
+		SET_BIT(entry.second.flags, _h1_device_position_changed_bit, true);
+		entry.second.elevator_position_valid = false;
+	}
+	return;
+}
+static c_h1_game_state_procedures g_h1_devices_game_state_fixup(h1_devices_game_state_save, h1_devices_game_state_save, h1_devices_game_state_restored);
 static object_preprocess_node_orientations_t g_h2_scenery_preprocess_node_orientations = NULL;
 static object_preprocess_node_orientations_t g_h2_device_preprocess_node_orientations = NULL;
 

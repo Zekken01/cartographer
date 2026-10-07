@@ -1,6 +1,7 @@
 #include "stdafx.h"
 
 #include "units/unit_control.h"
+#include "../h1_game_state.h"
 #include "units/units.h"
 #include "../h1_sound.h"
 #include "../h1_cache_file.h"
@@ -62,6 +63,7 @@ typedef void(__cdecl* t_h2_unit_exit_seat_end)(datum unit_index, int32 ticks);
 
 // units halo 1 started a melee on, for their next control
 static std::unordered_set<long> g_melee_units;
+H1_GAME_STATE_VARIABLE(g_melee_units);
 // each unit's animation seat and weapon labels (units.c sets its animation seat and weapon class when they change)
 struct s_unit_animation_labels
 {
@@ -69,12 +71,18 @@ struct s_unit_animation_labels
 	const char* weapon_label;
 };
 static std::unordered_map<long, s_unit_animation_labels> g_unit_animation_labels;
+H1_GAME_STATE_VARIABLE(g_unit_animation_labels);
+// leaping units' ticks since their launch (unit_leap_update)
+static std::unordered_map<long, int32> g_leap_airborne_ticks;
+H1_GAME_STATE_VARIABLE(g_leap_airborne_ticks);
 // breakable_surfaces.c: every surface whole (breaking isn't halo 1's here)
 static uint32 g_breakable_surface_flags[0x800];
 
 /* ---------- private prototypes */
 
 static void unit_animation_labels_update(long unit_index, unit_datum* unit);
+static bool unit_weapon_class_animation_play(long unit_index, short animation_type, bool interpolate);
+static void unit_leap_update(long unit_index, unit_datum* unit);
 
 static void unit_running_blind(long unit_index, real_vector3d* run_vector);
 
@@ -168,6 +176,7 @@ void h1_ai_unit_control_update(long unit_index, unit_datum* unit, bool* controll
 	// unit_update's speech
 	unit_dialogue_update(unit_index);
 	unit_animation_labels_update(unit_index, unit);
+	unit_leap_update(unit_index, unit);
 
 	// an actor's team (game teams are numbered alike)
 	::unit_datum* h2_unit = (::unit_datum*)::object_try_and_get_and_verify_type(unit_index, ::_object_mask_unit);
@@ -355,6 +364,102 @@ boolean unit_start_animation_impulse(long unit_index, short animation_impulse, r
 	return TRUE;
 }
 
+// units.c unit_leap_begin: the weapon class's leap start (halo 2 plays it), the unit turned to the leap; its end launches the leap
+// (unit_leap_update)
+boolean unit_leap_begin(long unit_index, real_vector2d const* alignment_vector)
+{
+	unit_datum* unit = (unit_datum*)unit_get(unit_index);
+	switch (unit->unit.animation.state)
+	{
+	case _unit_state_hard_ping:
+	case _unit_state_dying_airborne:
+	case _unit_state_dying:
+	case _unit_state_entering_seat:
+	case _unit_state_exiting_seat:
+	case _unit_state_ai_impulse:
+	case _unit_state_melee_attack:
+	case _unit_state_melee_airborne:
+	case _unit_state_melee_continuous:
+	case _unit_state_throw_grenade:
+	case _unit_state_resurrect_front:
+	case _unit_state_resurrect_back:
+	case _unit_state_leap_start:
+	case _unit_state_leap_melee:
+		return FALSE;
+	default:
+		break;
+	}
+	if (unit->object.type == _object_type_biped && TEST_FLAG(((struct biped_datum*)unit)->biped.flags, _biped_airborne_bit))
+	{
+		return FALSE;
+	}
+	if (!unit_weapon_class_animation_play(unit_index, _unit_weapon_class_animation_leap_start, true))
+	{
+		return FALSE;
+	}
+	unit->unit.animation.state = _unit_state_leap_start;
+	g_leap_airborne_ticks.erase(unit_index);
+	// unit_align_facing
+	if (alignment_vector && unit->object.parent_object_index == NONE)
+	{
+		::object_datum* h2_object = (::object_datum*)::object_try_and_get_and_verify_type(unit_index, -1);
+		if (h2_object)
+		{
+			h2_object->object.forward = { alignment_vector->i, alignment_vector->j, 0.f };
+			h2_object->object.up = *::global_up3d;
+		}
+		unit->object.forward = { alignment_vector->i, alignment_vector->j, 0.f };
+		unit->object.up = *global_up3d;
+	}
+	return TRUE;
+}
+
+// bipeds.c biped_accelerate: a push (the flood carrier's burst throwing its infection forms), half of it on the living, airborne
+// after it; halo 2's velocities are per second
+void biped_accelerate(long biped_index, real_vector3d* acceleration)
+{
+	struct biped_datum* biped = biped_get(biped_index);
+	struct biped_definition* definition = biped_definition_get(biped->definition_index);
+	if (TEST_FLAG(definition->unit.flags, _unit_is_special_bit))
+	{
+		return;
+	}
+	if (!TEST_FLAG(biped->object.damage_flags, _object_dead_bit))
+	{
+		scale_vector3d(acceleration, 0.5f, acceleration);
+	}
+	add_vectors3d(&biped->object.translational_velocity, acceleration, &biped->object.translational_velocity);
+	::real_vector3d velocity, angular_velocity;
+	::object_get_velocities(biped_index, &velocity, &angular_velocity);
+	velocity.i += acceleration->i * 30.f;
+	velocity.j += acceleration->j * 30.f;
+	velocity.k += acceleration->k * 30.f;
+	Memory::GetAddress<void(__cdecl*)(datum, const ::real_vector3d*, const ::real_vector3d*)>(0x135123)(biped_index, &velocity, &angular_velocity);
+	SET_FLAG(biped->object.flags, _object_at_rest_bit, FALSE);
+	SET_FLAG(biped->biped.flags, _biped_airborne_bit, TRUE);
+	SET_FLAG(biped->biped.flags, _biped_slipping_bit, TRUE);
+	return;
+}
+
+// objects.c object_reset: still (halo 2's velocities too), awake
+void object_reset(long object_index)
+{
+	object_datum* object = object_get(object_index);
+	object->object.translational_velocity = *global_zero_vector3d;
+	object->object.angular_velocity = *global_zero_vector3d;
+	SET_FLAG(object->object.flags, _object_at_rest_bit, FALSE);
+	const ::real_vector3d zero = { 0.f, 0.f, 0.f };
+	Memory::GetAddress<void(__cdecl*)(datum, const ::real_vector3d*, const ::real_vector3d*)>(0x135123)(object_index, &zero, &zero);
+	return;
+}
+
+// objects.c object_compute_node_matrices_recursive: halo 2's nodes of the object and its children where it now is
+void object_compute_node_matrices_recursive(long object_index)
+{
+	::object_compute_node_matrices_with_children(object_index);
+	return;
+}
+
 // units.c unit_get_animation_frames_remaining: a user animation's ticks left
 short unit_get_animation_frames_remaining(long unit_index, short* animation_state)
 {
@@ -443,6 +548,76 @@ boolean sound_scripted_dialog_is_playing(void)
 }
 
 /* ---------- private code */
+
+// the unit's seat's weapon class's animation of the type (unit_animation_set_state's), halo 2 playing it by name from the unit's graph
+static bool unit_weapon_class_animation_play(long unit_index, short animation_type, bool interpolate)
+{
+	unit_datum* unit = (unit_datum*)unit_get(unit_index);
+	struct unit_definition* unit_definition = unit_definition_get(unit->definition_index);
+	struct animation_graph* animation_graph = animation_graph_definition_get(unit_definition->object.animation_graph.index);
+	struct animation_graph_unit_seat* unit_seat = animation_graph ? TAG_BLOCK_GET_ELEMENT(&animation_graph->unit_seats, unit->unit.animation.seat_index, struct animation_graph_unit_seat) : NULL;
+	struct animation_graph_weapon_class* weapon_class = unit_seat ? TAG_BLOCK_GET_ELEMENT(&unit_seat->weapon_classes, unit->unit.animation.weapon_index, struct animation_graph_weapon_class) : NULL;
+	if (!weapon_class || animation_type >= weapon_class->animations.count)
+	{
+		return false;
+	}
+	short animation_index = animation_graph_animation_index_get(&weapon_class->animations)[animation_type].animation_index;
+	if (animation_index == NONE)
+	{
+		return false;
+	}
+	animation_index = animation_choose_random_permutation_internal(TRUE, unit_definition->object.animation_graph.index, animation_index);
+	struct animation* animation = TAG_BLOCK_GET_ELEMENT(&animation_graph->animations, animation_index, struct animation);
+	return animation && h1_hs_unit_animation_play(unit_index, animation->name, interpolate);
+}
+
+// units.c unit_update_animation's leap: the leap start's end launches it (bipeds.c biped_jump, its velocity actor_aim_jump's), airborne
+// until it lands
+static void unit_leap_update(long unit_index, unit_datum* unit)
+{
+	if (unit->unit.animation.state == _unit_state_leap_start && h1_hs_animation_time(unit_index) <= 0)
+	{
+		unit->unit.animation.state = _unit_state_leap_airborne;
+		g_leap_airborne_ticks[unit_index] = 0;
+		if (unit->object.type == _object_type_biped)
+		{
+			struct biped_datum* biped = (struct biped_datum*)unit;
+			struct biped_definition* definition = biped_definition_get(biped->definition_index);
+			const real jump_magnitude = definition->biped.jump_velocity;
+			real_vector3d jump_velocity = biped->object.translational_velocity;
+			const real upward_velocity = dot_product3d(&jump_velocity, &biped->object.up);
+			if (upward_velocity < jump_magnitude)
+			{
+				jump_velocity.i += biped->object.up.i * (jump_magnitude - upward_velocity);
+				jump_velocity.j += biped->object.up.j * (jump_magnitude - upward_velocity);
+				jump_velocity.k += biped->object.up.k * (jump_magnitude - upward_velocity);
+			}
+			const long actor_index = biped->unit.swarm_actor_index != NONE ? biped->unit.swarm_actor_index : biped->unit.actor_index;
+			if (actor_index == NONE || actor_aim_jump(actor_index, unit_index, TRUE, jump_magnitude, &jump_velocity))
+			{
+				biped->object.translational_velocity = jump_velocity;
+				SET_FLAG(biped->biped.flags, _biped_airborne_bit, TRUE);
+				biped->biped.jump_recovery_timer = 0;
+				const ::real_vector3d velocity = { jump_velocity.i * 30.f, jump_velocity.j * 30.f, jump_velocity.k * 30.f };
+				::real_vector3d linear_velocity, angular_velocity;
+				::object_get_velocities(unit_index, &linear_velocity, &angular_velocity);
+				Memory::GetAddress<void(__cdecl*)(datum, const ::real_vector3d*, const ::real_vector3d*)>(0x135123)(unit_index, &velocity, &angular_velocity);
+			}
+		}
+		unit_weapon_class_animation_play(unit_index, _unit_weapon_class_animation_leap_airborne, true);
+	}
+	else if (unit->unit.animation.state == _unit_state_leap_airborne)
+	{
+		// landed: on the ground again (a few ticks after the launch, before which its ground test still finds the ground)
+		int32& ticks = g_leap_airborne_ticks[unit_index];
+		if (++ticks > 5 && unit->object.type == _object_type_biped && !TEST_FLAG(((struct biped_datum*)unit)->biped.flags, _biped_airborne_bit))
+		{
+			unit->unit.animation.state = _unit_state_idle;
+			g_leap_airborne_ticks.erase(unit_index);
+		}
+	}
+	return;
+}
 
 // the unit's seat (its parent's seat's label, standing without one) and weapon (its current one's label, unarmed without one)
 static void unit_animation_labels_update(long unit_index, unit_datum* unit)

@@ -601,4 +601,230 @@ void biped_get_sight_position(
 	return;
 }
 
+boolean biped_fix_position(
+	long biped_index,
+	long line_of_sight_object_index,
+	real_point3d const *new_position,
+	real_point3d *final_position,
+	real maximum_radius_fudge_factor,
+	boolean fix_below_new_position,
+	boolean dont_teleport,
+	boolean use_radius_as_multiplier)
+{
+	boolean fixed = FALSE;
+
+	match_assert("c:\\halo\\SOURCE\\units\\bipeds.c", 893,
+		final_position || !dont_teleport);
+	match_assert("c:\\halo\\SOURCE\\units\\bipeds.c", 895,
+		global_current_collision_user_depth < MAXIMUM_COLLISION_USER_STACK_DEPTH);
+	global_current_collision_users[global_current_collision_user_depth++] =
+		_collision_user_bipeds;
+
+	if (biped_index != NONE || line_of_sight_object_index != NONE)
+	{
+		boolean line_of_sight_only;
+		real_point3d line_of_sight_position;
+		struct biped_datum *biped;
+		unsigned long collision_flags;
+		real_point3d position;
+		real pill_height;
+		real pill_width;
+		struct collision_model_instance line_of_sight_instance;
+		short maximum_fudge_vector_count;
+
+		if (line_of_sight_object_index != NONE)
+		{
+			real unused_radius;
+
+			object_get_bounding_sphere(
+				line_of_sight_object_index,
+				&line_of_sight_position,
+				&unused_radius);
+		}
+
+		line_of_sight_only = FALSE;
+		if (biped_index == NONE)
+		{
+			biped_index = line_of_sight_object_index;
+			line_of_sight_only = TRUE;
+		}
+
+		biped = biped_get(biped_index);
+		{
+			struct biped_definition *definition =
+				biped_definition_get(biped->definition_index);
+
+			collision_flags = TEST_FLAG(
+				definition->biped.flags,
+				_biped_passes_through_bipeds_bit) ?
+				_collision_test_for_bipeds_passthrough_living_flags :
+				_collision_test_for_bipeds_living_flags;
+		}
+
+		if (new_position)
+		{
+			real_point3d unused_pill_base;
+
+			position = *new_position;
+			biped_get_physics_pill(
+				biped_index,
+				&unused_pill_base,
+				&pill_height,
+				&pill_width);
+		}
+		else
+		{
+			biped_get_physics_pill(
+				biped_index,
+				&position,
+				&pill_height,
+				&pill_width);
+		}
+
+		if (line_of_sight_only)
+			biped_index = NONE;
+
+		maximum_fudge_vector_count = NUMBEROF(fudge_vectors) -
+			(fix_below_new_position ? 0 : 9);
+		if (line_of_sight_object_index != NONE)
+		{
+			collision_model_instance_new(
+				&line_of_sight_instance,
+				line_of_sight_object_index);
+		}
+
+		{
+			real_vector3d left;
+			real_vector3d pill_vector;
+			short fudge_vector_index;
+
+			cross_product3d(&biped->object.forward, &biped->object.up, &left);
+			normalize3d(&left);
+			scale_vector3d(global_up3d, pill_height, &pill_vector);
+			if (use_radius_as_multiplier)
+				maximum_radius_fudge_factor *= pill_width;
+
+			for (fudge_vector_index = 0;
+				!fixed && fudge_vector_index < maximum_fudge_vector_count;
+				++fudge_vector_index)
+			{
+				real_point3d fixed_position;
+				long cluster_index;
+				struct collision_result pill_collision;
+				struct collision_result line_collision;
+				struct collision_model_test_pill_result model_pill_collision;
+
+				if (fix_below_new_position)
+				{
+					real distance =
+						maximum_radius_fudge_factor*fudge_vectors[fudge_vector_index].i;
+
+					fixed_position.x = biped->object.forward.i*distance + position.x;
+					fixed_position.y = biped->object.forward.j*distance + position.y;
+					fixed_position.z = biped->object.forward.k*distance + position.z;
+					distance = maximum_radius_fudge_factor*fudge_vectors[fudge_vector_index].j;
+					fixed_position.x += left.i*distance;
+					fixed_position.y += left.j*distance;
+					fixed_position.z += left.k*distance;
+					distance = maximum_radius_fudge_factor*fudge_vectors[fudge_vector_index].k;
+					fixed_position.x += biped->object.up.i*distance;
+					fixed_position.y += biped->object.up.j*distance;
+					fixed_position.z += biped->object.up.k*distance;
+				}
+				else
+				{
+					real_vector3d const *fudge_vector =
+						&fudge_vectors[fudge_vector_index];
+
+					fixed_position.x =
+						maximum_radius_fudge_factor*fudge_vector->i + position.x;
+					fixed_position.y =
+						maximum_radius_fudge_factor*fudge_vector->j + position.y;
+					fixed_position.z =
+						maximum_radius_fudge_factor*fudge_vector->k + position.z;
+				}
+
+				cluster_index = scenario_leaf_index_from_point(&fixed_position) == NONE ?
+					NONE :
+					TAG_BLOCK_GET_ELEMENT(
+						&global_structure_bsp_get()->leaves,
+						scenario_leaf_index_from_point(&fixed_position) & LONG_MAX,
+						struct structure_leaf)->cluster_index;
+				if (cluster_index != NONE &&
+					collision_fix_pill(
+						collision_flags,
+						&fixed_position,
+						pill_width*2.f,
+						pill_height,
+						pill_width,
+						biped_index,
+						&fixed_position) &&
+					!collision_test_pill(
+						collision_flags,
+						&fixed_position,
+						&pill_vector,
+						pill_width,
+						biped_index,
+						&pill_collision) &&
+					(line_of_sight_object_index == NONE ||
+						(!collision_model_test_pill(
+							&line_of_sight_instance,
+							&fixed_position,
+							&pill_vector,
+							pill_width,
+							&model_pill_collision) &&
+						(!collision_test_line(
+							collision_flags,
+							&fixed_position,
+							&line_of_sight_position,
+							biped_index,
+							&line_collision) ||
+							line_collision.object_index == line_of_sight_object_index) &&
+						(!collision_test_line(
+							collision_flags,
+							&line_of_sight_position,
+							&fixed_position,
+							line_of_sight_object_index,
+							&line_collision) ||
+							line_collision.object_index == biped_index))))
+				{
+					struct biped_definition *definition =
+						biped_definition_get(biped->definition_index);
+					struct location fixed_location;
+
+					scenario_location_from_point(&fixed_location, &fixed_position);
+					match_assert("c:\\halo\\SOURCE\\units\\bipeds.c", 1054,
+						fixed_location.cluster_index!=NONE);
+					if (!TEST_FLAG(
+						definition->biped.flags,
+						_biped_pill_centered_at_origin_bit))
+					{
+						fixed_position.z -= definition->biped.collision_radius;
+					}
+
+					if (biped_index != NONE && !dont_teleport)
+					{
+						biped->object.position = fixed_position;
+						object_compute_node_matrices_recursive(biped_index);
+						object_translate(
+							biped_index,
+							&fixed_position,
+							&fixed_location);
+					}
+
+					if (final_position)
+						*final_position = fixed_position;
+					fixed = TRUE;
+				}
+			}
+		}
+	}
+
+	match_assert("c:\\halo\\SOURCE\\units\\bipeds.c", 1080,
+		global_current_collision_user_depth > 1);
+	--global_current_collision_user_depth;
+
+	return fixed;
+}
+
 } // namespace h1_ai

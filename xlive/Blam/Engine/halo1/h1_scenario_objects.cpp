@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_scenario_objects.h"
+#include "h1_game_state.h"
 
 #include "h1_animations.h"
 #include "h1_bipeds.h"
@@ -108,6 +109,7 @@ static const s_h1_placement_type k_h1_placement_types[] =
 };
 
 static s_h1_scenario_objects_globals g_h1_scenario_objects;
+H1_GAME_STATE_VARIABLE(g_h1_scenario_objects);
 
 /* ---------- prototypes */
 

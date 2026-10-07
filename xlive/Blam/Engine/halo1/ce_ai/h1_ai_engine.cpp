@@ -5,6 +5,8 @@
 
 #include "../h1_log.h"
 #include "../h1_map_loader.h"
+#include "../h1_game_state.h"
+#include <vector>
 
 #include <stdarg.h>
 #include <stdlib.h>
@@ -130,20 +132,60 @@ static inline int16* datum_identifier(data_array* data, int32 absolute_index)
 	return (int16*)((uint8*)data->data + (size_t)absolute_index * data->size);
 }
 
+// game_state_malloc's and game_state_data_new's allocations: halo 1's game state of the AI, saved and restored with halo 2's
+// checkpoints (allocated once, at ai_initialize, never freed)
+struct s_game_state_allocation
+{
+	void* address;
+	size_t size;
+	std::vector<uint8> saved[2];
+};
+static std::vector<s_game_state_allocation>& game_state_allocations(void)
+{
+	static std::vector<s_game_state_allocation> allocations;
+	return allocations;
+}
+static void* game_state_allocation_new(size_t size)
+{
+	void* address = calloc(1, size);
+	game_state_allocations().push_back({ address, size });
+	return address;
+}
+static void game_state_allocations_save(int32 slot)
+{
+	for (s_game_state_allocation& allocation : game_state_allocations())
+	{
+		allocation.saved[slot].assign((const uint8*)allocation.address, (const uint8*)allocation.address + allocation.size);
+	}
+	return;
+}
+static void game_state_allocations_restore(int32 slot)
+{
+	for (s_game_state_allocation& allocation : game_state_allocations())
+	{
+		if (allocation.saved[slot].size() == allocation.size)
+		{
+			csmemcpy(allocation.address, allocation.saved[slot].data(), allocation.size);
+		}
+	}
+	return;
+}
+static c_h1_game_state_procedures g_game_state_allocations_game_state(game_state_allocations_save, game_state_allocations_restore);
+
 data_array* game_state_data_new(const char* name, int32 maximum_count, int32 size)
 {
-	data_array* data = (data_array*)calloc(1, sizeof(data_array));
+	data_array* data = (data_array*)game_state_allocation_new(sizeof(data_array));
 	strncpy(data->name, name, TAG_STRING_LENGTH);
 	data->maximum_count = (int16)maximum_count;
 	data->size = (int16)size;
 	data->signature = k_data_signature;
-	data->data = calloc(maximum_count, size);
+	data->data = game_state_allocation_new((size_t)maximum_count * size);
 	return data;
 }
 
 c_void_pointer game_state_malloc(const char* name, const char* type, int32 size)
 {
-	return { calloc(1, size) };
+	return { game_state_allocation_new(size) };
 }
 
 void data_delete_all(data_array* data)

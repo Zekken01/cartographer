@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "Util/Hooks/Hook.h"
+#include "h1_game_state.h"
 #include "h1_vehicle_physics.h"
 
 #include "h1_animations.h"
@@ -254,6 +255,7 @@ struct s_h1_vehicle_state
 /* ---------- globals */
 
 static std::unordered_map<datum, s_h1_vehicle_state> g_h1_vehicle_states;
+H1_GAME_STATE_VARIABLE(g_h1_vehicle_states);
 
 /* ---------- prototypes */
 

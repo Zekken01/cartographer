@@ -3,6 +3,7 @@
 
 #include "h1_cache_file.h"
 #include "h1_log.h"
+#include "h1_game_state.h"
 #include "h1_map_loader.h"
 
 #include "game/game.h"
@@ -283,6 +284,81 @@ void h1_sound_begin(void)
 	g_h1_sound.mixer_thread = std::thread(h1_sound_mixer_main);
 	return;
 }
+
+// the looping sounds a checkpoint has (the scripts' and the effects' attached ones, by handle)
+struct s_h1_saved_looping_sound
+{
+	datum definition_index;
+	real_point3d position;
+	bool held;
+	real32 scale;
+};
+struct s_h1_sound_checkpoint
+{
+	bool valid;
+	std::unordered_map<int32, s_h1_saved_looping_sound> attached_sounds;
+	int32 next_attached_handle;
+};
+static s_h1_sound_checkpoint g_h1_sound_checkpoints[2];
+
+static void h1_sound_game_state_save(int32 slot)
+{
+	std::lock_guard<std::mutex> lock(g_h1_sound.voices_lock);
+	s_h1_sound_checkpoint* checkpoint = &g_h1_sound_checkpoints[slot];
+	checkpoint->valid = g_h1_sound.active;
+	checkpoint->attached_sounds.clear();
+	for (const auto& entry : g_h1_sound.attached_sounds)
+	{
+		checkpoint->attached_sounds[entry.first] = { entry.second->definition_index, entry.second->position, entry.second->held, entry.second->scale };
+	}
+	checkpoint->next_attached_handle = g_h1_sound.next_attached_handle;
+	return;
+}
+
+static void h1_sound_game_state_restore(int32 slot)
+{
+	const s_h1_sound_checkpoint* checkpoint = &g_h1_sound_checkpoints[slot];
+	if (!g_h1_sound.active || !checkpoint->valid)
+	{
+		return;
+	}
+	std::lock_guard<std::mutex> lock(g_h1_sound.voices_lock);
+	// the impulses, dialogue and scripted sounds playing stop
+	for (s_h1_detail_voice& voice : g_h1_sound.detail_voices)
+	{
+		voice.voice->remove = true;
+	}
+	g_h1_sound.detail_voices.clear();
+	// the looping sounds started since stop, the stopped ones play again
+	for (auto it = g_h1_sound.attached_sounds.begin(); it != g_h1_sound.attached_sounds.end();)
+	{
+		if (!checkpoint->attached_sounds.count(it->first))
+		{
+			it->second->stopping = true;
+			g_h1_sound.stopping_backgrounds.push_back(std::move(it->second));
+			it = g_h1_sound.attached_sounds.erase(it);
+			continue;
+		}
+		it++;
+	}
+	for (const auto& entry : checkpoint->attached_sounds)
+	{
+		if (g_h1_sound.attached_sounds.count(entry.first))
+		{
+			continue;
+		}
+		std::unique_ptr<s_h1_looping_sound> loop = h1_looping_sound_new(entry.second.definition_index, &entry.second.position);
+		if (loop)
+		{
+			loop->held = entry.second.held;
+			loop->scale = entry.second.scale;
+			g_h1_sound.attached_sounds[entry.first] = std::move(loop);
+		}
+	}
+	g_h1_sound.next_attached_handle = MAX(g_h1_sound.next_attached_handle, checkpoint->next_attached_handle);
+	return;
+}
+static c_h1_game_state_procedures g_h1_sound_game_state(h1_sound_game_state_save, h1_sound_game_state_restore);
 
 void h1_sound_dispose(void)
 {

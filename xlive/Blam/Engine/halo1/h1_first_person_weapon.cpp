@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_first_person_weapon.h"
+#include "h1_game_state.h"
 
 #include "h1_cache_file.h"
 #include "h1_log.h"
@@ -179,6 +180,7 @@ struct s_h1_first_person_weapon
 /* globals */
 
 static s_h1_first_person_weapon g_h1_fp = {};
+H1_GAME_STATE_VARIABLE(g_h1_fp);
 
 /* prototypes */
 

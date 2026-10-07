@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_weapon_logic.h"
+#include "h1_game_state.h"
 #include "ce_ai/h1_ai.h"
 
 #include "h1_animations.h"
@@ -277,6 +278,7 @@ constexpr int32 k_h1_unit_fires_from_camera_bit = 3;
 /* globals */
 
 static std::unordered_map<datum, s_h1_weapon_logic_state> g_h1_weapon_logic;
+H1_GAME_STATE_VARIABLE(g_h1_weapon_logic);
 static object_update_t g_h2_weapon_update = NULL;
 
 // a player's melee: when halo 2's biped began it and whether its first person melee has begun
@@ -286,7 +288,9 @@ struct s_h1_unit_melee
 	bool waiting_for_animation;
 };
 static std::unordered_map<datum, s_h1_unit_melee> g_h1_unit_melee;
+H1_GAME_STATE_VARIABLE(g_h1_unit_melee);
 static uint32 g_h1_weapon_random_seed = 0x1234567u;
+H1_GAME_STATE_VARIABLE(g_h1_weapon_random_seed);
 
 /* prototypes */
 

@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "ce_ai/h1_ai.h"
+#include "h1_game_state.h"
 #include "h1_hs.h"
 #include "h1_hs_internal.h"
 
@@ -81,6 +82,7 @@ struct s_hs_library_globals
 /* ---------- globals */
 
 static s_hs_library_globals g_hs_library;
+H1_GAME_STATE_VARIABLE(g_hs_library);
 
 /* ---------- halo 2 functions */
 
@@ -337,6 +339,7 @@ enum
 };
 
 static int32 g_scripted_dialog_end_time = 0;
+H1_GAME_STATE_VARIABLE(g_scripted_dialog_end_time);
 
 static void hs_sound_dialog_note(datum sound_index)
 {
@@ -660,7 +663,7 @@ static int32 hs_game_save(const int32* arguments) { H2_FUNCTION(0x9E4FB, t_void)
 static int32 hs_game_save_cancel(const int32* arguments) { H2_FUNCTION(0x9E3EE, t_void)(); return 0; }
 static int32 hs_game_save_no_timeout(const int32* arguments) { H2_FUNCTION(0x9E4CB, t_void)(); return 0; }
 static int32 hs_game_saving(const int32* arguments) { return H2_FUNCTION(0x9E3D0, t_bool)(); }
-static int32 hs_game_reverted(const int32* arguments) { return H2_FUNCTION(0x3015D, t_bool)(); }
+static int32 hs_game_reverted(const int32* arguments) { return H2_FUNCTION(0x3015D, t_bool)() || h1_game_state_reverted(); }
 static int32 hs_game_safe_to_save(const int32* arguments) { return H2_FUNCTION(0x9E66E, t_bool)(); }
 static int32 hs_game_safe_to_speak(const int32* arguments) { return H2_FUNCTION(0x9E34C, t_bool)(); }
 static int32 hs_game_all_quiet(const int32* arguments) { return H2_FUNCTION(0x9E376, t_bool)(); }

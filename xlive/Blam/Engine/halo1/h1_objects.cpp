@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_objects.h"
+#include "h1_game_state.h"
 
 #include "h1_cache_file.h"
 #include "h1_effects.h"
@@ -48,11 +49,13 @@ struct s_h1_object_binding
 /* globals */
 
 static std::unordered_map<datum, s_h1_object_binding> g_h1_object_bindings;
+H1_GAME_STATE_VARIABLE(g_h1_object_bindings);
 // the objects halo 2 renders: submitted this frame and drawn
 static std::vector<datum> g_h1_objects_submitted;
 static std::vector<datum> g_h1_objects_visible;
 // the functions of each object, its change colors chosen when it was first drawn (where it was created)
 static std::unordered_map<datum, s_h1_object_functions> g_h1_object_functions;
+H1_GAME_STATE_VARIABLE(g_h1_object_functions);
 
 /* public code */
 

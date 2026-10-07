@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_scenery.h"
+#include "h1_game_state.h"
 
 #include "h1_cache_file.h"
 #include "h1_effects.h"
@@ -79,6 +80,7 @@ struct s_h1_scenery_globals
 /* globals */
 
 static s_h1_scenery_globals g_h1_scenery = { {}, {}, false, 0.f, {}, 0x5EED1234u };
+H1_GAME_STATE_VARIABLE(g_h1_scenery);
 
 typedef void(__cdecl* t_breakable_surface_damage)(int32 instance_index, int32 breakable_surface_index, s_damage_data* damage, int32 surface_index);
 static t_breakable_surface_damage p_breakable_surface_damage = NULL;

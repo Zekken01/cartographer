@@ -114,16 +114,6 @@ void ai_profile_update(void)
 	return;
 }
 
-void biped_accelerate(long biped_index, real_vector3d *acceleration)
-{
-	return;
-}
-
-boolean biped_fix_position(long biped_index, long line_of_sight_object_index, real_point3d const *new_position, real_point3d *final_position, real maximum_radius_fudge_factor, boolean fix_below_new_position, boolean dont_teleport, boolean use_radius_as_multiplier)
-{
-	return FALSE;
-}
-
 cheat_globals cheat;
 
 struct data_array *conversation_data;
@@ -135,21 +125,6 @@ real debug_obstacle_path_radius;
 real_point3d debug_obstacle_path_start_point;
 long debug_obstacle_path_start_surface_index;
 
-void object_compute_node_matrices_recursive(long object_index)
-{
-	return;
-}
-
-
-void object_reset(long object_index)
-{
-	return;
-}
 
 struct data_array *prop_data;
-boolean unit_leap_begin(long unit_index, real_vector2d const *alignment_vector)
-{
-	return FALSE;
-}
-
 } // namespace h1_ai

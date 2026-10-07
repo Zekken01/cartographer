@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_ai.h"
+#include "../h1_game_state.h"
 
 #include "../h1_cache_file.h"
 #include "../h1_hs_internal.h"
@@ -33,6 +34,7 @@ static bool g_ai_initialized = false;
 // actors_update and the rest of ai_update: on once the engine functions they call are implemented over carto
 static bool g_ai_update_enabled = true;
 static int32 g_last_ai_time = NONE;
+H1_GAME_STATE_VARIABLE(g_last_ai_time);
 
 /* ---------- game.c */
 

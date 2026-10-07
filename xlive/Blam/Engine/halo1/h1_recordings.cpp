@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_recordings.h"
+#include "h1_game_state.h"
 
 #include "h1_cache_file.h"
 #include "h1_log.h"
@@ -115,6 +116,7 @@ struct s_h1_recording_thread
 /* ---------- globals */
 
 static s_h1_recording_thread g_h1_recordings[k_h1_maximum_recording_threads];
+H1_GAME_STATE_VARIABLE(g_h1_recordings);
 
 /* ---------- prototypes */
 

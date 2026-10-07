@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_hs.h"
+#include "h1_game_state.h"
 #include "h1_hs_internal.h"
 
 #include "h1_cache_file.h"
@@ -103,6 +104,7 @@ const char* const hs_type_names[k_number_of_hs_types] =
 };
 
 static s_hs_runtime_globals g_hs;
+H1_GAME_STATE_VARIABLE(g_hs);
 static s_hs_syntax_node g_hs_invalid_node = { 0, { NONE }, _hs_unparsed, 0, NONE, 0, { NONE } };
 static uint8 g_hs_scratch[k_hs_thread_stack_size];
 
@@ -287,6 +289,7 @@ void h1_hs_update(void)
 	}
 	hs_functions_update();
 	object_list_gc();
+	h1_game_state_scripts_ticked();
 	return;
 }
 

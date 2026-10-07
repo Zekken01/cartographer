@@ -1,6 +1,7 @@
 #include "stdafx.h"
 
 #include "../h1_cache_file.h"
+#include "../h1_game_state.h"
 #include "../h1_hs.h"
 #include "../h1_log.h"
 #include "../h1_map_loader.h"
@@ -63,8 +64,11 @@ struct s_object_mirror
 data_array* object_header_data = NULL;
 
 static std::unordered_map<datum, s_object_mirror> g_object_mirrors;
+H1_GAME_STATE_VARIABLE(g_object_mirrors);
 static std::unordered_map<datum, int16> g_object_name_indices;
+H1_GAME_STATE_VARIABLE(g_object_name_indices);
 static int32 g_object_mirror_time = NONE;
+H1_GAME_STATE_VARIABLE(g_object_mirror_time);
 // while the AI hears of an object halo 2 deleted, its mirror stands in for it
 static datum g_deleted_object_index = NONE;
 
@@ -564,6 +568,13 @@ void object_set_position(long object_index, real_point3d const* position, real_v
 	// halo 2 needs an up whenever there is a forward
 	Memory::GetAddress<void(__cdecl*)(datum, const ::real_point3d*, const ::real_vector3d*, const ::real_vector3d*, int32)>(0x136B7F)(
 		object_index, (const ::real_point3d*)position, (const ::real_vector3d*)forward, (const ::real_vector3d*)(up ? up : (forward ? (const real_vector3d*)global_up3d : NULL)), 0);
+	return;
+}
+
+// objects.c object_translate: the object moved to the position, its orientation kept (halo 2 finds its location)
+void object_translate(long object_index, real_point3d const* position, struct location const* location)
+{
+	object_set_position(object_index, position, NULL, NULL);
 	return;
 }
 

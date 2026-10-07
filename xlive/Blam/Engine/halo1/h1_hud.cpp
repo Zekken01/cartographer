@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_hud.h"
+#include "h1_game_state.h"
 
 #include "h1_bitmaps.h"
 #include "h1_cache_file.h"
@@ -654,7 +655,9 @@ struct s_h1_motion_sensor_defaults
 /* globals */
 
 static s_h1_hud_state g_h1_hud = { {}, NONE, {}, 0 };
+H1_GAME_STATE_VARIABLE(g_h1_hud);
 static s_h1_unit_hud_state g_h1_unit_hud = { -1.f, -1.f, 0, NONE, NONE, NONE, NONE };
+H1_GAME_STATE_VARIABLE(g_h1_unit_hud);
 static s_h1_hud_window g_h1_hud_window;
 static IDirect3DVertexShader9* g_h1_hud_vertex_shader = NULL;
 static IDirect3DPixelShader9* g_h1_hud_pixel_shader = NULL;
@@ -665,6 +668,7 @@ static IDirect3DPixelShader9* g_h1_hud_screen_effect_shader = NULL;
 static IDirect3DTexture9* g_h1_hud_screen_copy = NULL;
 static IDirect3DTexture9* g_h1_motion_sensor_target = NULL;
 static s_h1_motion_sensor g_h1_motion_sensor = {};
+H1_GAME_STATE_VARIABLE(g_h1_motion_sensor);
 // halo 2 drew (or on halo 1 maps would have drawn) its motion sensor this frame: the game variant has one
 static bool g_h1_hud_motion_sensor_shown = false;
 // the unit and weapon state of the hud being drawn (the multitexture overlays' effectors)
@@ -2732,6 +2736,7 @@ struct s_h1_nav_point
 };
 
 static s_h1_nav_point g_h1_nav_points[k_h1_maximum_nav_points];
+H1_GAME_STATE_VARIABLE(g_h1_nav_points);
 
 void h1_hud_nav_points_reset(void)
 {
@@ -2999,6 +3004,7 @@ struct s_h1_hud_text_globals
 };
 
 static s_h1_hud_text_globals g_h1_hud_text = { NONE, NONE, std::wstring(), NONE, true, false, 0, NONE, 0 };
+H1_GAME_STATE_VARIABLE(g_h1_hud_text);
 
 static const h1_matg_interface_bitmaps* h1_hud_interface_bitmaps_get(void);
 
@@ -3231,7 +3237,9 @@ static s_h1_cinematic_title g_h1_cinematic_titles[k_h1_maximum_queued_cinematic_
 {
 	{ NONE, NONE }, { NONE, NONE }, { NONE, NONE }, { NONE, NONE },
 };
+H1_GAME_STATE_VARIABLE(g_h1_cinematic_titles);
 static int32 g_h1_cinematic_titles_last_game_time = NONE;
+H1_GAME_STATE_VARIABLE(g_h1_cinematic_titles_last_game_time);
 
 void h1_cinematic_titles_reset(void)
 {

@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_map_loader.h"
+#include "h1_game_state.h"
 
 #include "h1_cache_file.h"
 #include "h1_effects.h"
@@ -109,6 +110,7 @@ void h1_maps_apply_patches(void)
 	h1_effects_apply_patches();
 	h1_scenery_apply_patches();
 	h1_items_apply_patches();
+	h1_game_state_apply_patches();
 	h1_vehicle_physics_apply_patches();
 	h1_devices_apply_patches();
 	h1_weapon_logic_apply_patches();
@@ -423,6 +425,7 @@ void h1_maps_update(void)
 		s_campaign_started = true;
 		// game_initialize_for_new_map: the AI, the scripts and the objects they place, then the encounters made at the start
 		h1_ai_initialize_for_new_map();
+		h1_game_state_reset();
 		h1_hs_initialize_for_new_map();
 		h1_ai_place();
 		if (!h1_hs_running())

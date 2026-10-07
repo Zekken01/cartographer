@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "h1_projectile_logic.h"
+#include "h1_game_state.h"
 
 #include "h1_cache_file.h"
 #include "h1_effects.h"
@@ -178,7 +179,9 @@ struct s_h1_collision
 
 static object_update_t g_h2_projectile_update = NULL;
 static std::unordered_map<datum, s_h1_projectile> g_h1_projectiles;
+H1_GAME_STATE_VARIABLE(g_h1_projectiles);
 static uint32 g_h1_projectile_random_seed = 0x9E3779B9u;
+H1_GAME_STATE_VARIABLE(g_h1_projectile_random_seed);
 
 /* prototypes */
 
