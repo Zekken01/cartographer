@@ -313,6 +313,12 @@ c_void_pointer datum_get(data_array* data, int32 index)
 	if (!datum)
 	{
 		ai_assert_failed(__FILE__, __LINE__, "datum_get: invalid index", data ? data->name : NULL);
+		// halo 1's release datum_get doesn't test the index: its code reads what's there and carries on (ai_communication.c's
+		// reply filters ask for a non-actor target unit's actor). A zeroed datum, not NULL
+		static uint64 s_invalid_datum[0x2000 / sizeof(uint64)];
+		csmemset(s_invalid_datum, 0, sizeof(s_invalid_datum));
+		*(int16*)s_invalid_datum = NONE;
+		datum = { s_invalid_datum };
 	}
 	return datum;
 }
