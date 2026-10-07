@@ -747,7 +747,21 @@ struct s_h1_effects_globals
 /* globals */
 
 static s_h1_effects_globals g_h1_effects = { {}, {}, 0x1234567u, 0, 0.f, {}, NONE, {}, {}, {}, {}, {}, {}, 0.f, 0.f, 0, {}, {} };
-H1_GAME_STATE_VARIABLE(g_h1_effects);
+static s_h1_effects_globals g_h1_effects_saved[2];
+static void h1_effects_game_state_save(int32 slot)
+{
+	g_h1_effects_saved[slot] = g_h1_effects;
+	return;
+}
+static void h1_effects_game_state_restore(int32 slot)
+{
+	// the stub effect tag built for them stays built
+	const datum stub_effect_index = g_h1_effects.stub_effect_index;
+	g_h1_effects = g_h1_effects_saved[slot];
+	g_h1_effects.stub_effect_index = stub_effect_index;
+	return;
+}
+static c_h1_game_state_procedures g_h1_effects_game_state(h1_effects_game_state_save, h1_effects_game_state_restore);
 
 typedef void(__cdecl* t_projectile_detonation_effect_new)(datum definition_index, const real_point3d* point, const real_vector3d* forward, void* owner, bool super_detonation, bool airborne);
 static t_projectile_detonation_effect_new p_projectile_detonation_effect_new = NULL;

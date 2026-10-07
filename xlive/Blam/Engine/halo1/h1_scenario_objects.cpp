@@ -109,7 +109,8 @@ static const s_h1_placement_type k_h1_placement_types[] =
 };
 
 static s_h1_scenario_objects_globals g_h1_scenario_objects;
-H1_GAME_STATE_VARIABLE(g_h1_scenario_objects);
+// game state: the placed objects' halo 1 types (the definitions built for them stay built)
+static c_h1_game_state_variable<decltype(g_h1_scenario_objects.object_types)> g_h1_scenario_object_types_game_state(&g_h1_scenario_objects.object_types);
 
 /* ---------- prototypes */
 

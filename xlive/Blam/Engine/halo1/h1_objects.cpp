@@ -49,7 +49,6 @@ struct s_h1_object_binding
 /* globals */
 
 static std::unordered_map<datum, s_h1_object_binding> g_h1_object_bindings;
-H1_GAME_STATE_VARIABLE(g_h1_object_bindings);
 // the objects halo 2 renders: submitted this frame and drawn
 static std::vector<datum> g_h1_objects_submitted;
 static std::vector<datum> g_h1_objects_visible;
