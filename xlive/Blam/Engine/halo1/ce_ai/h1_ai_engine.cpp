@@ -312,7 +312,9 @@ c_void_pointer datum_get(data_array* data, int32 index)
 	c_void_pointer datum = datum_try_and_get(data, index);
 	if (!datum)
 	{
-		ai_assert_failed(__FILE__, __LINE__, "datum_get: invalid index", data ? data->name : NULL);
+		char description[64];
+		sprintf_s(description, "%s %08X from %08X", data ? data->name : "", (uint32)index, (uint32)((uintptr_t)_ReturnAddress() - (uintptr_t)GetModuleHandleA("xlive.dll")));
+		ai_assert_failed(__FILE__, __LINE__, "datum_get: invalid index", description);
 		// halo 1's release datum_get doesn't test the index: its code reads what's there and carries on (ai_communication.c's
 		// reply filters ask for a non-actor target unit's actor). A zeroed datum, not NULL
 		static uint64 s_invalid_datum[0x2000 / sizeof(uint64)];

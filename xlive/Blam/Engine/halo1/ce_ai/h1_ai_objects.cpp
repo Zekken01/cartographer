@@ -223,7 +223,22 @@ void* object_get_and_verify_type(long object_index, unsigned long valid_type_fla
 	void* object = object_try_and_get_and_verify_type(object_index, valid_type_flags);
 	if (!object)
 	{
-		ai_assert_failed(__FILE__, __LINE__, "object_get_and_verify_type", NULL);
+		char description[64];
+		sprintf_s(description, "%08X from %08X", (uint32)object_index, (uint32)((uintptr_t)_ReturnAddress() - (uintptr_t)GetModuleHandleA("xlive.dll")));
+		ai_assert_failed(__FILE__, __LINE__, "object_get_and_verify_type", description);
+		// halo 1's release object_get doesn't test the object: its code reads what's there and carries on. A zeroed object (no
+		// definition, no parent, no actor), not NULL
+		static u_object_mirror_data s_invalid_object;
+		csmemset(&s_invalid_object, 0, sizeof(s_invalid_object));
+		s_invalid_object.object.definition_index = NONE;
+		s_invalid_object.object.object.parent_object_index = NONE;
+		s_invalid_object.object.object.next_object_index = NONE;
+		s_invalid_object.object.object.first_child_object_index = NONE;
+		s_invalid_object.unit.unit.actor_index = NONE;
+		s_invalid_object.unit.unit.swarm_actor_index = NONE;
+		s_invalid_object.unit.unit.player_index = NONE;
+		s_invalid_object.unit.unit.parent_seat_index = NONE;
+		object = &s_invalid_object;
 	}
 	return object;
 }
